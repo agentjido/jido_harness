@@ -1,0 +1,25 @@
+# Build artifacts
+/_build/
+/deps/
+
+# Coverage
+/cover/
+
+# Dialyzer PLT files
+/priv/plts/
+*.plt
+*.plt.hash
+
+# Editor/IDE
+.elixir_ls/
+.vscode/
+*.swp
+*.swo
+
+# Generated files
+/doc/
+erl_crash.dump
+
+# OS
+.DS_Store
+Thumbs.db
