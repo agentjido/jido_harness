@@ -1,4 +1,4 @@
-defmodule JidoHarness.RunRequest do
+defmodule Jido.Harness.RunRequest do
   @moduledoc """
   Validated request struct for running a CLI coding agent.
   """

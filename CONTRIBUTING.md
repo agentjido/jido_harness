@@ -1,4 +1,4 @@
-# Contributing to JidoHarness
+# Contributing to Jido.Harness
 
 Thank you for your interest in contributing!
 

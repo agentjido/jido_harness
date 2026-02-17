@@ -1,4 +1,4 @@
-defmodule JidoHarness.Event do
+defmodule Jido.Harness.Event do
   @moduledoc """
   Normalized event struct emitted by CLI agent adapters.
   """

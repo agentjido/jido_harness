@@ -1,4 +1,4 @@
-defmodule JidoHarness.Provider do
+defmodule Jido.Harness.Provider do
   @moduledoc """
   Schema struct describing a CLI agent provider.
   """

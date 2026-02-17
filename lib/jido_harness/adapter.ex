@@ -1,9 +1,9 @@
-defmodule JidoHarness.Adapter do
+defmodule Jido.Harness.Adapter do
   @moduledoc "Behaviour that all CLI agent adapters must implement."
 
   @callback id() :: atom()
   @callback capabilities() :: map()
-  @callback run(JidoHarness.RunRequest.t(), keyword()) ::
+  @callback run(Jido.Harness.RunRequest.t(), keyword()) ::
               {:ok, Enumerable.t()} | {:error, term()}
   @callback cancel(String.t()) :: :ok | {:error, term()}
 

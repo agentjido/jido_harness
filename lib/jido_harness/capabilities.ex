@@ -1,4 +1,4 @@
-defmodule JidoHarness.Capabilities do
+defmodule Jido.Harness.Capabilities do
   @moduledoc """
   Describes the capabilities supported by a CLI agent adapter.
   """

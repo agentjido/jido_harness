@@ -1,4 +1,4 @@
-defmodule JidoHarness.MixProject do
+defmodule Jido.Harness.MixProject do
   use Mix.Project
 
   @version "0.1.0"
@@ -15,20 +15,60 @@ defmodule JidoHarness.MixProject do
       deps: deps(),
       aliases: aliases(),
       # Documentation
-      name: "JidoHarness",
+      name: "Jido.Harness",
       source_url: @source_url,
       homepage_url: @source_url,
       docs: [
-        main: "JidoHarness",
-        extras: ["README.md", "CHANGELOG.md"],
+        main: "Jido.Harness",
+        extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"],
         formatters: ["html"]
+      ],
+      test_coverage: [
+        tool: ExCoveralls,
+        summary: [threshold: 90],
+        ignore_modules: [
+          Jido.Harness.Error.Invalid,
+          Jido.Harness.Error.Execution,
+          Jido.Harness.Error.Config,
+          Jido.Harness.Error.Internal,
+          Jido.Harness.Error.Internal.UnknownError,
+          Jido.Harness.Test.AdapterStub,
+          Jido.Harness.Test.PromptRunnerStub,
+          Jido.Harness.Test.StreamRunnerStub,
+          Jido.Harness.Test.RunRequestRunnerStub,
+          Jido.Harness.Test.ExecuteRunnerStub,
+          Jido.Harness.Test.NoCancelStub,
+          Jido.Harness.Test.AtomMapStreamRunnerStub,
+          Jido.Harness.Test.UnsupportedRunnerStub
+        ]
       ],
       # Hex packaging
       package: [
         name: :jido_harness,
         description: @description,
+        files: [
+          ".formatter.exs",
+          "CHANGELOG.md",
+          "CONTRIBUTING.md",
+          "LICENSE",
+          "README.md",
+          "usage-rules.md",
+          "config",
+          "lib",
+          "mix.exs"
+        ],
         licenses: ["Apache-2.0"],
         links: %{"GitHub" => @source_url}
+      ]
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.github": :test,
+        "coveralls.html": :test
       ]
     ]
   end
@@ -62,11 +102,12 @@ defmodule JidoHarness.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get"],
+      setup: ["deps.get", "git_hooks.install"],
+      q: ["quality"],
       quality: [
-        "compile",
         "format --check-formatted",
-        "credo --strict",
+        "compile --warnings-as-errors",
+        "credo --min-priority higher",
         "dialyzer",
         "doctor --raise"
       ],
