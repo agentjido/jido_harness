@@ -1,7 +1,7 @@
 defmodule Jido.Harness.SchemaTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.{Error, Event, Provider, RunRequest}
+  alias Jido.Harness.{Error, Event, Provider, RunRequest, RuntimeContract}
 
   test "run_request schema constructors validate inputs" do
     assert is_struct(RunRequest.schema())
@@ -38,6 +38,25 @@ defmodule Jido.Harness.SchemaTest do
     assert %Provider{id: :codex} = Provider.new!(%{id: :codex, name: "Codex"})
     assert {:error, _} = Provider.new(%{name: "Missing ID"})
     assert_raise ArgumentError, ~r/Invalid Jido.Harness.Provider/, fn -> Provider.new!(%{name: "Missing ID"}) end
+  end
+
+  test "runtime_contract schema constructors validate inputs" do
+    assert is_struct(RuntimeContract.schema())
+
+    assert {:ok, %RuntimeContract{provider: :claude}} =
+             RuntimeContract.new(%{provider: :claude})
+
+    assert %RuntimeContract{provider: :codex} =
+             RuntimeContract.new!(%{
+               provider: :codex,
+               runtime_tools_required: ["codex"]
+             })
+
+    assert {:error, _} = RuntimeContract.new(%{})
+
+    assert_raise ArgumentError, ~r/Invalid Jido.Harness.RuntimeContract/, fn ->
+      RuntimeContract.new!(%{})
+    end
   end
 
   test "error helper constructors build typed exceptions" do
