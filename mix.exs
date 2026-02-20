@@ -85,7 +85,7 @@ defmodule Jido.Harness.MixProject do
   defp deps do
     [
       # Runtime
-      {:zoi, "~> 0.16"},
+      {:zoi, "~> 0.17"},
       {:splode, ">= 0.2.9 and < 0.4.0"},
       {:jason, "~> 1.4"},
       shell_dep(),
