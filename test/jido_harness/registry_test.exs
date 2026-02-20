@@ -2,7 +2,7 @@ defmodule Jido.Harness.RegistryTest do
   use ExUnit.Case, async: false
 
   alias Jido.Harness.Registry
-  alias Jido.Harness.Test.{AdapterStub, PromptRunnerStub}
+  alias Jido.Harness.Test.{AdapterStub, OpenCodeRuntimeAdapterStub, PromptRunnerStub}
 
   setup do
     old_providers = Application.get_env(:jido_harness, :providers)
@@ -82,6 +82,14 @@ defmodule Jido.Harness.RegistryTest do
     Application.put_env(:jido_harness, :provider_candidates, %{codex: [AdapterStub], amp: [AdapterStub]})
 
     assert Registry.default_provider() in [:codex, :amp]
+  end
+
+  test "providers/0 discovers opencode adapter candidates" do
+    Application.put_env(:jido_harness, :providers, %{})
+    Application.put_env(:jido_harness, :provider_candidates, %{opencode: [OpenCodeRuntimeAdapterStub]})
+
+    providers = Registry.providers()
+    assert providers.opencode == OpenCodeRuntimeAdapterStub
   end
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)

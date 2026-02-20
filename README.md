@@ -44,6 +44,7 @@ config :jido_harness, :default_provider, :codex
   - `:amp`
   - `:claude`
   - `:gemini`
+  - `:opencode`
 
 Auto-discovery is non-invasive: modules are used only if they are loaded and expose a supported run API.
 

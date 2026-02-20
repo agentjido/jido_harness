@@ -9,6 +9,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     InvalidEnvRuntimeAdapterStub,
     MissingTemplatesRuntimeAdapterStub,
     NoRuntimeContractAdapterStub,
+    OpenCodeRuntimeAdapterStub,
     RuntimeAdapterStub
   }
 
@@ -98,6 +99,52 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
     assert command =~ "runtime --coding"
     assert command =~ "$(cat"
+  end
+
+  test "provider_runtime_contract accepts opencode runtime contract shape" do
+    Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+
+    assert {:ok, contract} = Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:opencode)
+    assert contract.provider == :opencode
+    assert "ZAI_API_KEY" in contract.host_env_required_any
+    assert Enum.any?(contract.compatibility_probes, &(&1["name"] == "opencode_help_run"))
+    assert Enum.any?(contract.auth_bootstrap_steps, &String.contains?(&1, "opencode models zai_custom"))
+  end
+
+  test "build_command renders opencode command templates with prompt file" do
+    Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+
+    assert {:ok, command} =
+             Jido.Harness.Exec.ProviderRuntime.build_command(
+               :opencode,
+               :triage,
+               "/tmp/prompt.txt"
+             )
+
+    assert command =~ "opencode run"
+    assert command =~ "$(cat"
+    assert command =~ "/tmp/prompt.txt"
+  end
+
+  test "bootstrap_provider_runtime executes opencode auth bootstrap steps" do
+    Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+    ExecShellState.set_tool("opencode", true)
+    ExecShellState.set_tool("npm", true)
+    ExecShellState.set_env("ZAI_API_KEY", "set")
+
+    assert {:ok, result} =
+             Exec.bootstrap_provider_runtime(
+               :opencode,
+               "sess-runtime",
+               shell_agent_mod: ExecShellAgentStub,
+               timeout: 5_000
+             )
+
+    assert is_list(result.auth_bootstrap_results)
+    assert Enum.any?(result.auth_bootstrap_results, &String.contains?(&1.command, "opencode models zai_custom"))
   end
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)

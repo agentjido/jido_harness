@@ -223,7 +223,8 @@ defmodule Jido.Harness.Registry do
       codex: [Jido.Codex.Adapter, Jido.Codex],
       amp: [Jido.Amp.Adapter, Jido.Amp],
       claude: [Jido.Claude.Adapter, Jido.Claude],
-      gemini: [Jido.Gemini.Adapter, Jido.Gemini]
+      gemini: [Jido.Gemini.Adapter, Jido.Gemini],
+      opencode: [Jido.OpenCode.Adapter, Jido.OpenCode]
     }
   end
 end

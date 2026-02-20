@@ -223,6 +223,71 @@ defmodule Jido.Harness.Test.RuntimeAdapterStub do
   end
 end
 
+defmodule Jido.Harness.Test.OpenCodeRuntimeAdapterStub do
+  @moduledoc false
+  @behaviour Jido.Harness.Adapter
+
+  alias Jido.Harness.{Capabilities, RunRequest, RuntimeContract}
+
+  def id, do: :opencode
+
+  def capabilities do
+    %Capabilities{
+      streaming?: false,
+      tool_calls?: false,
+      tool_results?: false,
+      thinking?: false,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{}, _opts), do: {:ok, []}
+
+  def runtime_contract do
+    RuntimeContract.new!(%{
+      provider: :opencode,
+      host_env_required_any: ["ZAI_API_KEY"],
+      host_env_required_all: [],
+      sprite_env_forward: ["ZAI_API_KEY", "ZAI_BASE_URL", "OPENCODE_MODEL", "GH_TOKEN", "GITHUB_TOKEN"],
+      sprite_env_injected: %{
+        "GH_PROMPT_DISABLED" => "1",
+        "GIT_TERMINAL_PROMPT" => "0",
+        "ZAI_BASE_URL" => "https://api.z.ai/api/anthropic",
+        "OPENCODE_MODEL" => "zai_custom/glm-4.5-air"
+      },
+      runtime_tools_required: ["opencode"],
+      compatibility_probes: [
+        %{"name" => "opencode_help_run", "command" => "opencode --help", "expect_all" => ["run"]},
+        %{
+          "name" => "opencode_run_help_json",
+          "command" => "opencode run --help",
+          "expect_all" => ["--format", "json"]
+        }
+      ],
+      install_steps: [
+        %{
+          "tool" => "opencode",
+          "when_missing" => true,
+          "command" =>
+            "if command -v npm >/dev/null 2>&1; then npm install -g opencode-ai; else echo 'npm not available'; exit 1; fi"
+        }
+      ],
+      auth_bootstrap_steps: [
+        "cat > opencode.json <<'EOF'\n{\"model\": \"{env:OPENCODE_MODEL}\"}\nEOF",
+        "opencode models zai_custom 2>&1 | grep -q 'zai_custom/'"
+      ],
+      triage_command_template:
+        "if command -v timeout >/dev/null 2>&1; then timeout 120 opencode run --model ${OPENCODE_MODEL:-zai_custom/glm-4.5-air} --format json \"$(cat {{prompt_file}})\"; else opencode run --model ${OPENCODE_MODEL:-zai_custom/glm-4.5-air} --format json \"$(cat {{prompt_file}})\"; fi",
+      coding_command_template:
+        "if command -v timeout >/dev/null 2>&1; then timeout 180 opencode run --model ${OPENCODE_MODEL:-zai_custom/glm-4.5-air} --format json \"$(cat {{prompt_file}})\"; else opencode run --model ${OPENCODE_MODEL:-zai_custom/glm-4.5-air} --format json \"$(cat {{prompt_file}})\"; fi",
+      success_markers: [
+        %{"type" => "result", "subtype" => "success"},
+        %{"status" => "success"}
+      ]
+    })
+  end
+end
+
 defmodule Jido.Harness.Test.InvalidEnvRuntimeAdapterStub do
   @moduledoc false
   @behaviour Jido.Harness.Adapter
@@ -377,6 +442,15 @@ defmodule Jido.Harness.Test.ExecShellState do
 
       String.contains?(command, "probe-runtime") ->
         {:ok, "runtime ok"}
+
+      String.contains?(command, "opencode --help") ->
+        {:ok, "OpenCode CLI\nrun\n"}
+
+      String.contains?(command, "opencode run --help") ->
+        {:ok, "Usage: opencode run --format json"}
+
+      String.contains?(command, "opencode models zai_custom") ->
+        {:ok, "zai_custom/glm-4.5-air"}
 
       String.contains?(command, "gh auth status") ->
         {:ok, "authenticated"}
