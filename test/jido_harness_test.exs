@@ -3,14 +3,9 @@ defmodule Jido.HarnessTest do
 
   alias Jido.Harness.Test.{
     AdapterStub,
-    AtomMapStreamRunnerStub,
     ErrorRunnerStub,
-    ExecuteRunnerStub,
     InvalidEventRunnerStub,
     NoCancelStub,
-    PromptRunnerStub,
-    RunRequestRunnerStub,
-    StreamRunnerStub,
     UnsupportedRunnerStub
   }
 
@@ -66,68 +61,23 @@ defmodule Jido.HarnessTest do
     assert [%Jido.Harness.Event{type: :session_started}] = Enum.to_list(stream)
   end
 
-  test "run/3 falls back to prompt-runner modules" do
-    Application.put_env(:jido_harness, :providers, %{prompt: PromptRunnerStub})
-
-    assert {:ok, stream} = Jido.Harness.run(:prompt, "hello", cwd: "/tmp")
-    events = Enum.to_list(stream)
-
-    assert_receive {:prompt_runner_run, "hello", opts}
-    assert opts[:cwd] == "/tmp"
-    assert [%Jido.Harness.Event{type: :output_text_final, provider: :prompt}] = events
-    assert hd(events).payload["text"] =~ "done: hello"
-  end
-
-  test "run/3 normalizes raw stream events from prompt-runner modules" do
-    Application.put_env(:jido_harness, :providers, %{stream: StreamRunnerStub})
-
-    assert {:ok, stream} = Jido.Harness.run(:stream, "hello")
-    events = Enum.to_list(stream)
-
-    assert_receive {:stream_runner_run, "hello", _opts}
-    assert Enum.map(events, & &1.type) == [:output_text_delta, :session_completed]
-    assert Enum.all?(events, &(&1.provider == :stream))
-  end
-
-  test "run/3 normalizes atom-key map events" do
-    Application.put_env(:jido_harness, :providers, %{atom_stream: AtomMapStreamRunnerStub})
-
-    assert {:ok, stream} = Jido.Harness.run(:atom_stream, "hello")
-    events = Enum.to_list(stream)
-
-    assert_receive {:atom_map_stream_runner_run, "hello", _opts}
-    assert [%Jido.Harness.Event{type: :session_completed, provider: :atom_stream}] = events
-  end
-
-  test "run_request/3 delegates to run_request modules" do
-    Application.put_env(:jido_harness, :providers, %{rq: RunRequestRunnerStub})
+  test "run_request/3 delegates to adapter run/2 with RunRequest input" do
+    Application.put_env(:jido_harness, :providers, %{stub: AdapterStub})
     request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
-    assert {:ok, stream} = Jido.Harness.run_request(:rq, request, turn: 1)
+    assert {:ok, stream} = Jido.Harness.run_request(:stub, request, turn: 1)
     events = Enum.to_list(stream)
 
-    assert_receive {:run_request_runner_run, ^request, [turn: 1]}
-    assert [%Jido.Harness.Event{type: :session_completed, provider: :run_request_stub}] = events
+    assert_receive {:adapter_stub_run, ^request, [turn: 1]}
+    assert [%Jido.Harness.Event{type: :session_started}] = events
   end
 
-  test "run_request/3 uses execute/2 fallback when available" do
-    Application.put_env(:jido_harness, :providers, %{exec: ExecuteRunnerStub})
-    request = Jido.Harness.RunRequest.new!(%{prompt: "hello", cwd: "/tmp", metadata: %{}})
-
-    assert {:ok, stream} = Jido.Harness.run_request(:exec, request, retry: true)
-    events = Enum.to_list(stream)
-
-    assert_receive {:execute_runner_execute, "hello", opts}
-    assert opts[:cwd] == "/tmp"
-    assert opts[:retry] == true
-    assert [%Jido.Harness.Event{type: :provider_event, provider: :exec}] = events
-  end
-
-  test "run_request/3 returns execution error for unsupported modules" do
+  test "run_request/3 returns provider-not-found for non-adapter modules" do
     Application.put_env(:jido_harness, :providers, %{unsupported: UnsupportedRunnerStub})
     request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
-    assert {:error, %Jido.Harness.Error.ExecutionFailureError{}} = Jido.Harness.run_request(:unsupported, request, [])
+    assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :unsupported}} =
+             Jido.Harness.run_request(:unsupported, request, [])
   end
 
   test "run_request/2 returns a validation error when no default provider exists" do
@@ -148,12 +98,11 @@ defmodule Jido.HarnessTest do
     assert capabilities.cancellation? == true
   end
 
-  test "capabilities/1 infers defaults for non-adapter modules" do
-    Application.put_env(:jido_harness, :providers, %{prompt: PromptRunnerStub})
+  test "capabilities/1 returns provider-not-found for non-adapter modules" do
+    Application.put_env(:jido_harness, :providers, %{unsupported: UnsupportedRunnerStub})
 
-    assert {:ok, capabilities} = Jido.Harness.capabilities(:prompt)
-    assert capabilities.streaming? == true
-    assert capabilities.cancellation? == false
+    assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :unsupported}} =
+             Jido.Harness.capabilities(:unsupported)
   end
 
   test "cancel/2 delegates to provider cancel when supported" do

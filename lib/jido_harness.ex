@@ -12,7 +12,7 @@ defmodule Jido.Harness do
 
   """
 
-  alias Jido.Harness.{Capabilities, Error, Event, Provider, Registry, RunRequest}
+  alias Jido.Harness.{Error, Event, Provider, Registry, RunRequest}
 
   @request_keys [
     :cwd,
@@ -123,16 +123,14 @@ defmodule Jido.Harness do
   @spec capabilities(atom()) :: {:ok, map()} | {:error, term()}
   def capabilities(provider) when is_atom(provider) do
     with {:ok, module} <- Registry.lookup(provider) do
-      cond do
-        function_exported?(module, :capabilities, 0) ->
-          {:ok, module.capabilities()}
-
-        true ->
-          {:ok,
-           %Capabilities{
-             streaming?: function_exported?(module, :run, 2) or function_exported?(module, :execute, 2),
-             cancellation?: function_exported?(module, :cancel, 1)
-           }}
+      if function_exported?(module, :capabilities, 0) do
+        {:ok, module.capabilities()}
+      else
+        {:error,
+         Error.execution_error("Provider adapter does not expose capabilities/0", %{
+           provider: provider,
+           module: inspect(module)
+         })}
       end
     end
   end
@@ -159,29 +157,13 @@ defmodule Jido.Harness do
   end
 
   defp dispatch_run(module, %RunRequest{} = request, opts) do
-    cond do
-      function_exported?(module, :run_request, 2) ->
-        safe_invoke(module, :run_request, [request, opts])
-
-      function_exported?(module, :run, 2) ->
-        case safe_invoke(module, :run, [request, opts]) do
-          {:error, %FunctionClauseError{}} ->
-            prompt_opts = Keyword.merge(request_to_opts(request), opts)
-            safe_invoke(module, :run, [request.prompt, prompt_opts])
-
-          other ->
-            other
-        end
-
-      function_exported?(module, :execute, 2) ->
-        prompt_opts = Keyword.merge(request_to_opts(request), opts)
-        safe_invoke(module, :execute, [request.prompt, prompt_opts])
-
-      true ->
-        {:error,
-         Error.execution_error("Provider module does not expose a supported run API", %{
-           module: inspect(module)
-         })}
+    if function_exported?(module, :run, 2) do
+      safe_invoke(module, :run, [request, opts])
+    else
+      {:error,
+       Error.execution_error("Provider adapter does not expose run/2", %{
+         module: inspect(module)
+       })}
     end
   end
 
@@ -271,22 +253,6 @@ defmodule Jido.Harness do
   end
 
   defp normalize_type(_), do: :provider_event
-
-  defp request_to_opts(%RunRequest{} = request) do
-    []
-    |> maybe_put(:cwd, request.cwd)
-    |> maybe_put(:model, request.model)
-    |> maybe_put(:max_turns, request.max_turns)
-    |> maybe_put(:timeout_ms, request.timeout_ms)
-    |> maybe_put(:system_prompt, request.system_prompt)
-    |> maybe_put(:allowed_tools, request.allowed_tools)
-    |> maybe_put(:attachments, request.attachments)
-    |> maybe_put(:metadata, request.metadata)
-  end
-
-  defp maybe_put(opts, _key, nil), do: opts
-  defp maybe_put(opts, _key, []), do: opts
-  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp provider_name(id, module) do
     module_name =

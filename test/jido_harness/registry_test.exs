@@ -2,7 +2,7 @@ defmodule Jido.Harness.RegistryTest do
   use ExUnit.Case, async: false
 
   alias Jido.Harness.Registry
-  alias Jido.Harness.Test.AdapterStub
+  alias Jido.Harness.Test.{AdapterStub, PromptRunnerStub}
 
   setup do
     old_providers = Application.get_env(:jido_harness, :providers)
@@ -35,6 +35,25 @@ defmodule Jido.Harness.RegistryTest do
     Application.put_env(:jido_harness, :providers, %{})
 
     refute Map.has_key?(Registry.providers(), :invalid)
+  end
+
+  test "providers/0 rejects configured providers that are not adapter modules" do
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+    Application.put_env(:jido_harness, :providers, %{prompt: PromptRunnerStub})
+
+    refute Map.has_key?(Registry.providers(), :prompt)
+  end
+
+  test "diagnostics/0 reports rejected discovery and configured candidates" do
+    Application.put_env(:jido_harness, :provider_candidates, %{prompt: [PromptRunnerStub], auto: [AdapterStub]})
+    Application.put_env(:jido_harness, :providers, %{configured: AdapterStub, bad_configured: PromptRunnerStub})
+
+    diagnostics = Registry.diagnostics()
+
+    assert diagnostics.providers.auto == AdapterStub
+    assert diagnostics.providers.configured == AdapterStub
+    assert diagnostics.discovered.prompt |> hd() |> Map.fetch!(:status) == :rejected
+    assert diagnostics.configured.bad_configured.status == :rejected
   end
 
   test "lookup/1 returns provider not found errors for missing providers" do

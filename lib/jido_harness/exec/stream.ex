@@ -5,6 +5,9 @@ defmodule Jido.Harness.Exec.Stream do
 
   alias Jido.Harness.Exec.{Error, ProviderRuntime, Result}
 
+  @doc """
+  Runs a provider command via `Jido.Shell.StreamJson` and returns summarized stream results.
+  """
   @spec run_stream(atom(), String.t(), String.t(), String.t() | keyword()) ::
           {:ok, map()} | {:error, term()}
   def run_stream(provider, session_id, cwd, command)
@@ -43,7 +46,7 @@ defmodule Jido.Harness.Exec.Stream do
                on_raw_line: on_raw_line,
                on_heartbeat: on_heartbeat
              ) do
-        success = Result.stream_success?(provider, events, contract.success_markers || [])
+        success = Result.stream_success?(provider, events, contract.success_markers)
         result_text = Result.extract_result_text(events, output)
 
         {:ok,

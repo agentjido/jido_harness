@@ -10,20 +10,24 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   @env_var_name_regex ~r/^[A-Za-z_][A-Za-z0-9_]*$/
   @tool_name_regex ~r/^[A-Za-z0-9._+-]+$/
 
+  @doc """
+  Loads and validates the provider runtime contract from the adapter.
+  """
   @spec provider_runtime_contract(atom()) :: {:ok, RuntimeContract.t()} | {:error, term()}
   def provider_runtime_contract(provider) when is_atom(provider) do
     with {:ok, module} <- Registry.lookup(provider) do
-      contract =
-        if function_exported?(module, :runtime_contract, 0) do
-          module.runtime_contract()
-        else
-          default_runtime_contract(provider)
-        end
-
-      normalize_contract(contract, provider)
+      with :ok <- ensure_runtime_contract_callback(module, provider),
+           {:ok, contract} <- safe_runtime_contract(module, provider),
+           {:ok, normalized} <- normalize_contract(contract, provider),
+           :ok <- ensure_command_templates(normalized, provider) do
+        {:ok, normalized}
+      end
     end
   end
 
+  @doc """
+  Validates provider runtime prerequisites from the adapter contract.
+  """
   @spec validate_provider_runtime(atom(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def validate_provider_runtime(provider, session_id, opts \\ [])
       when is_atom(provider) and is_binary(session_id) and is_list(opts) do
@@ -57,6 +61,9 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     end
   end
 
+  @doc """
+  Executes provider install/auth bootstrap steps and optional post-validation.
+  """
   @spec bootstrap_provider_runtime(atom(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def bootstrap_provider_runtime(provider, session_id, opts \\ [])
       when is_atom(provider) and is_binary(session_id) and is_list(opts) do
@@ -91,6 +98,9 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     end
   end
 
+  @doc """
+  Builds a provider CLI command for `:triage` or `:coding` from contract templates.
+  """
   @spec build_command(atom(), :triage | :coding, String.t()) :: {:ok, String.t()} | {:error, term()}
   def build_command(provider, phase, prompt_file)
       when is_atom(provider) and phase in [:triage, :coding] and is_binary(prompt_file) do
@@ -101,14 +111,12 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
           :coding -> contract.coding_command_template
         end
 
-      command = template || default_command_template(provider, phase)
-
-      if is_binary(command) and String.trim(command) != "" do
+      if is_binary(template) and String.trim(template) != "" do
         escaped = Exec.escape_path(prompt_file)
         prompt_expr = "$(cat #{escaped})"
 
         {:ok,
-         command
+         template
          |> String.replace("{{prompt_file}}", escaped)
          |> String.replace("{{prompt}}", prompt_expr)}
       else
@@ -151,8 +159,8 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp validate_env_contract(contract, shell_agent_mod, session_id, timeout) do
-    all = contract.host_env_required_all || []
-    any = contract.host_env_required_any || []
+    all = contract.host_env_required_all
+    any = contract.host_env_required_any
 
     with {:ok, all_results} <- check_env_vars(shell_agent_mod, session_id, all, timeout),
          {:ok, any_results} <- check_env_vars(shell_agent_mod, session_id, any, timeout) do
@@ -168,7 +176,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp validate_tool_contract(contract, shell_agent_mod, session_id, timeout) do
-    (contract.runtime_tools_required || [])
+    contract.runtime_tools_required
     |> Enum.reduce_while({:ok, %{}}, fn tool, {:ok, acc} ->
       tool_name = to_string(tool)
 
@@ -187,7 +195,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp validate_compatibility_probes(contract, shell_agent_mod, session_id, cwd, timeout) do
-    probes = contract.compatibility_probes || []
+    probes = contract.compatibility_probes
 
     probes
     |> Enum.reduce_while({:ok, []}, fn probe, {:ok, acc} ->
@@ -246,7 +254,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp execute_install_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
-    steps = contract.install_steps || []
+    steps = contract.install_steps
 
     steps
     |> Enum.reduce_while({:ok, []}, fn step, {:ok, acc} ->
@@ -298,7 +306,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp execute_auth_bootstrap_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
-    steps = contract.auth_bootstrap_steps || []
+    steps = contract.auth_bootstrap_steps
 
     steps
     |> Enum.reduce_while({:ok, []}, fn command, {:ok, acc} ->
@@ -405,51 +413,56 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     missing_env_all ++ missing_env_any ++ missing_tools ++ missing_probes
   end
 
-  defp default_runtime_contract(provider) do
-    RuntimeContract.new!(%{
-      provider: provider,
-      host_env_required_any: [],
-      host_env_required_all: [],
-      sprite_env_forward: ["GH_TOKEN", "GITHUB_TOKEN"],
-      sprite_env_injected: %{
-        "GH_PROMPT_DISABLED" => "1",
-        "GIT_TERMINAL_PROMPT" => "0"
-      },
-      runtime_tools_required: [],
-      compatibility_probes: [],
-      install_steps: [],
-      auth_bootstrap_steps: [],
-      triage_command_template: nil,
-      coding_command_template: nil,
-      success_markers: []
-    })
+  defp ensure_runtime_contract_callback(module, provider) do
+    if function_exported?(module, :runtime_contract, 0) do
+      :ok
+    else
+      {:error,
+       Error.invalid("Provider adapter must define runtime_contract/0", %{
+         field: :runtime_contract,
+         details: %{provider: provider, module: inspect(module)}
+       })}
+    end
   end
 
-  defp default_command_template(:claude, _phase) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 180 claude -p --output-format stream-json --include-partial-messages --no-session-persistence --verbose --dangerously-skip-permissions \"{{prompt}}\"; else claude -p --output-format stream-json --include-partial-messages --no-session-persistence --verbose --dangerously-skip-permissions \"{{prompt}}\"; fi"
+  defp safe_runtime_contract(module, provider) do
+    try do
+      {:ok, module.runtime_contract()}
+    rescue
+      reason ->
+        {:error,
+         Error.execution("Failed to fetch provider runtime contract", %{
+           provider: provider,
+           module: inspect(module),
+           reason: reason
+         })}
+    end
   end
 
-  defp default_command_template(:amp, _phase) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 180 amp -x --stream-json --dangerously-allow-all --no-color < {{prompt_file}}; else amp -x --stream-json --dangerously-allow-all --no-color < {{prompt_file}}; fi"
+  defp ensure_command_templates(contract, provider) do
+    missing =
+      []
+      |> maybe_require_template(contract.triage_command_template, :triage_command_template)
+      |> maybe_require_template(contract.coding_command_template, :coding_command_template)
+
+    case missing do
+      [] ->
+        :ok
+
+      fields ->
+        {:error,
+         Error.invalid("Provider runtime contract must include command templates", %{
+           field: :runtime_contract,
+           details: %{provider: provider, missing_fields: fields}
+         })}
+    end
   end
 
-  defp default_command_template(:codex, :triage) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 120 codex exec --json --full-auto - < {{prompt_file}}; else codex exec --json --full-auto - < {{prompt_file}}; fi"
+  defp maybe_require_template(acc, value, field) when is_binary(value) do
+    if String.trim(value) == "", do: acc ++ [field], else: acc
   end
 
-  defp default_command_template(:codex, :coding) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 180 codex exec --json --dangerously-bypass-approvals-and-sandbox - < {{prompt_file}}; else codex exec --json --dangerously-bypass-approvals-and-sandbox - < {{prompt_file}}; fi"
-  end
-
-  defp default_command_template(:gemini, :triage) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 120 gemini --output-format stream-json \"{{prompt}}\"; else gemini --output-format stream-json \"{{prompt}}\"; fi"
-  end
-
-  defp default_command_template(:gemini, :coding) do
-    "if command -v timeout >/dev/null 2>&1; then timeout 180 gemini --output-format stream-json --approval-mode yolo \"{{prompt}}\"; else gemini --output-format stream-json --approval-mode yolo \"{{prompt}}\"; fi"
-  end
-
-  defp default_command_template(_provider, _phase), do: nil
+  defp maybe_require_template(acc, _value, field), do: acc ++ [field]
 
   defp map_get(map, key, default \\ nil) when is_map(map) and is_atom(key) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
@@ -502,11 +515,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     value != "" and Regex.match?(@env_var_name_regex, value)
   end
 
-  defp valid_env_var_name?(_), do: false
-
   defp valid_tool_name?(value) when is_binary(value) do
     value != "" and Regex.match?(@tool_name_regex, value)
   end
-
-  defp valid_tool_name?(_), do: false
 end

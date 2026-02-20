@@ -92,8 +92,32 @@ end
 
 defmodule Jido.Harness.Test.NoCancelStub do
   @moduledoc false
+  @behaviour Jido.Harness.Adapter
 
-  def run(prompt, opts) when is_binary(prompt) and is_list(opts), do: {:ok, "done"}
+  alias Jido.Harness.{Capabilities, Event, RunRequest}
+
+  def id, do: :no_cancel
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{} = request, _opts) do
+    {:ok,
+     [
+       Event.new!(%{
+         type: :session_completed,
+         provider: :no_cancel,
+         session_id: "session-no-cancel",
+         timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+         payload: %{"prompt" => request.prompt},
+         raw: nil
+       })
+     ]}
+  end
 end
 
 defmodule Jido.Harness.Test.AtomMapStreamRunnerStub do
@@ -114,14 +138,40 @@ end
 defmodule Jido.Harness.Test.ErrorRunnerStub do
   @moduledoc false
 
-  def run(prompt, opts) when is_binary(prompt) and is_list(opts), do: {:error, :boom}
+  @behaviour Jido.Harness.Adapter
+
+  alias Jido.Harness.{Capabilities, RunRequest}
+
+  def id, do: :error_runner
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{}, _opts), do: {:error, :boom}
 end
 
 defmodule Jido.Harness.Test.InvalidEventRunnerStub do
   @moduledoc false
 
-  def run(prompt, opts) when is_binary(prompt) and is_list(opts) do
-    send(self(), {:invalid_event_runner_run, prompt, opts})
+  @behaviour Jido.Harness.Adapter
+
+  alias Jido.Harness.{Capabilities, RunRequest}
+
+  def id, do: :invalid_events
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{} = request, opts) do
+    send(self(), {:invalid_event_runner_run, request.prompt, opts})
     {:ok, [%{type: :bad, payload: :not_a_map}, %{"type" => 123, "payload" => :not_a_map}]}
   end
 end
@@ -202,6 +252,59 @@ defmodule Jido.Harness.Test.InvalidEnvRuntimeAdapterStub do
       install_steps: [],
       auth_bootstrap_steps: [],
       triage_command_template: "runtime --triage {{prompt}}",
+      coding_command_template: "runtime --coding {{prompt}}",
+      success_markers: []
+    })
+  end
+end
+
+defmodule Jido.Harness.Test.NoRuntimeContractAdapterStub do
+  @moduledoc false
+  @behaviour Jido.Harness.Adapter
+
+  alias Jido.Harness.{Capabilities, RunRequest}
+
+  def id, do: :runtime_missing_contract
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{}, _opts), do: {:ok, []}
+end
+
+defmodule Jido.Harness.Test.MissingTemplatesRuntimeAdapterStub do
+  @moduledoc false
+  @behaviour Jido.Harness.Adapter
+
+  alias Jido.Harness.{Capabilities, RunRequest, RuntimeContract}
+
+  def id, do: :runtime_missing_templates
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      cancellation?: false
+    }
+  end
+
+  def run(%RunRequest{}, _opts), do: {:ok, []}
+
+  def runtime_contract do
+    RuntimeContract.new!(%{
+      provider: :runtime_missing_templates,
+      host_env_required_any: [],
+      host_env_required_all: [],
+      sprite_env_forward: [],
+      sprite_env_injected: %{},
+      runtime_tools_required: [],
+      compatibility_probes: [],
+      install_steps: [],
+      auth_bootstrap_steps: [],
+      triage_command_template: nil,
       coding_command_template: "runtime --coding {{prompt}}",
       success_markers: []
     })

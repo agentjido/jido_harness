@@ -1,6 +1,9 @@
 defmodule Jido.Harness.Exec.Result do
   @moduledoc false
 
+  @doc """
+  Extracts final human-readable result text from streamed JSON events or raw output.
+  """
   @spec extract_result_text([map()], String.t() | nil) :: String.t() | nil
   def extract_result_text(events, raw_output \\ nil) when is_list(events) do
     result_text =
@@ -28,6 +31,9 @@ defmodule Jido.Harness.Exec.Result do
     result_text || raw_output_fallback(raw_output)
   end
 
+  @doc """
+  Determines stream success using provider markers, with provider-specific fallback heuristics.
+  """
   @spec stream_success?(atom(), [map()], list(map())) :: boolean()
   def stream_success?(provider, events, markers) when is_atom(provider) and is_list(events) and is_list(markers) do
     if markers == [] do

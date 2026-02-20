@@ -7,6 +7,8 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     ExecShellAgentStub,
     ExecShellState,
     InvalidEnvRuntimeAdapterStub,
+    MissingTemplatesRuntimeAdapterStub,
+    NoRuntimeContractAdapterStub,
     RuntimeAdapterStub
   }
 
@@ -60,6 +62,42 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
              )
 
     assert message =~ "Invalid env var name"
+  end
+
+  test "provider_runtime_contract fails when adapter does not expose runtime_contract/0" do
+    Application.put_env(:jido_harness, :providers, %{runtime_missing_contract: NoRuntimeContractAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+
+    assert {:error, %Jido.Harness.Error.InvalidInputError{message: message}} =
+             Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:runtime_missing_contract)
+
+    assert message =~ "must define runtime_contract/0"
+  end
+
+  test "provider_runtime_contract fails when required command templates are missing" do
+    Application.put_env(:jido_harness, :providers, %{runtime_missing_templates: MissingTemplatesRuntimeAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+
+    assert {:error, %Jido.Harness.Error.InvalidInputError{message: message, details: details}} =
+             Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:runtime_missing_templates)
+
+    assert message =~ "must include command templates"
+    assert :triage_command_template in details[:missing_fields]
+  end
+
+  test "build_command uses adapter runtime contract templates only" do
+    Application.put_env(:jido_harness, :providers, %{runtime_stub: RuntimeAdapterStub})
+    Application.put_env(:jido_harness, :provider_candidates, %{})
+
+    assert {:ok, command} =
+             Jido.Harness.Exec.ProviderRuntime.build_command(
+               :runtime_stub,
+               :coding,
+               "/tmp/prompt.txt"
+             )
+
+    assert command =~ "runtime --coding"
+    assert command =~ "$(cat"
   end
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
