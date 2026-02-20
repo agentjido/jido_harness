@@ -39,7 +39,7 @@ defmodule Jido.Harness.Exec.Preflight do
   end
 
   defp tool_present?(shell_agent_mod, session_id, tool, timeout) do
-    cmd = "command -v #{tool} >/dev/null 2>&1 && echo present || echo missing"
+    cmd = "command -v #{Exec.escape_path(tool)} >/dev/null 2>&1 && echo present || echo missing"
 
     case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
       {:ok, "present"} -> true

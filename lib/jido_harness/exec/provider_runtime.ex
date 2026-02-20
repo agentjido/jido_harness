@@ -7,6 +7,9 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   alias Jido.Harness.Exec.Error
   alias Jido.Shell.Exec
 
+  @env_var_name_regex ~r/^[A-Za-z_][A-Za-z0-9_]*$/
+  @tool_name_regex ~r/^[A-Za-z0-9._+-]+$/
+
   @spec provider_runtime_contract(atom()) :: {:ok, RuntimeContract.t()} | {:error, term()}
   def provider_runtime_contract(provider) when is_atom(provider) do
     with {:ok, module} <- Registry.lookup(provider) do
@@ -60,18 +63,30 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     shell_agent_mod = Keyword.get(opts, :shell_agent_mod, Jido.Shell.Agent)
     timeout = Keyword.get(opts, :timeout, 60_000)
     cwd = Keyword.get(opts, :cwd)
+    validate_after_bootstrap? = Keyword.get(opts, :validate_after_bootstrap, true)
+    validation_timeout = Keyword.get(opts, :validation_timeout, timeout)
 
     with {:ok, contract} <- provider_runtime_contract(provider),
          {:ok, install_results} <-
            execute_install_steps(contract, shell_agent_mod, session_id, cwd, timeout),
          {:ok, auth_results} <-
-           execute_auth_bootstrap_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
+           execute_auth_bootstrap_steps(contract, shell_agent_mod, session_id, cwd, timeout),
+         {:ok, post_validation} <-
+           maybe_validate_after_bootstrap(
+             validate_after_bootstrap?,
+             provider,
+             session_id,
+             shell_agent_mod,
+             cwd,
+             validation_timeout
+           ) do
       {:ok,
        %{
          provider: provider,
          runtime_contract: contract,
          install_results: install_results,
-         auth_bootstrap_results: auth_results
+         auth_bootstrap_results: auth_results,
+         post_validation: post_validation
        }}
     end
   end
@@ -99,8 +114,8 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
       else
         {:error,
          Error.invalid("Missing command template for provider phase", %{
-           provider: provider,
-           phase: phase
+           field: :command_template,
+           details: %{provider: provider, phase: phase}
          })}
       end
     end
@@ -121,14 +136,18 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
       {:error, reason} ->
         {:error,
          Error.invalid("Invalid provider runtime contract", %{
-           provider: provider,
-           reason: reason
+           field: :runtime_contract,
+           details: %{provider: provider, reason: reason}
          })}
     end
   end
 
   defp normalize_contract(_contract, provider) do
-    {:error, Error.invalid("Runtime contract must be a map or struct", %{provider: provider})}
+    {:error,
+     Error.invalid("Runtime contract must be a map or struct", %{
+       field: :runtime_contract,
+       details: %{provider: provider}
+     })}
   end
 
   defp validate_env_contract(contract, shell_agent_mod, session_id, timeout) do
@@ -149,14 +168,22 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp validate_tool_contract(contract, shell_agent_mod, session_id, timeout) do
-    results =
-      (contract.runtime_tools_required || [])
-      |> Enum.map(fn tool ->
-        {tool, tool_present?(shell_agent_mod, session_id, tool, timeout)}
-      end)
-      |> Enum.into(%{})
+    (contract.runtime_tools_required || [])
+    |> Enum.reduce_while({:ok, %{}}, fn tool, {:ok, acc} ->
+      tool_name = to_string(tool)
 
-    {:ok, results}
+      if valid_tool_name?(tool_name) do
+        {:cont, {:ok, Map.put(acc, tool_name, tool_present?(shell_agent_mod, session_id, tool_name, timeout))}}
+      else
+        {:halt,
+         {:error,
+          Error.invalid("Invalid runtime tool name", %{
+            field: :runtime_tools_required,
+            value: tool,
+            details: %{tool: tool}
+          })}}
+      end
+    end)
   end
 
   defp validate_compatibility_probes(contract, shell_agent_mod, session_id, cwd, timeout) do
@@ -182,7 +209,11 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     expect_any = normalize_list(map_get(probe, :expect_any, []))
 
     if not is_binary(command) or String.trim(command) == "" do
-      {:error, Error.invalid("Probe command is required", %{probe: name})}
+      {:error,
+       Error.invalid("Probe command is required", %{
+         field: :compatibility_probes,
+         details: %{probe: name}
+       })}
     else
       runner =
         if is_binary(cwd) and cwd != "" do
@@ -211,7 +242,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp run_probe(_probe, _shell_agent_mod, _session_id, _cwd, _timeout) do
-    {:error, Error.invalid("Probe must be a map", %{})}
+    {:error, Error.invalid("Probe must be a map", %{field: :compatibility_probes})}
   end
 
   defp execute_install_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
@@ -237,7 +268,19 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
 
     cond do
       not is_binary(command) or String.trim(command) == "" ->
-        {:error, Error.invalid("Install step command is required", %{step: step})}
+        {:error,
+         Error.invalid("Install step command is required", %{
+           field: :install_steps,
+           details: %{step: step}
+         })}
+
+      is_binary(tool) and not valid_tool_name?(tool) ->
+        {:error,
+         Error.invalid("Install step tool name is invalid", %{
+           field: :install_steps,
+           value: tool,
+           details: %{tool: tool}
+         })}
 
       when_missing? == true and is_binary(tool) and tool_present?(shell_agent_mod, session_id, tool, timeout) ->
         {:ok, %{tool: tool, status: :skipped, reason: :already_present}}
@@ -251,7 +294,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp run_install_step(_step, _shell_agent_mod, _session_id, _cwd, _timeout) do
-    {:error, Error.invalid("Install step must be a map", %{})}
+    {:error, Error.invalid("Install step must be a map", %{field: :install_steps})}
   end
 
   defp execute_auth_bootstrap_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
@@ -261,11 +304,20 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     |> Enum.reduce_while({:ok, []}, fn command, {:ok, acc} ->
       if is_binary(command) and String.trim(command) != "" do
         case run_command(shell_agent_mod, session_id, cwd, command, timeout) do
-          {:ok, output} -> {:cont, {:ok, [%{command: command, status: :ok, output: output} | acc]}}
-          {:error, reason} -> {:halt, {:error, Error.execution("Auth bootstrap failed", %{command: command, reason: reason})}}
+          {:ok, output} ->
+            {:cont, {:ok, [%{command: command, status: :ok, output: output} | acc]}}
+
+          {:error, reason} ->
+            {:halt, {:error, Error.execution("Auth bootstrap failed", %{command: command, reason: reason})}}
         end
       else
-        {:halt, {:error, Error.invalid("Auth bootstrap step must be a non-empty command", %{step: command})}}
+        {:halt,
+         {:error,
+          Error.invalid("Auth bootstrap step must be a non-empty command", %{
+            field: :auth_bootstrap_steps,
+            value: command,
+            details: %{step: command}
+          })}}
       end
     end)
     |> case do
@@ -285,23 +337,39 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   defp check_env_vars(shell_agent_mod, session_id, keys, timeout) do
     keys
     |> Enum.reduce_while({:ok, %{}}, fn key, {:ok, acc} ->
-      cmd = "if [ -n \"${#{key}:-}\" ]; then echo present; else echo missing; fi"
+      env_key = to_string(key)
 
-      case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-        {:ok, "present"} -> {:cont, {:ok, Map.put(acc, key, true)}}
-        {:ok, "missing"} -> {:cont, {:ok, Map.put(acc, key, false)}}
-        {:ok, _} -> {:cont, {:ok, Map.put(acc, key, false)}}
-        {:error, reason} -> {:halt, {:error, Error.execution("Env check failed", %{key: key, reason: reason})}}
+      if valid_env_var_name?(env_key) do
+        cmd = "if [ -n \"${#{env_key}:-}\" ]; then echo present; else echo missing; fi"
+
+        case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
+          {:ok, "present"} -> {:cont, {:ok, Map.put(acc, env_key, true)}}
+          {:ok, "missing"} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
+          {:ok, _} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
+          {:error, reason} -> {:halt, {:error, Error.execution("Env check failed", %{key: env_key, reason: reason})}}
+        end
+      else
+        {:halt,
+         {:error,
+          Error.invalid("Invalid env var name in runtime contract", %{
+            field: :runtime_contract_env,
+            value: key,
+            details: %{key: key}
+          })}}
       end
     end)
   end
 
   defp tool_present?(shell_agent_mod, session_id, tool, timeout) do
-    cmd = "command -v #{tool} >/dev/null 2>&1 && echo present || echo missing"
+    if valid_tool_name?(tool) do
+      cmd = "command -v #{Exec.escape_path(tool)} >/dev/null 2>&1 && echo present || echo missing"
 
-    case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-      {:ok, "present"} -> true
-      _ -> false
+      case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
+        {:ok, "present"} -> true
+        _ -> false
+      end
+    else
+      false
     end
   end
 
@@ -406,4 +474,39 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
       _, acc -> acc
     end)
   end
+
+  defp maybe_validate_after_bootstrap(false, _provider, _session_id, _shell_agent_mod, _cwd, _timeout),
+    do: {:ok, nil}
+
+  defp maybe_validate_after_bootstrap(true, provider, session_id, shell_agent_mod, cwd, timeout) do
+    case validate_provider_runtime(
+           provider,
+           session_id,
+           shell_agent_mod: shell_agent_mod,
+           cwd: cwd,
+           timeout: timeout
+         ) do
+      {:ok, validated} ->
+        {:ok, validated.checks}
+
+      {:error, reason} ->
+        {:error,
+         Error.execution("Provider runtime bootstrap verification failed", %{
+           provider: provider,
+           reason: reason
+         })}
+    end
+  end
+
+  defp valid_env_var_name?(value) when is_binary(value) do
+    value != "" and Regex.match?(@env_var_name_regex, value)
+  end
+
+  defp valid_env_var_name?(_), do: false
+
+  defp valid_tool_name?(value) when is_binary(value) do
+    value != "" and Regex.match?(@tool_name_regex, value)
+  end
+
+  defp valid_tool_name?(_), do: false
 end
