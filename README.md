@@ -22,7 +22,7 @@ end
 # Optional: configure provider modules explicitly
 config :jido_harness, :providers, %{
   codex: Jido.Codex.Adapter,
-  gemini: JidoGemini.Adapter
+  gemini: Jido.Gemini.Adapter
 }
 
 # Optional: set a default provider

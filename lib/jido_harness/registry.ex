@@ -115,18 +115,10 @@ defmodule Jido.Harness.Registry do
 
   defp default_provider_candidates do
     %{
-      codex: [Module.concat([Jido, Codex, Adapter]), Module.concat([Jido, Codex]), Module.concat([JidoCodex, Adapter])],
-      amp: [Module.concat([Jido, Amp, Adapter]), Module.concat([Jido, Amp]), Module.concat([JidoAmp, Adapter])],
-      claude: [
-        Module.concat([Jido, Claude, Adapter]),
-        Module.concat([JidoClaude, Adapter]),
-        Module.concat([JidoClaude])
-      ],
-      gemini: [
-        Module.concat([Jido, Gemini, Adapter]),
-        Module.concat([JidoGemini, Adapter]),
-        Module.concat([JidoGemini])
-      ]
+      codex: [Jido.Codex.Adapter, Jido.Codex],
+      amp: [Jido.Amp.Adapter, Jido.Amp],
+      claude: [Jido.Claude.Adapter, Jido.Claude],
+      gemini: [Jido.Gemini.Adapter, Jido.Gemini]
     }
   end
 end
