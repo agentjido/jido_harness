@@ -55,15 +55,24 @@ defmodule Jido.Harness.AdapterContract do
         end
       end
 
-      test "adapter contract: capabilities/0 returns capability map" do
+      test "adapter contract: capabilities/0 returns capability struct" do
         adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
         assert Code.ensure_loaded?(adapter)
         assert function_exported?(adapter, :capabilities, 0)
 
         caps = adapter.capabilities()
-        assert is_map(caps)
+        assert %Jido.Harness.Capabilities{} = caps
 
-        for key <- [:streaming?, :tool_calls?, :tool_results?, :thinking?, :cancellation?] do
+        for key <- [
+              :streaming?,
+              :tool_calls?,
+              :tool_results?,
+              :thinking?,
+              :resume?,
+              :usage?,
+              :file_changes?,
+              :cancellation?
+            ] do
           assert is_boolean(Map.get(caps, key))
         end
       end
@@ -71,19 +80,17 @@ defmodule Jido.Harness.AdapterContract do
       test "adapter contract: runtime_contract/0 is complete" do
         adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
         assert Code.ensure_loaded?(adapter)
-
-        if function_exported?(adapter, :runtime_contract, 0) do
-          contract = apply(adapter, :runtime_contract, [])
-          assert %RuntimeContract{} = contract
-          assert is_atom(contract.provider)
-          assert is_list(contract.runtime_tools_required)
-          assert is_list(contract.compatibility_probes)
-          assert is_list(contract.install_steps)
-          assert is_list(contract.auth_bootstrap_steps)
-          assert is_binary(contract.triage_command_template)
-          assert is_binary(contract.coding_command_template)
-          assert is_list(contract.success_markers)
-        end
+        assert function_exported?(adapter, :runtime_contract, 0)
+        contract = apply(adapter, :runtime_contract, [])
+        assert %RuntimeContract{} = contract
+        assert is_atom(contract.provider)
+        assert is_list(contract.runtime_tools_required)
+        assert is_list(contract.compatibility_probes)
+        assert is_list(contract.install_steps)
+        assert is_list(contract.auth_bootstrap_steps)
+        assert is_binary(contract.triage_command_template)
+        assert is_binary(contract.coding_command_template)
+        assert is_list(contract.success_markers)
       end
 
       if check_run do

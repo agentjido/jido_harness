@@ -6,18 +6,16 @@ defmodule Jido.HarnessTest do
     ErrorRunnerStub,
     InvalidEventRunnerStub,
     NoCancelStub,
-    UnsupportedRunnerStub
+    NoRuntimeContractAdapterStub
   }
 
   setup do
     old_providers = Application.get_env(:jido_harness, :providers)
     old_default = Application.get_env(:jido_harness, :default_provider)
-    old_candidates = Application.get_env(:jido_harness, :provider_candidates)
 
     on_exit(fn ->
       restore_env(:jido_harness, :providers, old_providers)
       restore_env(:jido_harness, :default_provider, old_default)
-      restore_env(:jido_harness, :provider_candidates, old_candidates)
     end)
 
     :ok
@@ -25,21 +23,20 @@ defmodule Jido.HarnessTest do
 
   test "run/3 returns error for unavailable provider" do
     Application.put_env(:jido_harness, :providers, %{})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :nonexistent}} =
              Jido.Harness.run(:nonexistent, "hello")
   end
 
-  test "run/2 returns a validation error when no default provider exists" do
+  test "run/2 returns validation error when no default provider is configured" do
     Application.put_env(:jido_harness, :providers, %{})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
     Application.delete_env(:jido_harness, :default_provider)
 
-    assert {:error, %Jido.Harness.Error.InvalidInputError{field: :default_provider}} = Jido.Harness.run("hello", [])
+    assert {:error, %Jido.Harness.Error.InvalidInputError{field: :default_provider}} =
+             Jido.Harness.run("hello", [])
   end
 
-  test "run/3 delegates to adapter-style modules" do
+  test "run/3 delegates to configured adapter modules" do
     Application.put_env(:jido_harness, :providers, %{stub: AdapterStub})
     request_opts = [cwd: "/tmp/project"]
     runtime_opts = [transport: :exec]
@@ -53,7 +50,7 @@ defmodule Jido.HarnessTest do
     assert [%Jido.Harness.Event{type: :session_started}] = events
   end
 
-  test "run/2 uses default provider" do
+  test "run/2 uses configured default provider" do
     Application.put_env(:jido_harness, :providers, %{stub: AdapterStub})
     Application.put_env(:jido_harness, :default_provider, :stub)
 
@@ -73,16 +70,15 @@ defmodule Jido.HarnessTest do
   end
 
   test "run_request/3 returns provider-not-found for non-adapter modules" do
-    Application.put_env(:jido_harness, :providers, %{unsupported: UnsupportedRunnerStub})
+    Application.put_env(:jido_harness, :providers, %{unsupported: NoRuntimeContractAdapterStub})
     request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
     assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :unsupported}} =
              Jido.Harness.run_request(:unsupported, request, [])
   end
 
-  test "run_request/2 returns a validation error when no default provider exists" do
+  test "run_request/2 returns validation error when no default provider is configured" do
     Application.put_env(:jido_harness, :providers, %{})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
     Application.delete_env(:jido_harness, :default_provider)
     request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
@@ -99,7 +95,7 @@ defmodule Jido.HarnessTest do
   end
 
   test "capabilities/1 returns provider-not-found for non-adapter modules" do
-    Application.put_env(:jido_harness, :providers, %{unsupported: UnsupportedRunnerStub})
+    Application.put_env(:jido_harness, :providers, %{unsupported: NoRuntimeContractAdapterStub})
 
     assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :unsupported}} =
              Jido.Harness.capabilities(:unsupported)
@@ -125,26 +121,16 @@ defmodule Jido.HarnessTest do
 
   test "capabilities/1 returns provider-not-found for missing providers" do
     Application.put_env(:jido_harness, :providers, %{})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
-
     assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :missing}} = Jido.Harness.capabilities(:missing)
   end
 
   test "providers/0 returns provider metadata list" do
     Application.put_env(:jido_harness, :providers, %{
-      stub: AdapterStub,
-      codex: AdapterStub,
-      amp: AdapterStub,
-      claude: AdapterStub,
-      gemini: AdapterStub
+      stub: AdapterStub
     })
 
     providers = Jido.Harness.providers()
     assert Enum.any?(providers, &(&1.id == :stub))
-    assert Enum.any?(providers, &(&1.id == :codex and &1.docs_url == "https://hex.pm/packages/jido_codex"))
-    assert Enum.any?(providers, &(&1.id == :amp and &1.docs_url == "https://hex.pm/packages/jido_amp"))
-    assert Enum.any?(providers, &(&1.id == :claude and &1.docs_url == "https://hex.pm/packages/jido_claude"))
-    assert Enum.any?(providers, &(&1.id == :gemini and &1.docs_url == "https://hex.pm/packages/jido_gemini"))
   end
 
   test "default_provider/0 delegates to registry default provider" do
@@ -158,13 +144,15 @@ defmodule Jido.HarnessTest do
     assert {:error, :boom} = Jido.Harness.run(:error_runner, "hello")
   end
 
-  test "run/3 falls back when provider emits invalid event shapes" do
+  test "run/3 enforces stream entries are normalized events" do
     Application.put_env(:jido_harness, :providers, %{invalid_events: InvalidEventRunnerStub})
-    assert {:ok, stream} = Jido.Harness.run(:invalid_events, "hello")
-    events = Enum.to_list(stream)
 
+    assert {:ok, stream} = Jido.Harness.run(:invalid_events, "hello")
     assert_receive {:invalid_event_runner_run, "hello", _opts}
-    assert Enum.all?(events, &(&1.type == :provider_event))
+
+    assert_raise ArgumentError, fn ->
+      Enum.to_list(stream)
+    end
   end
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)

@@ -8,18 +8,15 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     ExecShellState,
     InvalidEnvRuntimeAdapterStub,
     MissingTemplatesRuntimeAdapterStub,
-    NoRuntimeContractAdapterStub,
     OpenCodeRuntimeAdapterStub,
     RuntimeAdapterStub
   }
 
   setup do
     old_providers = Application.get_env(:jido_harness, :providers)
-    old_candidates = Application.get_env(:jido_harness, :provider_candidates)
 
     on_exit(fn ->
       restore_env(:jido_harness, :providers, old_providers)
-      restore_env(:jido_harness, :provider_candidates, old_candidates)
     end)
 
     ExecShellState.reset!(%{
@@ -32,7 +29,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "bootstrap_provider_runtime revalidates provider requirements after bootstrap" do
     Application.put_env(:jido_harness, :providers, %{runtime_stub: RuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:ok, result} =
              Exec.bootstrap_provider_runtime(
@@ -52,7 +48,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "validate_provider_runtime rejects invalid env var names from runtime contract" do
     Application.put_env(:jido_harness, :providers, %{runtime_invalid_env: InvalidEnvRuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:error, %Jido.Harness.Error.InvalidInputError{message: message}} =
              Exec.validate_provider_runtime(
@@ -65,19 +60,8 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     assert message =~ "Invalid env var name"
   end
 
-  test "provider_runtime_contract fails when adapter does not expose runtime_contract/0" do
-    Application.put_env(:jido_harness, :providers, %{runtime_missing_contract: NoRuntimeContractAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
-
-    assert {:error, %Jido.Harness.Error.InvalidInputError{message: message}} =
-             Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:runtime_missing_contract)
-
-    assert message =~ "must define runtime_contract/0"
-  end
-
   test "provider_runtime_contract fails when required command templates are missing" do
     Application.put_env(:jido_harness, :providers, %{runtime_missing_templates: MissingTemplatesRuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:error, %Jido.Harness.Error.InvalidInputError{message: message, details: details}} =
              Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:runtime_missing_templates)
@@ -88,7 +72,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "build_command uses adapter runtime contract templates only" do
     Application.put_env(:jido_harness, :providers, %{runtime_stub: RuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:ok, command} =
              Jido.Harness.Exec.ProviderRuntime.build_command(
@@ -103,7 +86,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "provider_runtime_contract accepts opencode runtime contract shape" do
     Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:ok, contract} = Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:opencode)
     assert contract.provider == :opencode
@@ -114,7 +96,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "build_command renders opencode command templates with prompt file" do
     Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
 
     assert {:ok, command} =
              Jido.Harness.Exec.ProviderRuntime.build_command(
@@ -130,7 +111,6 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
 
   test "bootstrap_provider_runtime executes opencode auth bootstrap steps" do
     Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
-    Application.put_env(:jido_harness, :provider_candidates, %{})
     ExecShellState.set_tool("opencode", true)
     ExecShellState.set_tool("npm", true)
     ExecShellState.set_env("ZAI_API_KEY", "set")

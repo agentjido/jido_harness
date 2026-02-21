@@ -1,10 +1,35 @@
+defmodule Jido.Harness.Test.RuntimeContractStub do
+  @moduledoc false
+
+  alias Jido.Harness.RuntimeContract
+
+  @spec build(atom()) :: RuntimeContract.t()
+  def build(provider) when is_atom(provider) do
+    RuntimeContract.new!(%{
+      provider: provider,
+      host_env_required_any: [],
+      host_env_required_all: [],
+      sprite_env_forward: [],
+      sprite_env_injected: %{},
+      runtime_tools_required: [],
+      compatibility_probes: [],
+      install_steps: [],
+      auth_bootstrap_steps: [],
+      triage_command_template: "runtime --triage {{prompt}}",
+      coding_command_template: "runtime --coding {{prompt}}",
+      success_markers: []
+    })
+  end
+end
+
 defmodule Jido.Harness.Test.AdapterStub do
   @moduledoc false
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{Capabilities, Event, RunRequest}
+  alias Jido.Harness.Test.RuntimeContractStub
 
-  def id, do: :adapter_stub
+  def id, do: :stub
 
   def capabilities do
     %Capabilities{
@@ -34,6 +59,8 @@ defmodule Jido.Harness.Test.AdapterStub do
     send(self(), {:adapter_stub_cancel, session_id})
     :ok
   end
+
+  def runtime_contract, do: RuntimeContractStub.build(:stub)
 end
 
 defmodule Jido.Harness.Test.PromptRunnerStub do
@@ -95,6 +122,7 @@ defmodule Jido.Harness.Test.NoCancelStub do
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{Capabilities, Event, RunRequest}
+  alias Jido.Harness.Test.RuntimeContractStub
 
   def id, do: :no_cancel
 
@@ -118,6 +146,8 @@ defmodule Jido.Harness.Test.NoCancelStub do
        })
      ]}
   end
+
+  def runtime_contract, do: RuntimeContractStub.build(:no_cancel)
 end
 
 defmodule Jido.Harness.Test.AtomMapStreamRunnerStub do
@@ -141,6 +171,7 @@ defmodule Jido.Harness.Test.ErrorRunnerStub do
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{Capabilities, RunRequest}
+  alias Jido.Harness.Test.RuntimeContractStub
 
   def id, do: :error_runner
 
@@ -152,6 +183,8 @@ defmodule Jido.Harness.Test.ErrorRunnerStub do
   end
 
   def run(%RunRequest{}, _opts), do: {:error, :boom}
+
+  def runtime_contract, do: RuntimeContractStub.build(:error_runner)
 end
 
 defmodule Jido.Harness.Test.InvalidEventRunnerStub do
@@ -160,6 +193,7 @@ defmodule Jido.Harness.Test.InvalidEventRunnerStub do
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{Capabilities, RunRequest}
+  alias Jido.Harness.Test.RuntimeContractStub
 
   def id, do: :invalid_events
 
@@ -174,6 +208,8 @@ defmodule Jido.Harness.Test.InvalidEventRunnerStub do
     send(self(), {:invalid_event_runner_run, request.prompt, opts})
     {:ok, [%{type: :bad, payload: :not_a_map}, %{"type" => 123, "payload" => :not_a_map}]}
   end
+
+  def runtime_contract, do: RuntimeContractStub.build(:invalid_events)
 end
 
 defmodule Jido.Harness.Test.RuntimeAdapterStub do
@@ -325,8 +361,6 @@ end
 
 defmodule Jido.Harness.Test.NoRuntimeContractAdapterStub do
   @moduledoc false
-  @behaviour Jido.Harness.Adapter
-
   alias Jido.Harness.{Capabilities, RunRequest}
 
   def id, do: :runtime_missing_contract

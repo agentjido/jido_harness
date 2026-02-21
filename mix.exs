@@ -20,7 +20,13 @@ defmodule Jido.Harness.MixProject do
       homepage_url: @source_url,
       docs: [
         main: "Jido.Harness",
-        extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"],
+        extras: [
+          "README.md",
+          "CHANGELOG.md",
+          "CONTRIBUTING.md",
+          "docs/telemetry.md",
+          "docs/dependency_policy.md"
+        ],
         formatters: ["html"]
       ],
       test_coverage: [
@@ -54,6 +60,7 @@ defmodule Jido.Harness.MixProject do
           "README.md",
           "usage-rules.md",
           "config",
+          "docs",
           "lib",
           "mix.exs"
         ],
@@ -86,8 +93,9 @@ defmodule Jido.Harness.MixProject do
     [
       # Runtime
       {:zoi, "~> 0.17"},
-      {:splode, ">= 0.2.9 and < 0.4.0"},
+      {:splode, "~> 0.3.0"},
       {:jason, "~> 1.4"},
+      {:jido, "~> 2.0.0-rc.5"},
       {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
       {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
 

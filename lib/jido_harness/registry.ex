@@ -1,6 +1,6 @@
 defmodule Jido.Harness.Registry do
   @moduledoc """
-  Looks up provider adapter modules from configuration and runtime discovery.
+  Looks up provider adapter modules from explicit application configuration.
 
   ## Configuration
 
@@ -14,12 +14,21 @@ defmodule Jido.Harness.Registry do
 
   alias Jido.Harness.{Adapter, Error.ProviderNotFoundError}
 
-  @required_callbacks [id: 0, capabilities: 0, run: 2]
+  @required_callbacks [id: 0, capabilities: 0, run: 2, runtime_contract: 0]
+
+  @type diagnostic_entry :: %{
+          module: term(),
+          status: :accepted | :rejected,
+          reason:
+            atom()
+            | {:missing_callbacks, [{atom(), non_neg_integer()}]}
+            | {:id_mismatch, atom()}
+            | {:id_invalid, term()}
+            | {:id_unavailable, term()}
+        }
 
   @doc """
-  Returns all known provider bindings.
-
-  Values are adapter modules that conform to `Jido.Harness.Adapter`.
+  Returns all configured provider bindings that pass adapter conformance checks.
   """
   @spec providers() :: %{optional(atom()) => module()}
   def providers do
@@ -27,32 +36,16 @@ defmodule Jido.Harness.Registry do
   end
 
   @doc """
-  Returns provider discovery/configuration diagnostics.
-
-  Includes accepted and rejected candidates with reasons.
+  Returns provider configuration diagnostics.
   """
   @spec diagnostics() :: %{
-          discovered: %{optional(term()) => [map()]},
-          configured: %{optional(term()) => map()},
+          configured: %{optional(term()) => diagnostic_entry()},
           providers: %{optional(atom()) => module()}
         }
   def diagnostics do
-    discovered_diagnostics = discovered_provider_diagnostics()
     configured_diagnostics = configured_provider_diagnostics()
 
-    discovered =
-      discovered_diagnostics
-      |> Enum.reduce(%{}, fn {provider, entries}, acc ->
-        case {provider, Enum.find(entries, &(&1.status == :accepted))} do
-          {provider_atom, %{module: module}} when is_atom(provider_atom) ->
-            Map.put(acc, provider_atom, module)
-
-          _ ->
-            acc
-        end
-      end)
-
-    configured =
+    providers =
       configured_diagnostics
       |> Enum.reduce(%{}, fn
         {provider, %{status: :accepted, module: module}}, acc when is_atom(provider) ->
@@ -63,16 +56,13 @@ defmodule Jido.Harness.Registry do
       end)
 
     %{
-      discovered: discovered_diagnostics,
       configured: configured_diagnostics,
-      providers: Map.merge(discovered, configured)
+      providers: providers
     }
   end
 
   @doc """
-  Looks up the runtime module for a given provider atom.
-
-  Returns `{:ok, module}` or `{:error, Jido.Harness.Error.ProviderNotFoundError.t()}`.
+  Looks up the adapter module for a provider atom.
   """
   @spec lookup(atom()) :: {:ok, module()} | {:error, term()}
   def lookup(provider) when is_atom(provider) do
@@ -83,7 +73,8 @@ defmodule Jido.Harness.Registry do
       :error ->
         {:error,
          ProviderNotFoundError.exception(
-           message: "Provider #{inspect(provider)} is not available",
+           message:
+             "Provider #{inspect(provider)} is not available (explicit config required in :jido_harness, :providers)",
            provider: provider
          )}
     end
@@ -100,7 +91,7 @@ defmodule Jido.Harness.Registry do
 
   Resolution order:
   - `:jido_harness, :default_provider` (if available)
-  - first discovered/configured provider
+  - first configured provider key in sorted order
   """
   @spec default_provider() :: atom() | nil
   def default_provider do
@@ -108,16 +99,11 @@ defmodule Jido.Harness.Registry do
     provider_map = providers()
 
     cond do
-      is_atom(configured) and available?(configured) ->
+      is_atom(configured) and Map.has_key?(provider_map, configured) ->
         configured
 
       true ->
-        ordered =
-          provider_candidates()
-          |> Map.keys()
-          |> Enum.find(&Map.has_key?(provider_map, &1))
-
-        ordered || provider_map |> Map.keys() |> Enum.sort() |> List.first()
+        provider_map |> Map.keys() |> Enum.sort() |> List.first()
     end
   end
 
@@ -126,7 +112,7 @@ defmodule Jido.Harness.Registry do
     |> Application.get_env(:providers, %{})
     |> Enum.reduce(%{}, fn
       {provider, module}, acc when is_atom(provider) ->
-        Map.put(acc, provider, candidate_diagnostic(module))
+        Map.put(acc, provider, candidate_diagnostic(provider, module))
 
       {provider, module}, acc ->
         Map.put(acc, provider, %{
@@ -137,23 +123,8 @@ defmodule Jido.Harness.Registry do
     end)
   end
 
-  defp discovered_provider_diagnostics do
-    provider_candidates()
-    |> Enum.reduce(%{}, fn {provider, candidates}, acc ->
-      entries =
-        candidates
-        |> normalize_candidates()
-        |> Enum.map(&candidate_diagnostic/1)
-
-      Map.put(acc, provider, entries)
-    end)
-  end
-
-  defp normalize_candidates(candidates) when is_list(candidates), do: candidates
-  defp normalize_candidates(candidate), do: [candidate]
-
-  defp candidate_diagnostic(candidate) do
-    case ensure_adapter_candidate(candidate) do
+  defp candidate_diagnostic(provider, candidate) do
+    case ensure_adapter_candidate(provider, candidate) do
       {:ok, module} ->
         %{
           module: module,
@@ -170,9 +141,9 @@ defmodule Jido.Harness.Registry do
     end
   end
 
-  defp ensure_adapter_candidate(module) when not is_atom(module), do: {:error, :invalid_module}
+  defp ensure_adapter_candidate(_provider, module) when not is_atom(module), do: {:error, :invalid_module}
 
-  defp ensure_adapter_candidate(module) do
+  defp ensure_adapter_candidate(provider, module) do
     cond do
       not Code.ensure_loaded?(module) ->
         {:error, :module_not_loaded}
@@ -183,11 +154,29 @@ defmodule Jido.Harness.Registry do
       true ->
         missing = missing_required_callbacks(module)
 
-        if missing == [] do
-          {:ok, module}
-        else
+        if missing != [] do
           {:error, {:missing_callbacks, missing}}
+        else
+          ensure_provider_id_match(provider, module)
         end
+    end
+  end
+
+  defp ensure_provider_id_match(provider, module) do
+    try do
+      case module.id() do
+        ^provider ->
+          {:ok, module}
+
+        value when is_atom(value) ->
+          {:error, {:id_mismatch, value}}
+
+        value ->
+          {:error, {:id_invalid, value}}
+      end
+    rescue
+      reason ->
+        {:error, {:id_unavailable, reason}}
     end
   end
 
@@ -212,19 +201,5 @@ defmodule Jido.Harness.Registry do
   defp missing_required_callbacks(module) do
     @required_callbacks
     |> Enum.reject(fn {function, arity} -> function_exported?(module, function, arity) end)
-  end
-
-  defp provider_candidates do
-    Application.get_env(:jido_harness, :provider_candidates, default_provider_candidates())
-  end
-
-  defp default_provider_candidates do
-    %{
-      codex: [Jido.Codex.Adapter, Jido.Codex],
-      amp: [Jido.Amp.Adapter, Jido.Amp],
-      claude: [Jido.Claude.Adapter, Jido.Claude],
-      gemini: [Jido.Gemini.Adapter, Jido.Gemini],
-      opencode: [Jido.OpenCode.Adapter, Jido.OpenCode]
-    }
   end
 end

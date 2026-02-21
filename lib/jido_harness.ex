@@ -12,7 +12,7 @@ defmodule Jido.Harness do
 
   """
 
-  alias Jido.Harness.{Error, Event, Provider, Registry, RunRequest}
+  alias Jido.Harness.{Capabilities, Error, Event, Provider, Registry, RunRequest}
 
   @request_keys [
     :cwd,
@@ -54,7 +54,7 @@ defmodule Jido.Harness do
     case Registry.default_provider() do
       nil ->
         {:error,
-         Error.validation_error("No default provider is configured or discoverable", %{
+         Error.validation_error("No default provider is configured", %{
            field: :default_provider
          })}
 
@@ -97,7 +97,7 @@ defmodule Jido.Harness do
     case Registry.default_provider() do
       nil ->
         {:error,
-         Error.validation_error("No default provider is configured or discoverable", %{
+         Error.validation_error("No default provider is configured", %{
            field: :default_provider
          })}
 
@@ -112,19 +112,29 @@ defmodule Jido.Harness do
   @spec run_request(atom(), RunRequest.t(), keyword()) :: {:ok, Enumerable.t(Event.t())} | {:error, term()}
   def run_request(provider, %RunRequest{} = request, opts) when is_atom(provider) and is_list(opts) do
     with {:ok, module} <- Registry.lookup(provider),
-         {:ok, result} <- dispatch_run(module, request, opts) do
-      {:ok, normalize_result_stream(result, provider)}
+         {:ok, stream} <- dispatch_run(module, request, opts) do
+      {:ok, Stream.map(stream, &ensure_event!/1)}
     end
   end
 
   @doc """
   Returns capabilities for a provider when available.
   """
-  @spec capabilities(atom()) :: {:ok, map()} | {:error, term()}
+  @spec capabilities(atom()) :: {:ok, Capabilities.t()} | {:error, term()}
   def capabilities(provider) when is_atom(provider) do
     with {:ok, module} <- Registry.lookup(provider) do
       if function_exported?(module, :capabilities, 0) do
-        {:ok, module.capabilities()}
+        case module.capabilities() do
+          %Capabilities{} = caps ->
+            {:ok, caps}
+
+          other ->
+            {:error,
+             Error.execution_error("Provider adapter must return %Jido.Harness.Capabilities{}", %{
+               provider: provider,
+               value: inspect(other)
+             })}
+        end
       else
         {:error,
          Error.execution_error("Provider adapter does not expose capabilities/0", %{
@@ -170,89 +180,43 @@ defmodule Jido.Harness do
   defp safe_invoke(module, function_name, args) do
     try do
       case apply(module, function_name, args) do
-        {:ok, _} = ok -> ok
-        {:error, _} = error -> error
-        other -> {:ok, other}
+        {:ok, stream} = ok ->
+          if Enumerable.impl_for(stream) != nil do
+            ok
+          else
+            {:error,
+             Error.execution_error("Provider run/2 must return an Enumerable stream", %{
+               module: inspect(module),
+               value: inspect(stream)
+             })}
+          end
+
+        {:error, _} = error ->
+          error
+
+        other ->
+          {:error,
+           Error.execution_error("Provider run/2 must return {:ok, stream} | {:error, term()}", %{
+             module: inspect(module),
+             value: inspect(other)
+           })}
       end
     rescue
-      e in [FunctionClauseError, UndefinedFunctionError] ->
-        {:error, e}
+      e in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
+        {:error,
+         Error.execution_error("Provider run/2 invocation failed", %{
+           module: inspect(module),
+           error: Exception.message(e)
+         })}
     end
   end
 
-  defp normalize_result_stream(result, provider) do
-    cond do
-      Enumerable.impl_for(result) != nil ->
-        Stream.map(result, &normalize_event(&1, provider))
+  defp ensure_event!(%Event{} = event), do: event
 
-      true ->
-        [normalize_event(result, provider)]
-    end
+  defp ensure_event!(other) do
+    raise ArgumentError,
+          "Provider stream must emit %Jido.Harness.Event{} values, got: #{inspect(other)}"
   end
-
-  defp normalize_event(%Event{} = event, _provider), do: event
-
-  defp normalize_event(%{type: type} = event, provider) do
-    Event.new!(%{
-      type: normalize_type(type),
-      provider: event[:provider] || provider,
-      session_id: event[:session_id],
-      timestamp: event[:timestamp] || DateTime.utc_now() |> DateTime.to_iso8601(),
-      payload: event[:payload] || %{},
-      raw: event
-    })
-  rescue
-    _ ->
-      fallback_provider_event(event, provider)
-  end
-
-  defp normalize_event(%{"type" => type} = event, provider) do
-    Event.new!(%{
-      type: normalize_type(type),
-      provider: Map.get(event, "provider", provider),
-      session_id: Map.get(event, "session_id"),
-      timestamp: Map.get(event, "timestamp") || DateTime.utc_now() |> DateTime.to_iso8601(),
-      payload: Map.get(event, "payload", %{}),
-      raw: event
-    })
-  rescue
-    _ ->
-      fallback_provider_event(event, provider)
-  end
-
-  defp normalize_event(text, provider) when is_binary(text) do
-    Event.new!(%{
-      type: :output_text_final,
-      provider: provider,
-      session_id: nil,
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-      payload: %{"text" => text},
-      raw: text
-    })
-  end
-
-  defp normalize_event(raw, provider), do: fallback_provider_event(raw, provider)
-
-  defp fallback_provider_event(raw, provider) do
-    Event.new!(%{
-      type: :provider_event,
-      provider: provider,
-      session_id: nil,
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-      payload: %{"value" => inspect(raw)},
-      raw: raw
-    })
-  end
-
-  defp normalize_type(type) when is_atom(type), do: type
-
-  defp normalize_type(type) when is_binary(type) do
-    type
-    |> String.replace("-", "_")
-    |> String.to_atom()
-  end
-
-  defp normalize_type(_), do: :provider_event
 
   defp provider_name(id, module) do
     module_name =

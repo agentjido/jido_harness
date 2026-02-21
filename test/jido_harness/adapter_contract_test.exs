@@ -3,7 +3,7 @@ defmodule Jido.Harness.AdapterContractTest do
 
   use Jido.Harness.AdapterContract,
     adapter: Jido.Harness.Test.AdapterStub,
-    provider: :adapter_stub,
+    provider: :stub,
     check_run: true,
     run_request: %{prompt: "contract test", metadata: %{}}
 end
