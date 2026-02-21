@@ -70,3 +70,13 @@ Jido.Harness.cancel(:codex, "session_id")
 ## Documentation
 
 Full documentation is available at [https://hexdocs.pm/jido_harness](https://hexdocs.pm/jido_harness).
+
+## Package Purpose
+
+`jido_harness` is the provider-neutral contract and runtime layer for CLI coding agents. It normalizes adapter interfaces and runtime preflight/bootstrap behavior.
+
+## Testing Paths
+
+- Unit/runtime tests: `mix test`
+- Full quality gate: `mix quality`
+- Registry/runtime diagnostics: `Jido.Harness.Registry.diagnostics/0` in `iex -S mix`

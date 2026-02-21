@@ -88,7 +88,7 @@ defmodule Jido.Harness.MixProject do
       {:zoi, "~> 0.17"},
       {:splode, ">= 0.2.9 and < 0.4.0"},
       {:jason, "~> 1.4"},
-      shell_dep(),
+      {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
       {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
 
       # Dev/Test
@@ -100,14 +100,6 @@ defmodule Jido.Harness.MixProject do
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}
     ]
-  end
-
-  defp shell_dep do
-    if File.dir?("../jido_shell") do
-      {:jido_shell, path: "../jido_shell", override: true}
-    else
-      {:jido_shell, "~> 0.1"}
-    end
   end
 
   defp aliases do
