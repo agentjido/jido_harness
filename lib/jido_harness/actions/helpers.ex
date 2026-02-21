@@ -1,6 +1,9 @@
 defmodule Jido.Harness.Actions.Helpers do
   @moduledoc false
 
+  @doc """
+  Normalizes options into a keyword list with atom keys.
+  """
   @spec to_keyword(map() | keyword() | nil) :: {:ok, keyword()} | {:error, term()}
   def to_keyword(nil), do: {:ok, []}
   def to_keyword(opts) when is_list(opts), do: {:ok, opts}
