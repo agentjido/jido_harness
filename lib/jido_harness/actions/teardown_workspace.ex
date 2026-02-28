@@ -6,6 +6,7 @@ defmodule Jido.Harness.Actions.TeardownWorkspace do
     description: "Teardown harness workspace",
     schema: [
       session_id: [type: :string, required: true],
+      environment: [type: :atom, required: false],
       opts: [type: :map, default: %{}]
     ]
 
@@ -16,6 +17,7 @@ defmodule Jido.Harness.Actions.TeardownWorkspace do
   @impl true
   def run(params, _context) do
     with {:ok, opts} <- Helpers.to_keyword(params.opts || %{}) do
+      opts = maybe_put_environment(opts, Map.get(params, :environment))
       {:ok, Workspace.teardown_workspace(params.session_id, opts)}
     else
       {:error, {:invalid_option_key, key}} ->
@@ -25,4 +27,7 @@ defmodule Jido.Harness.Actions.TeardownWorkspace do
         {:error, Error.invalid("opts must be a map or keyword list", %{field: :opts})}
     end
   end
+
+  defp maybe_put_environment(opts, nil), do: opts
+  defp maybe_put_environment(opts, env) when is_atom(env), do: Keyword.put(opts, :environment, env)
 end
