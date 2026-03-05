@@ -1,10 +1,10 @@
 defmodule Jido.Harness.Exec.Workspace do
   @moduledoc """
-  Workspace lifecycle helpers backed by `Jido.Shell.SpriteLifecycle`.
+  Workspace lifecycle helpers backed by `Jido.Shell.Environment.Sprite`.
   """
 
   alias Jido.Harness.Exec.Error
-  alias Jido.Shell.SpriteLifecycle
+  alias Jido.Shell.Environment.Sprite, as: SpriteLifecycle
 
   @doc """
   Provisions a sprite-backed workspace/session for harness execution.
