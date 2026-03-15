@@ -540,3 +540,309 @@ defmodule Jido.Harness.Test.ExecShellAgentStub do
     Jido.Harness.Test.ExecShellState.run(command)
   end
 end
+
+defmodule Jido.Harness.Test.RuntimeDriverStub do
+  @moduledoc false
+  @behaviour Jido.Harness.RuntimeDriver
+
+  alias Jido.Harness.{
+    ExecutionEvent,
+    ExecutionResult,
+    ExecutionStatus,
+    RunHandle,
+    RunRequest,
+    RuntimeDescriptor,
+    SessionHandle
+  }
+
+  def runtime_id, do: :stub_runtime
+
+  def runtime_descriptor(opts \\ []) do
+    provider = Keyword.get(opts, :provider, :stub_runtime)
+
+    RuntimeDescriptor.new!(%{
+      runtime_id: :stub_runtime,
+      provider: provider,
+      label: "Stub Runtime",
+      session_mode: :external,
+      streaming?: true,
+      cancellation?: true,
+      approvals?: true,
+      cost?: true,
+      subscribe?: false,
+      resume?: false,
+      metadata: %{"surface" => "stub"}
+    })
+  end
+
+  def start_session(opts) when is_list(opts) do
+    session_id = Keyword.get(opts, :session_id, "runtime-session-1")
+    provider = Keyword.get(opts, :provider, :stub_runtime)
+    send(self(), {:runtime_driver_stub_start_session, opts})
+
+    {:ok,
+     SessionHandle.new!(%{
+       session_id: session_id,
+       runtime_id: :stub_runtime,
+       provider: provider,
+       status: :ready,
+       driver_ref: {:session, session_id},
+       metadata: %{"started_via" => "stub"}
+     })}
+  end
+
+  def stop_session(%SessionHandle{} = session) do
+    send(self(), {:runtime_driver_stub_stop_session, session.session_id})
+    :ok
+  end
+
+  def stream_run(%SessionHandle{} = session, %RunRequest{} = request, opts) do
+    send(self(), {:runtime_driver_stub_stream_run, session.session_id, request, opts})
+    run_id = Keyword.get(opts, :run_id, "runtime-run-1")
+
+    run =
+      RunHandle.new!(%{
+        run_id: run_id,
+        session_id: session.session_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        status: :running,
+        started_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+        metadata: %{"prompt" => request.prompt}
+      })
+
+    events = [
+      ExecutionEvent.new!(%{
+        event_id: "event-1",
+        type: :run_started,
+        session_id: session.session_id,
+        run_id: run_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+        status: :running,
+        payload: %{"prompt" => request.prompt}
+      }),
+      ExecutionEvent.new!(%{
+        event_id: "event-2",
+        type: :result,
+        session_id: session.session_id,
+        run_id: run_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+        status: :completed,
+        payload: %{"text" => "stub result"}
+      })
+    ]
+
+    {:ok, run, events}
+  end
+
+  def run(%SessionHandle{} = session, %RunRequest{} = request, opts) do
+    send(self(), {:runtime_driver_stub_run, session.session_id, request, opts})
+    run_id = Keyword.get(opts, :run_id, "runtime-run-1")
+
+    {:ok,
+     ExecutionResult.new!(%{
+       run_id: run_id,
+       session_id: session.session_id,
+       runtime_id: session.runtime_id,
+       provider: session.provider,
+       status: :completed,
+       text: "stub result",
+       messages: [%{"role" => "assistant", "content" => request.prompt}],
+       cost: %{"input_tokens" => 1, "output_tokens" => 1, "cost_usd" => 0.01},
+       stop_reason: "end_turn",
+       metadata: %{"prompt" => request.prompt}
+     })}
+  end
+
+  def cancel_run(%SessionHandle{} = session, %RunHandle{} = run) do
+    send(self(), {:runtime_driver_stub_cancel_run, session.session_id, run.run_id})
+    :ok
+  end
+
+  def cancel_run(%SessionHandle{} = session, run_id) when is_binary(run_id) do
+    send(self(), {:runtime_driver_stub_cancel_run, session.session_id, run_id})
+    :ok
+  end
+
+  def session_status(%SessionHandle{} = session) do
+    {:ok,
+     ExecutionStatus.new!(%{
+       runtime_id: session.runtime_id,
+       session_id: session.session_id,
+       scope: :session,
+       state: session.status,
+       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+       details: %{"driver_ref" => inspect(session.driver_ref)}
+     })}
+  end
+
+  def approve(_session, _approval_id, _decision, _opts), do: :ok
+
+  def cost(_session) do
+    {:ok, %{"input_tokens" => 1, "output_tokens" => 1, "cost_usd" => 0.01}}
+  end
+end
+
+defmodule Jido.Harness.Test.RuntimeBackedAdapterStub do
+  @moduledoc false
+  @behaviour Jido.Harness.Adapter
+  @behaviour Jido.Harness.RuntimeDriver
+
+  alias Jido.Harness.{
+    Capabilities,
+    Event,
+    ExecutionEvent,
+    ExecutionStatus,
+    RunHandle,
+    RunRequest,
+    RuntimeContract,
+    RuntimeDescriptor,
+    SessionHandle
+  }
+
+  def id, do: :runtime_adapter
+  def runtime_id, do: :stub_runtime
+
+  def capabilities do
+    %Capabilities{
+      streaming?: true,
+      tool_calls?: false,
+      tool_results?: false,
+      thinking?: false,
+      resume?: false,
+      usage?: true,
+      file_changes?: false,
+      cancellation?: true
+    }
+  end
+
+  def runtime_contract do
+    RuntimeContract.new!(%{
+      provider: :runtime_adapter,
+      host_env_required_any: [],
+      host_env_required_all: [],
+      sprite_env_forward: [],
+      sprite_env_injected: %{},
+      runtime_tools_required: ["stub-runtime"],
+      compatibility_probes: [],
+      install_steps: [],
+      auth_bootstrap_steps: [],
+      triage_command_template: "runtime-adapter --triage {{prompt}}",
+      coding_command_template: "runtime-adapter --coding {{prompt}}",
+      success_markers: [%{"type" => "result"}]
+    })
+  end
+
+  def runtime_descriptor(_opts \\ []) do
+    RuntimeDescriptor.new!(%{
+      runtime_id: :stub_runtime,
+      provider: :runtime_adapter,
+      label: "Runtime-backed Adapter Stub",
+      session_mode: :external,
+      streaming?: true,
+      cancellation?: true,
+      approvals?: false,
+      cost?: true,
+      subscribe?: false,
+      resume?: false,
+      metadata: %{"adapter" => "runtime"}
+    })
+  end
+
+  def start_session(opts) when is_list(opts) do
+    send(self(), {:runtime_backed_adapter_start_session, opts})
+
+    {:ok,
+     SessionHandle.new!(%{
+       session_id: "runtime-session-1",
+       runtime_id: :stub_runtime,
+       provider: :runtime_adapter,
+       status: :ready,
+       driver_ref: {:session, "runtime-session-1"},
+       metadata: %{"cwd" => Keyword.get(opts, :cwd)}
+     })}
+  end
+
+  def stop_session(%SessionHandle{} = session) do
+    send(self(), {:runtime_backed_adapter_stop_session, session.session_id})
+    :ok
+  end
+
+  def stream_run(%SessionHandle{} = session, %RunRequest{} = request, opts) do
+    send(self(), {:runtime_backed_adapter_stream_run, session.session_id, request, opts})
+
+    run =
+      RunHandle.new!(%{
+        run_id: "runtime-run-1",
+        session_id: session.session_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        status: :running,
+        started_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+        metadata: %{"prompt" => request.prompt}
+      })
+
+    events = [
+      ExecutionEvent.new!(%{
+        event_id: "runtime-event-1",
+        type: :run_started,
+        session_id: session.session_id,
+        run_id: run.run_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+        status: :running,
+        payload: %{"prompt" => request.prompt}
+      }),
+      ExecutionEvent.new!(%{
+        event_id: "runtime-event-2",
+        type: :result,
+        session_id: session.session_id,
+        run_id: run.run_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+        status: :completed,
+        payload: %{"text" => "runtime path"}
+      })
+    ]
+
+    {:ok, run, events}
+  end
+
+  def session_status(%SessionHandle{} = session) do
+    {:ok,
+     ExecutionStatus.new!(%{
+       runtime_id: session.runtime_id,
+       session_id: session.session_id,
+       scope: :session,
+       state: session.status,
+       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+       details: %{"adapter" => "runtime"}
+     })}
+  end
+
+  def cancel_run(_session, _run_id), do: :ok
+
+  def run(%RunRequest{} = request, opts) do
+    send(self(), {:runtime_backed_adapter_legacy_run, request, opts})
+
+    {:ok,
+     [
+       Event.new!(%{
+         type: :legacy_path,
+         provider: :runtime_adapter,
+         session_id: "legacy-session",
+         timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+         payload: %{"prompt" => request.prompt}
+       })
+     ]}
+  end
+
+  def cancel("runtime-session-1"), do: :ok
+  def cancel(_session_id), do: {:error, :unknown_session}
+end

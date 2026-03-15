@@ -12,7 +12,7 @@ defmodule Jido.Harness do
 
   """
 
-  alias Jido.Harness.{Capabilities, Error, Event, Provider, Registry, RunRequest}
+  alias Jido.Harness.{Capabilities, Error, Event, Provider, Registry, RunRequest, Runtime}
 
   @request_keys [
     :cwd,
@@ -167,13 +167,18 @@ defmodule Jido.Harness do
   end
 
   defp dispatch_run(module, %RunRequest{} = request, opts) do
-    if function_exported?(module, :run, 2) do
-      safe_invoke(module, :run, [request, opts])
-    else
-      {:error,
-       Error.execution_error("Provider adapter does not expose run/2", %{
-         module: inspect(module)
-       })}
+    cond do
+      Runtime.runtime_driver?(module) ->
+        Runtime.stream_legacy_events(module, request, opts)
+
+      function_exported?(module, :run, 2) ->
+        safe_invoke(module, :run, [request, opts])
+
+      true ->
+        {:error,
+         Error.execution_error("Provider adapter does not expose run/2", %{
+           module: inspect(module)
+         })}
     end
   end
 
