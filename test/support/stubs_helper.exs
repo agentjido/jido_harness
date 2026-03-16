@@ -599,7 +599,6 @@ defmodule Jido.Harness.Test.RuntimeDriverStub do
        runtime_id: :stub_runtime,
        provider: provider,
        status: :ready,
-       driver_ref: {:session, session_id},
        metadata: %{"started_via" => "stub"}
      })}
   end
@@ -689,7 +688,7 @@ defmodule Jido.Harness.Test.RuntimeDriverStub do
        scope: :session,
        state: session.status,
        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-       details: %{"driver_ref" => inspect(session.driver_ref)}
+       details: %{"runtime_id" => Atom.to_string(session.runtime_id)}
      })}
   end
 
@@ -775,7 +774,6 @@ defmodule Jido.Harness.Test.RuntimeBackedAdapterStub do
        runtime_id: :stub_runtime,
        provider: :runtime_adapter,
        status: :ready,
-       driver_ref: {:session, "runtime-session-1"},
        metadata: %{"cwd" => Keyword.get(opts, :cwd)}
      })}
   end
@@ -858,4 +856,109 @@ defmodule Jido.Harness.Test.RuntimeBackedAdapterStub do
 
   def cancel("runtime-session-1"), do: :ok
   def cancel(_session_id), do: {:error, :unknown_session}
+end
+
+defmodule Jido.Harness.Test.AlphaRuntimeDriverStub do
+  @moduledoc false
+  @behaviour Jido.Harness.RuntimeDriver
+
+  alias Jido.Harness.{
+    ExecutionEvent,
+    ExecutionResult,
+    ExecutionStatus,
+    RunHandle,
+    RunRequest,
+    RuntimeDescriptor,
+    SessionHandle
+  }
+
+  def runtime_id, do: :alpha_runtime
+
+  def runtime_descriptor(_opts \\ []) do
+    RuntimeDescriptor.new!(%{
+      runtime_id: :alpha_runtime,
+      provider: :alpha_runtime,
+      label: "Alpha Runtime",
+      session_mode: :external,
+      streaming?: true,
+      cancellation?: true,
+      approvals?: false,
+      cost?: false,
+      subscribe?: false,
+      resume?: false,
+      metadata: %{}
+    })
+  end
+
+  def start_session(opts) do
+    {:ok,
+     SessionHandle.new!(%{
+       session_id: Keyword.get(opts, :session_id, "alpha-session-1"),
+       runtime_id: :alpha_runtime,
+       provider: :alpha_runtime,
+       status: :ready,
+       metadata: %{}
+     })}
+  end
+
+  def stop_session(_session), do: :ok
+
+  def stream_run(%SessionHandle{} = session, %RunRequest{} = request, opts) do
+    run =
+      RunHandle.new!(%{
+        run_id: Keyword.get(opts, :run_id, "alpha-run-1"),
+        session_id: session.session_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        status: :running,
+        started_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+        metadata: %{}
+      })
+
+    events = [
+      ExecutionEvent.new!(%{
+        event_id: "alpha-event-1",
+        type: :run_started,
+        session_id: session.session_id,
+        run_id: run.run_id,
+        runtime_id: session.runtime_id,
+        provider: session.provider,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+        status: :running,
+        payload: %{"prompt" => request.prompt}
+      })
+    ]
+
+    {:ok, run, events}
+  end
+
+  def cancel_run(_session, _run), do: :ok
+
+  def session_status(%SessionHandle{} = session) do
+    {:ok,
+     ExecutionStatus.new!(%{
+       runtime_id: session.runtime_id,
+       session_id: session.session_id,
+       scope: :session,
+       state: :ready,
+       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+       details: %{}
+     })}
+  end
+
+  def run(%SessionHandle{} = session, %RunRequest{} = request, opts) do
+    {:ok,
+     ExecutionResult.new!(%{
+       run_id: Keyword.get(opts, :run_id, "alpha-run-1"),
+       session_id: session.session_id,
+       runtime_id: session.runtime_id,
+       provider: session.provider,
+       status: :completed,
+       text: request.prompt,
+       messages: [],
+       cost: %{},
+       stop_reason: "completed",
+       metadata: %{}
+     })}
+  end
 end

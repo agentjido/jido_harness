@@ -59,6 +59,15 @@ defmodule Jido.Harness.Error do
     defexception [:message, :provider]
   end
 
+  defmodule RuntimeDriverNotFoundError do
+    @moduledoc "Error when a runtime driver is not registered."
+    @type t :: %__MODULE__{
+            message: String.t() | nil,
+            runtime_id: atom() | nil
+          }
+    defexception [:message, :runtime_id]
+  end
+
   defmodule ExecutionFailureError do
     @moduledoc "Error for runtime execution failures."
     @type t :: %__MODULE__{

@@ -68,6 +68,19 @@ defmodule Jido.Harness.SessionControlIRTest do
              })
   end
 
+  test "session handles expose stable metadata only" do
+    {:ok, session} =
+      SessionHandle.new(%{
+        session_id: "session-transport-1",
+        runtime_id: :jido_session,
+        provider: :jido_session,
+        metadata: %{"surface" => "runtime-driver"}
+      })
+
+    refute Map.has_key?(Map.from_struct(session), :driver_ref)
+    assert session.metadata == %{"surface" => "runtime-driver"}
+  end
+
   test "session control ir constructors reject invalid inputs" do
     assert {:error, _} = SessionHandle.new(%{})
     assert {:error, _} = RunHandle.new(%{})

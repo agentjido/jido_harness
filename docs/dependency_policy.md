@@ -2,6 +2,20 @@
 
 This policy governs `jido_harness` and sibling provider/runtime packages during consolidation.
 
+## Boundary Direction
+
+For the Session Control surface, the dependency direction is:
+
+- integration/composition packages may depend on `jido_harness`
+- runtime kernels may implement `Jido.Harness.RuntimeDriver`
+- external kernels must not own permanent Harness projection code
+
+In practice that means:
+
+- provider adapters remain a legacy compatibility surface under `:providers`
+- Session Control runtime drivers register under `:runtime_drivers`
+- kernel-private refs such as pids and monitor refs must stay out of the public IR
+
 ## Baseline Versions
 
 - Elixir: `~> 1.18`

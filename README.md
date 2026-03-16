@@ -1,8 +1,12 @@
 # Jido.Harness
 
-Normalized Elixir protocol for CLI AI coding agents. Jido.Harness defines the
-behaviours, schemas, and error types that provider adapter packages implement to
-expose a unified interface for agents like Amp, Claude Code, Codex, and Gemini CLI.
+Normalized Elixir contract layer for CLI AI coding agents and Session Control
+runtimes.
+
+`Jido.Harness` now supports two explicit surfaces:
+
+- legacy provider adapters registered under `:providers`
+- Session Control runtime drivers registered under `:runtime_drivers`
 
 ## Installation
 
@@ -18,14 +22,16 @@ end
 
 ## Usage
 
+### Legacy Adapter World
+
 ```elixir
-# Optional: configure provider modules explicitly
+# Optional: configure provider adapter modules explicitly
 config :jido_harness, :providers, %{
   codex: Jido.Codex.Adapter,
   gemini: Jido.Gemini.Adapter
 }
 
-# Optional: set a default provider
+# Optional: set a default provider adapter
 config :jido_harness, :default_provider, :codex
 
 # Run with explicit provider
@@ -35,9 +41,32 @@ config :jido_harness, :default_provider, :codex
 {:ok, events} = Jido.Harness.run("fix the bug", cwd: "/my/project")
 ```
 
+### Session Control Runtime-Driver World
+
+```elixir
+config :jido_harness, :runtime_drivers, %{
+  jido_session: Jido.Session.HarnessDriver,
+  asm: Jido.Integration.V2.RuntimeAsmBridge.HarnessDriver
+}
+
+config :jido_harness, :default_runtime_driver, :jido_session
+
+request = Jido.Harness.RunRequest.new!(%{prompt: "fix the bug", metadata: %{}})
+
+{:ok, session} =
+  Jido.Harness.start_session(
+    :jido_session,
+    session_id: "session-1",
+    provider: :jido_session
+  )
+
+{:ok, run, events} = Jido.Harness.stream_run(session, request, run_id: "run-1")
+{:ok, result} = Jido.Harness.run_result(session, request, run_id: "run-2")
+```
+
 ## What It Wraps
 
-`Jido.Harness` can resolve providers from:
+Legacy adapter resolution can resolve providers from:
 - explicit app config (`config :jido_harness, :providers, %{...}`)
 - runtime auto-discovery of known module candidates for:
   - `:codex`
@@ -50,7 +79,7 @@ Auto-discovery is non-invasive: modules are used only if they are loaded and exp
 
 ## Public Facade
 
-Core functions:
+Legacy adapter functions:
 
 ```elixir
 Jido.Harness.providers()
@@ -67,13 +96,30 @@ Jido.Harness.capabilities(:codex)
 Jido.Harness.cancel(:codex, "session_id")
 ```
 
+Session Control runtime-driver functions:
+
+```elixir
+Jido.Harness.runtime_drivers()
+Jido.Harness.default_runtime_driver()
+Jido.Harness.runtime_descriptor(:jido_session)
+
+{:ok, session} = Jido.Harness.start_session(:jido_session, provider: :jido_session)
+{:ok, run, events} = Jido.Harness.stream_run(session, request)
+{:ok, result} = Jido.Harness.run_result(session, request)
+{:ok, status} = Jido.Harness.session_status(session)
+:ok = Jido.Harness.cancel_run(session, run)
+:ok = Jido.Harness.stop_session(session)
+```
+
 ## Documentation
 
 Full documentation is available at [https://hexdocs.pm/jido_harness](https://hexdocs.pm/jido_harness).
 
 ## Package Purpose
 
-`jido_harness` is the provider-neutral contract and runtime layer for CLI coding agents. It normalizes adapter interfaces and runtime preflight/bootstrap behavior.
+`jido_harness` is the provider-neutral contract layer shared by legacy CLI
+adapters and Session Control runtime drivers. It owns the public IR, runtime
+driver behaviour, and generic runtime bootstrap/preflight helpers.
 
 ## Testing Paths
 

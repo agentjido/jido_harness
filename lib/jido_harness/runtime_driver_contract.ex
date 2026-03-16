@@ -90,6 +90,7 @@ defmodule Jido.Harness.RuntimeDriverContract do
 
         try do
           assert %SessionHandle{} = session
+          refute Map.has_key?(Map.from_struct(session), :driver_ref)
           assert {:ok, status} = driver.session_status(session)
           assert %ExecutionStatus{} = status
           assert status.scope == :session

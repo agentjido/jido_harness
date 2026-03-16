@@ -7,10 +7,14 @@ defmodule Jido.Harness.RegistryTest do
   setup do
     old_providers = Application.get_env(:jido_harness, :providers)
     old_default = Application.get_env(:jido_harness, :default_provider)
+    old_runtime_drivers = Application.get_env(:jido_harness, :runtime_drivers)
+    old_default_runtime_driver = Application.get_env(:jido_harness, :default_runtime_driver)
 
     on_exit(fn ->
       restore_env(:jido_harness, :providers, old_providers)
       restore_env(:jido_harness, :default_provider, old_default)
+      restore_env(:jido_harness, :runtime_drivers, old_runtime_drivers)
+      restore_env(:jido_harness, :default_runtime_driver, old_default_runtime_driver)
     end)
 
     :ok

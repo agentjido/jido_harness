@@ -13,7 +13,6 @@ defmodule Jido.Harness.SessionHandle do
               runtime_id: Zoi.atom(),
               provider: Zoi.atom() |> Zoi.nullish(),
               status: Zoi.atom() |> Zoi.default(:ready),
-              driver_ref: Zoi.any() |> Zoi.nullish(),
               metadata: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{})
             },
             coerce: true
