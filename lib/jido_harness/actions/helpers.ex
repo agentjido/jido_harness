@@ -1,6 +1,8 @@
 defmodule Jido.Harness.Actions.Helpers do
   @moduledoc false
 
+  alias Jido.Harness.Exec.Error
+
   @doc """
   Normalizes options into a keyword list with atom keys.
   """
@@ -32,6 +34,21 @@ defmodule Jido.Harness.Actions.Helpers do
   end
 
   def to_keyword(_opts), do: {:error, :invalid_options}
+
+  @spec with_keyword_opts(map() | keyword() | nil, String.t(), (keyword() -> result)) :: result when result: term()
+  def with_keyword_opts(opts, unsupported_key_message, fun)
+      when is_binary(unsupported_key_message) and is_function(fun, 1) do
+    case to_keyword(opts) do
+      {:ok, keyword_opts} ->
+        fun.(keyword_opts)
+
+      {:error, {:invalid_option_key, key}} ->
+        {:error, Error.invalid(unsupported_key_message, %{field: :opts, key: key})}
+
+      {:error, :invalid_options} ->
+        {:error, Error.invalid("opts must be a map or keyword list", %{field: :opts})}
+    end
+  end
 
   defp to_existing_atom(value) when is_binary(value) do
     {:ok, String.to_existing_atom(value)}

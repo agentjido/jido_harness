@@ -123,25 +123,7 @@ defmodule Jido.Harness do
   @spec capabilities(atom()) :: {:ok, Capabilities.t()} | {:error, term()}
   def capabilities(provider) when is_atom(provider) do
     with {:ok, module} <- Registry.lookup(provider) do
-      if function_exported?(module, :capabilities, 0) do
-        case module.capabilities() do
-          %Capabilities{} = caps ->
-            {:ok, caps}
-
-          other ->
-            {:error,
-             Error.execution_error("Provider adapter must return %Jido.Harness.Capabilities{}", %{
-               provider: provider,
-               value: inspect(other)
-             })}
-        end
-      else
-        {:error,
-         Error.execution_error("Provider adapter does not expose capabilities/0", %{
-           provider: provider,
-           module: inspect(module)
-         })}
-      end
+      provider_capabilities(module, provider)
     end
   end
 
@@ -151,14 +133,7 @@ defmodule Jido.Harness do
   @spec cancel(atom(), String.t()) :: :ok | {:error, term()}
   def cancel(provider, session_id) when is_atom(provider) and is_binary(session_id) and session_id != "" do
     with {:ok, module} <- Registry.lookup(provider) do
-      if function_exported?(module, :cancel, 1) do
-        module.cancel(session_id)
-      else
-        {:error,
-         Error.execution_error("Provider does not support cancellation", %{
-           provider: provider
-         })}
-      end
+      cancel_provider(module, provider, session_id)
     end
   end
 
@@ -167,53 +142,84 @@ defmodule Jido.Harness do
   end
 
   defp dispatch_run(module, %RunRequest{} = request, opts) do
-    cond do
-      Runtime.runtime_driver?(module) ->
-        Runtime.stream_legacy_events(module, request, opts)
-
-      function_exported?(module, :run, 2) ->
-        safe_invoke(module, :run, [request, opts])
-
-      true ->
-        {:error,
-         Error.execution_error("Provider adapter does not expose run/2", %{
-           module: inspect(module)
-         })}
+    if Runtime.runtime_driver?(module) do
+      Runtime.stream_legacy_events(module, request, opts)
+    else
+      invoke_provider_run(module, request, opts)
     end
   end
 
-  defp safe_invoke(module, function_name, args) do
-    try do
-      case apply(module, function_name, args) do
-        {:ok, stream} = ok ->
-          if Enumerable.impl_for(stream) != nil do
-            ok
-          else
-            {:error,
-             Error.execution_error("Provider run/2 must return an Enumerable stream", %{
-               module: inspect(module),
-               value: inspect(stream)
-             })}
-          end
-
-        {:error, _} = error ->
-          error
+  defp provider_capabilities(module, provider) do
+    if function_exported?(module, :capabilities, 0) do
+      case module.capabilities() do
+        %Capabilities{} = caps ->
+          {:ok, caps}
 
         other ->
           {:error,
-           Error.execution_error("Provider run/2 must return {:ok, stream} | {:error, term()}", %{
-             module: inspect(module),
+           Error.execution_error("Provider adapter must return %Jido.Harness.Capabilities{}", %{
+             provider: provider,
              value: inspect(other)
            })}
       end
-    rescue
-      e in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
-        {:error,
-         Error.execution_error("Provider run/2 invocation failed", %{
-           module: inspect(module),
-           error: Exception.message(e)
-         })}
+    else
+      {:error,
+       Error.execution_error("Provider adapter does not expose capabilities/0", %{
+         provider: provider,
+         module: inspect(module)
+       })}
     end
+  end
+
+  defp cancel_provider(module, provider, session_id) do
+    if function_exported?(module, :cancel, 1) do
+      module.cancel(session_id)
+    else
+      {:error,
+       Error.execution_error("Provider does not support cancellation", %{
+         provider: provider
+       })}
+    end
+  end
+
+  defp invoke_provider_run(module, %RunRequest{} = request, opts) do
+    if function_exported?(module, :run, 2) do
+      normalize_provider_run_result(module, module.run(request, opts))
+    else
+      {:error,
+       Error.execution_error("Provider adapter does not expose run/2", %{
+         module: inspect(module)
+       })}
+    end
+  rescue
+    error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
+      {:error,
+       Error.execution_error("Provider run/2 invocation failed", %{
+         module: inspect(module),
+         error: Exception.message(error)
+       })}
+  end
+
+  defp normalize_provider_run_result(module, {:ok, stream} = ok) do
+    if Enumerable.impl_for(stream) != nil do
+      ok
+    else
+      {:error,
+       Error.execution_error("Provider run/2 must return an Enumerable stream", %{
+         module: inspect(module),
+         value: inspect(stream)
+       })}
+    end
+  end
+
+  defp normalize_provider_run_result(_module, {:error, _} = error), do: error
+
+  defp normalize_provider_run_result(module, other) do
+    {:error,
+     Error.execution_error("Provider run/2 must return {:ok, stream} | {:error, term()}", %{
+       module: inspect(module),
+       value: inspect(other)
+     })}
   end
 
   defp ensure_event!(%Event{} = event), do: event

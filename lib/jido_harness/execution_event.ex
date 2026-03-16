@@ -30,12 +30,15 @@ defmodule Jido.Harness.ExecutionEvent do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
+  @doc "Returns the Zoi schema for execution events."
   @spec schema() :: Zoi.schema()
   def schema, do: @schema
 
+  @doc "Builds an execution event from validated attributes."
   @spec new(map()) :: {:ok, t()} | {:error, term()}
   def new(attrs) when is_map(attrs), do: Zoi.parse(@schema, attrs)
 
+  @doc "Builds an execution event or raises on validation failure."
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do

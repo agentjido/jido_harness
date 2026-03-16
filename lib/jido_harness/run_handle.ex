@@ -25,12 +25,15 @@ defmodule Jido.Harness.RunHandle do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
+  @doc "Returns the Zoi schema for run handles."
   @spec schema() :: Zoi.schema()
   def schema, do: @schema
 
+  @doc "Builds a run handle from validated attributes."
   @spec new(map()) :: {:ok, t()} | {:error, term()}
   def new(attrs) when is_map(attrs), do: Zoi.parse(@schema, attrs)
 
+  @doc "Builds a run handle or raises on validation failure."
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do

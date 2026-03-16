@@ -4,6 +4,7 @@ defmodule Jido.Harness.Exec.Stream do
   """
 
   alias Jido.Harness.Exec.{Error, ProviderRuntime, Result}
+  alias Jido.Shell.StreamJson
 
   @doc """
   Runs a provider command via `Jido.Shell.StreamJson` and returns summarized stream results.
@@ -33,7 +34,7 @@ defmodule Jido.Harness.Exec.Stream do
 
       with {:ok, contract} <- ProviderRuntime.provider_runtime_contract(provider),
            {:ok, output, events} <-
-             Jido.Shell.StreamJson.run(
+             StreamJson.run(
                shell_agent_mod,
                session_server_mod,
                session_id,

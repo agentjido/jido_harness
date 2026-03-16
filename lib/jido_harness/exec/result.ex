@@ -47,20 +47,7 @@ defmodule Jido.Harness.Exec.Result do
     require_not_error = map_get(marker, :is_error_false, false)
     expected_fields = normalize_expected_fields(marker)
 
-    Enum.any?(events, fn event ->
-      event_is_error = map_get(event, :is_error)
-
-      fields_ok =
-        Enum.all?(expected_fields, fn {field, expected_value} ->
-          case map_get_by_normalized_key(event, field, :__missing__) do
-            :__missing__ -> false
-            actual_value -> actual_value == expected_value
-          end
-        end)
-
-      error_ok = if require_not_error == true, do: event_is_error in [false, nil], else: true
-      fields_ok and error_ok
-    end)
+    Enum.any?(events, &event_matches_marker?(&1, expected_fields, require_not_error))
   end
 
   defp marker_match?(_events, _marker), do: false
@@ -78,6 +65,22 @@ defmodule Jido.Harness.Exec.Result do
     end)
     |> Enum.reverse()
   end
+
+  defp event_matches_marker?(event, expected_fields, require_not_error) do
+    fields_match?(event, expected_fields) and error_matches?(event, require_not_error)
+  end
+
+  defp fields_match?(event, expected_fields) do
+    Enum.all?(expected_fields, fn {field, expected_value} ->
+      case map_get_by_normalized_key(event, field, :__missing__) do
+        :__missing__ -> false
+        actual_value -> actual_value == expected_value
+      end
+    end)
+  end
+
+  defp error_matches?(event, true), do: map_get(event, :is_error) in [false, nil]
+  defp error_matches?(_event, false), do: true
 
   defp fallback_success?(:codex, events) do
     Enum.any?(events, fn event -> map_get(event, :type) == "turn.completed" end)

@@ -10,19 +10,12 @@ defmodule Jido.Harness.Actions.TeardownWorkspace do
     ]
 
   alias Jido.Harness.Actions.Helpers
-  alias Jido.Harness.Exec.Error
   alias Jido.Harness.Exec.Workspace
 
   @impl true
   def run(params, _context) do
-    with {:ok, opts} <- Helpers.to_keyword(params.opts || %{}) do
+    Helpers.with_keyword_opts(params.opts, "Unsupported option key for workspace teardown", fn opts ->
       {:ok, Workspace.teardown_workspace(params.session_id, opts)}
-    else
-      {:error, {:invalid_option_key, key}} ->
-        {:error, Error.invalid("Unsupported option key for workspace teardown", %{field: :opts, key: key})}
-
-      {:error, :invalid_options} ->
-        {:error, Error.invalid("opts must be a map or keyword list", %{field: :opts})}
-    end
+    end)
   end
 end

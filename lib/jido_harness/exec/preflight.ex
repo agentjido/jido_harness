@@ -7,11 +7,9 @@ defmodule Jido.Harness.Exec.Preflight do
   - `:github` (optional): GitHub CLI token/auth checks for GitHub workflows.
   """
 
-  alias Jido.Harness.Exec.Error
+  alias Jido.Harness.Exec.{Error, ShellOps}
   alias Jido.Shell.Exec
 
-  @env_var_name_regex ~r/^[A-Za-z_][A-Za-z0-9_]*$/
-  @tool_name_regex ~r/^[A-Za-z0-9._+-]+$/
   @default_profiles [:generic]
   @supported_profiles [:generic, :github]
   @default_required_tools ["git"]
@@ -83,46 +81,61 @@ defmodule Jido.Harness.Exec.Preflight do
          required_env_all,
          required_env_any
        ) do
-    with {:ok, tool_checks} <- check_tools(shell_agent_mod, session_id, timeout, required_tools),
-         {:ok, env_all_checks} <- check_env_vars(shell_agent_mod, session_id, timeout, required_env_all),
-         {:ok, env_any_checks} <- check_env_vars(shell_agent_mod, session_id, timeout, required_env_any) do
-      env_any_satisfied? =
-        if map_size(env_any_checks) == 0 do
-          true
-        else
-          Enum.any?(env_any_checks, fn {_key, present?} -> present? end)
-        end
-
+    with {:ok, tool_checks} <-
+           ShellOps.check_tools(shell_agent_mod, session_id, timeout, required_tools,
+             field: :required_tools,
+             invalid_message: "Invalid required tool name",
+             type_message: "required_tools must be a list"
+           ),
+         {:ok, env_all_checks} <-
+           ShellOps.check_env_vars(shell_agent_mod, session_id, timeout, required_env_all,
+             field: :required_env,
+             invalid_message: "Invalid env var name",
+             type_message: "required env keys must be a list"
+           ),
+         {:ok, env_any_checks} <-
+           ShellOps.check_env_vars(shell_agent_mod, session_id, timeout, required_env_any,
+             field: :required_env,
+             invalid_message: "Invalid env var name",
+             type_message: "required env keys must be a list"
+           ) do
       {:ok,
        %{
          tools: tool_checks,
          env: %{
            required_all: env_all_checks,
            required_any: env_any_checks,
-           any_satisfied: env_any_satisfied?
+           any_satisfied: env_requirement_satisfied?(env_any_checks)
          }
        }}
     end
   end
 
   defp maybe_validate_github_profile(profiles, shell_agent_mod, session_id, timeout, token_env_any) do
-    if :github in profiles do
-      with {:ok, token_checks} <- check_env_vars(shell_agent_mod, session_id, timeout, token_env_any) do
-        gh_present? = tool_present?(shell_agent_mod, session_id, "gh", timeout)
-        github_token_visible? = Enum.any?(token_checks, fn {_key, present?} -> present? end)
-        {gh_auth?, gh_login} = github_auth_ok?(gh_present?, shell_agent_mod, session_id, timeout)
+    case :github in profiles do
+      true -> validate_github_profile(shell_agent_mod, session_id, timeout, token_env_any)
+      false -> {:ok, nil}
+    end
+  end
 
-        {:ok,
-         %{
-           gh: gh_present?,
-           required_token_env_any: token_checks,
-           github_token_visible: github_token_visible?,
-           gh_auth: gh_auth?,
-           gh_login: gh_login
-         }}
-      end
-    else
-      {:ok, nil}
+  defp validate_github_profile(shell_agent_mod, session_id, timeout, token_env_any) do
+    with {:ok, token_checks} <-
+           ShellOps.check_env_vars(shell_agent_mod, session_id, timeout, token_env_any,
+             field: :required_env,
+             invalid_message: "Invalid env var name",
+             type_message: "required env keys must be a list"
+           ) do
+      gh_present? = ShellOps.tool_present?(shell_agent_mod, session_id, "gh", timeout)
+      {gh_auth?, gh_login} = github_auth_ok?(gh_present?, shell_agent_mod, session_id, timeout)
+
+      {:ok,
+       %{
+         gh: gh_present?,
+         required_token_env_any: token_checks,
+         github_token_visible: env_requirement_satisfied?(token_checks),
+         gh_auth: gh_auth?,
+         gh_login: gh_login
+       }}
     end
   end
 
@@ -130,21 +143,7 @@ defmodule Jido.Harness.Exec.Preflight do
 
   defp normalize_profiles(values) when is_list(values) do
     values
-    |> Enum.reduce_while({:ok, []}, fn profile, {:ok, acc} ->
-      cond do
-        profile in @supported_profiles ->
-          {:cont, {:ok, [profile | acc]}}
-
-        true ->
-          {:halt,
-           {:error,
-            Error.invalid("Unknown preflight profile", %{
-              field: :profiles,
-              value: profile,
-              details: %{supported_profiles: @supported_profiles}
-            })}}
-      end
-    end)
+    |> Enum.reduce_while({:ok, []}, &append_profile/2)
     |> case do
       {:ok, []} -> {:ok, @default_profiles}
       {:ok, profiles} -> {:ok, profiles |> Enum.reverse() |> Enum.uniq()}
@@ -154,59 +153,6 @@ defmodule Jido.Harness.Exec.Preflight do
 
   defp normalize_profiles(_value) do
     {:error, Error.invalid("profiles must be an atom or list", %{field: :profiles})}
-  end
-
-  defp check_tools(shell_agent_mod, session_id, timeout, tools) when is_list(tools) do
-    tools
-    |> Enum.reduce_while({:ok, %{}}, fn tool, {:ok, acc} ->
-      tool_name = to_string(tool)
-
-      if valid_tool_name?(tool_name) do
-        {:cont, {:ok, Map.put(acc, tool_name, tool_present?(shell_agent_mod, session_id, tool_name, timeout))}}
-      else
-        {:halt,
-         {:error,
-          Error.invalid("Invalid required tool name", %{
-            field: :required_tools,
-            value: tool,
-            details: %{tool: tool}
-          })}}
-      end
-    end)
-  end
-
-  defp check_tools(_shell_agent_mod, _session_id, _timeout, _tools) do
-    {:error, Error.invalid("required_tools must be a list", %{field: :required_tools})}
-  end
-
-  defp check_env_vars(shell_agent_mod, session_id, timeout, keys) when is_list(keys) do
-    keys
-    |> Enum.reduce_while({:ok, %{}}, fn key, {:ok, acc} ->
-      env_key = to_string(key)
-
-      if valid_env_var_name?(env_key) do
-        cmd = "if [ -n \"${#{env_key}:-}\" ]; then echo present; else echo missing; fi"
-
-        case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-          {:ok, "present"} -> {:cont, {:ok, Map.put(acc, env_key, true)}}
-          {:ok, "missing"} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
-          {:ok, _other} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
-          {:error, reason} -> {:halt, {:error, Error.execution("Env check failed", %{key: env_key, reason: reason})}}
-        end
-      else
-        {:halt,
-         {:error,
-          Error.invalid("Invalid env var name", %{
-            field: :required_env,
-            value: key,
-            details: %{key: key}
-          })}}
-      end
-    end)
-  end
-
-  defp check_env_vars(_shell_agent_mod, _session_id, _timeout, _keys) do
-    {:error, Error.invalid("required env keys must be a list", %{field: :required_env})}
   end
 
   defp collect_missing(checks, github_checks) do
@@ -244,15 +190,6 @@ defmodule Jido.Harness.Exec.Preflight do
       end
 
     missing_tools ++ missing_env_all ++ missing_env_any ++ missing_github
-  end
-
-  defp tool_present?(shell_agent_mod, session_id, tool, timeout) do
-    cmd = "command -v #{Exec.escape_path(tool)} >/dev/null 2>&1 && echo present || echo missing"
-
-    case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-      {:ok, "present"} -> true
-      _ -> false
-    end
   end
 
   defp github_auth_ok?(false, _shell_agent_mod, _session_id, _timeout), do: {false, nil}
@@ -296,11 +233,21 @@ defmodule Jido.Harness.Exec.Preflight do
   defp maybe_add_missing(acc, true, _reason), do: acc
   defp maybe_add_missing(acc, false, reason), do: acc ++ [reason]
 
-  defp valid_env_var_name?(value) when is_binary(value) do
-    value != "" and Regex.match?(@env_var_name_regex, value)
+  defp append_profile(profile, {:ok, acc}) do
+    if profile in @supported_profiles do
+      {:cont, {:ok, [profile | acc]}}
+    else
+      {:halt,
+       {:error,
+        Error.invalid("Unknown preflight profile", %{
+          field: :profiles,
+          value: profile,
+          details: %{supported_profiles: @supported_profiles}
+        })}}
+    end
   end
 
-  defp valid_tool_name?(value) when is_binary(value) do
-    value != "" and Regex.match?(@tool_name_regex, value)
+  defp env_requirement_satisfied?(checks) do
+    map_size(checks) == 0 or Enum.any?(checks, fn {_key, present?} -> present? end)
   end
 end

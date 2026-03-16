@@ -1,6 +1,8 @@
 defmodule Jido.HarnessTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.{Event, RunRequest}
+
   alias Jido.Harness.Test.{
     AdapterStub,
     ErrorRunnerStub,
@@ -47,7 +49,7 @@ defmodule Jido.HarnessTest do
     assert_receive {:adapter_stub_run, request, [transport: :exec]}
     assert request.prompt == "hello"
     assert request.cwd == "/tmp/project"
-    assert [%Jido.Harness.Event{type: :session_started}] = events
+    assert [%Event{type: :session_started}] = events
   end
 
   test "run/2 uses configured default provider" do
@@ -55,23 +57,23 @@ defmodule Jido.HarnessTest do
     Application.put_env(:jido_harness, :default_provider, :stub)
 
     assert {:ok, stream} = Jido.Harness.run("hello", [])
-    assert [%Jido.Harness.Event{type: :session_started}] = Enum.to_list(stream)
+    assert [%Event{type: :session_started}] = Enum.to_list(stream)
   end
 
   test "run_request/3 delegates to adapter run/2 with RunRequest input" do
     Application.put_env(:jido_harness, :providers, %{stub: AdapterStub})
-    request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
+    request = RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
     assert {:ok, stream} = Jido.Harness.run_request(:stub, request, turn: 1)
     events = Enum.to_list(stream)
 
     assert_receive {:adapter_stub_run, ^request, [turn: 1]}
-    assert [%Jido.Harness.Event{type: :session_started}] = events
+    assert [%Event{type: :session_started}] = events
   end
 
   test "run_request/3 returns provider-not-found for non-adapter modules" do
     Application.put_env(:jido_harness, :providers, %{unsupported: NoRuntimeContractAdapterStub})
-    request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
+    request = RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
     assert {:error, %Jido.Harness.Error.ProviderNotFoundError{provider: :unsupported}} =
              Jido.Harness.run_request(:unsupported, request, [])
@@ -80,7 +82,7 @@ defmodule Jido.HarnessTest do
   test "run_request/2 returns validation error when no default provider is configured" do
     Application.put_env(:jido_harness, :providers, %{})
     Application.delete_env(:jido_harness, :default_provider)
-    request = Jido.Harness.RunRequest.new!(%{prompt: "hello", metadata: %{}})
+    request = RunRequest.new!(%{prompt: "hello", metadata: %{}})
 
     assert {:error, %Jido.Harness.Error.InvalidInputError{field: :default_provider}} =
              Jido.Harness.run_request(request, [])

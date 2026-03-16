@@ -26,12 +26,15 @@ defmodule Jido.Harness.ExecutionStatus do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
+  @doc "Returns the Zoi schema for execution status projections."
   @spec schema() :: Zoi.schema()
   def schema, do: @schema
 
+  @doc "Builds an execution status from validated attributes."
   @spec new(map()) :: {:ok, t()} | {:error, term()}
   def new(attrs) when is_map(attrs), do: Zoi.parse(@schema, attrs)
 
+  @doc "Builds an execution status or raises on validation failure."
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do

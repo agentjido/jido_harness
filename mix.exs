@@ -96,8 +96,11 @@ defmodule Jido.Harness.MixProject do
       {:splode, "~> 0.3.0"},
       {:jason, "~> 1.4"},
       {:jido, "~> 2.1"},
+      {:jido_action, "~> 2.1"},
+      {:jido_signal, "~> 2.0"},
       {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
-      {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
+      {:jido_vfs, github: "agentjido/jido_vfs", branch: "main", override: true},
+      {:sprites, github: "mikehostetler/sprites-ex", branch: "main", override: true},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

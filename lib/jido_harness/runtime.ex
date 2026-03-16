@@ -12,11 +12,13 @@ defmodule Jido.Harness.Runtime do
     SessionHandle
   }
 
+  @doc "Returns true when a module exposes the runtime driver callback surface."
   @spec runtime_driver?(module()) :: boolean()
   def runtime_driver?(module) when is_atom(module) do
     Code.ensure_loaded?(module) and driver_callbacks_exported?(module)
   end
 
+  @doc "Runs a streaming runtime driver and maps runtime events back to legacy harness events."
   @spec stream_legacy_events(module(), RunRequest.t(), keyword()) ::
           {:ok, Enumerable.t(Event.t())} | {:error, term()}
   def stream_legacy_events(module, %RunRequest{} = request, opts \\ []) when is_atom(module) do
@@ -48,102 +50,99 @@ defmodule Jido.Harness.Runtime do
     end
   end
 
+  @doc "Runs a runtime driver to completion and returns the normalized execution result."
   @spec run_result(module(), RunRequest.t(), keyword()) :: {:ok, ExecutionResult.t()} | {:error, term()}
   def run_result(module, %RunRequest{} = request, opts \\ []) when is_atom(module) do
-    with {:ok, %SessionHandle{} = session} <- start_runtime_session(module, request, opts) do
-      try do
-        invoke_run(module, session, request, opts)
-      after
-        _ = safe_stop_session(module, session)
-      end
+    case start_runtime_session(module, request, opts) do
+      {:ok, %SessionHandle{} = session} ->
+        run_with_session_cleanup(module, session, fn ->
+          invoke_run(module, session, request, opts)
+        end)
+
+      {:error, _} = error ->
+        error
     end
   end
 
   defp start_runtime_session(module, %RunRequest{} = request, opts) do
     session_opts = runtime_session_opts(request, opts)
 
-    try do
-      case module.start_session(session_opts) do
-        {:ok, %SessionHandle{} = session} ->
-          {:ok, session}
+    case module.start_session(session_opts) do
+      {:ok, %SessionHandle{} = session} ->
+        {:ok, session}
 
-        {:error, _} = error ->
-          error
+      {:error, _} = error ->
+        error
 
-        other ->
-          {:error,
-           Error.execution_error("Runtime driver start_session/1 must return {:ok, session} | {:error, term()}", %{
-             module: inspect(module),
-             value: inspect(other)
-           })}
-      end
-    rescue
-      error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
+      other ->
         {:error,
-         Error.execution_error("Runtime driver start_session/1 invocation failed", %{
+         Error.execution_error("Runtime driver start_session/1 must return {:ok, session} | {:error, term()}", %{
            module: inspect(module),
-           error: Exception.message(error)
+           value: inspect(other)
          })}
     end
+  rescue
+    error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
+      {:error,
+       Error.execution_error("Runtime driver start_session/1 invocation failed", %{
+         module: inspect(module),
+         error: Exception.message(error)
+       })}
   end
 
   defp invoke_stream_run(module, %SessionHandle{} = session, %RunRequest{} = request, opts) do
-    try do
-      case module.stream_run(session, request, opts) do
-        {:ok, _run, stream} = ok ->
-          if Enumerable.impl_for(stream) != nil do
-            ok
-          else
-            {:error,
-             Error.execution_error("Runtime driver stream_run/3 must return an Enumerable stream", %{
-               module: inspect(module),
-               value: inspect(stream)
-             })}
-          end
+    case module.stream_run(session, request, opts) do
+      {:ok, _run, stream} = ok ->
+        if Enumerable.impl_for(stream) != nil do
+          ok
+        else
+          {:error,
+           Error.execution_error("Runtime driver stream_run/3 must return an Enumerable stream", %{
+             module: inspect(module),
+             value: inspect(stream)
+           })}
+        end
+
+      {:error, _} = error ->
+        error
+
+      other ->
+        {:error,
+         Error.execution_error("Runtime driver stream_run/3 must return {:ok, run, stream} | {:error, term()}", %{
+           module: inspect(module),
+           value: inspect(other)
+         })}
+    end
+  rescue
+    error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
+      {:error,
+       Error.execution_error("Runtime driver stream_run/3 invocation failed", %{
+         module: inspect(module),
+         error: Exception.message(error)
+       })}
+  end
+
+  defp invoke_run(module, %SessionHandle{} = session, %RunRequest{} = request, opts) do
+    if function_exported?(module, :run, 3) do
+      case module.run(session, request, opts) do
+        {:ok, %ExecutionResult{} = result} ->
+          {:ok, result}
 
         {:error, _} = error ->
           error
 
         other ->
           {:error,
-           Error.execution_error("Runtime driver stream_run/3 must return {:ok, run, stream} | {:error, term()}", %{
+           Error.execution_error("Runtime driver run/3 must return {:ok, result} | {:error, term()}", %{
              module: inspect(module),
              value: inspect(other)
            })}
       end
-    rescue
-      error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
-        {:error,
-         Error.execution_error("Runtime driver stream_run/3 invocation failed", %{
-           module: inspect(module),
-           error: Exception.message(error)
-         })}
-    end
-  end
-
-  defp invoke_run(module, %SessionHandle{} = session, %RunRequest{} = request, opts) do
-    cond do
-      function_exported?(module, :run, 3) ->
-        case module.run(session, request, opts) do
-          {:ok, %ExecutionResult{} = result} ->
-            {:ok, result}
-
-          {:error, _} = error ->
-            error
-
-          other ->
-            {:error,
-             Error.execution_error("Runtime driver run/3 must return {:ok, result} | {:error, term()}", %{
-               module: inspect(module),
-               value: inspect(other)
-             })}
-        end
-
-      true ->
-        {:error,
-         Error.execution_error("Runtime driver does not expose run/3", %{
-           module: inspect(module)
-         })}
+    else
+      {:error,
+       Error.execution_error("Runtime driver does not expose run/3", %{
+         module: inspect(module)
+       })}
     end
   rescue
     error in [FunctionClauseError, UndefinedFunctionError, ArgumentError] ->
@@ -185,11 +184,15 @@ defmodule Jido.Harness.Runtime do
   end
 
   defp safe_stop_session(module, %SessionHandle{} = session) do
-    try do
-      module.stop_session(session)
-    rescue
-      _ -> :ok
-    end
+    module.stop_session(session)
+  rescue
+    _ -> :ok
+  end
+
+  defp run_with_session_cleanup(module, %SessionHandle{} = session, fun) when is_function(fun, 0) do
+    fun.()
+  after
+    _ = safe_stop_session(module, session)
   end
 
   defp driver_callbacks_exported?(module) do

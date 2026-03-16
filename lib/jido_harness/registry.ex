@@ -98,12 +98,10 @@ defmodule Jido.Harness.Registry do
     configured = Application.get_env(:jido_harness, :default_provider)
     provider_map = providers()
 
-    cond do
-      is_atom(configured) and Map.has_key?(provider_map, configured) ->
-        configured
-
-      true ->
-        provider_map |> Map.keys() |> Enum.sort() |> List.first()
+    if is_atom(configured) and Map.has_key?(provider_map, configured) do
+      configured
+    else
+      provider_map |> Map.keys() |> Enum.sort() |> List.first()
     end
   end
 
@@ -163,21 +161,19 @@ defmodule Jido.Harness.Registry do
   end
 
   defp ensure_provider_id_match(provider, module) do
-    try do
-      case module.id() do
-        ^provider ->
-          {:ok, module}
+    case module.id() do
+      ^provider ->
+        {:ok, module}
 
-        value when is_atom(value) ->
-          {:error, {:id_mismatch, value}}
+      value when is_atom(value) ->
+        {:error, {:id_mismatch, value}}
 
-        value ->
-          {:error, {:id_invalid, value}}
-      end
-    rescue
-      reason ->
-        {:error, {:id_unavailable, reason}}
+      value ->
+        {:error, {:id_invalid, value}}
     end
+  rescue
+    reason ->
+      {:error, {:id_unavailable, reason}}
   end
 
   defp adapter_behaviour_declared?(module) when is_atom(module) do

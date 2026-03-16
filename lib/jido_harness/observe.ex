@@ -15,24 +15,24 @@ defmodule Jido.Harness.Observe do
     :session_id
   ]
 
-  @sensitive_exact_keys MapSet.new([
-                          "api_key",
-                          "apikey",
-                          "password",
-                          "secret",
-                          "token",
-                          "auth_token",
-                          "authtoken",
-                          "private_key",
-                          "privatekey",
-                          "access_key",
-                          "accesskey",
-                          "bearer",
-                          "api_secret",
-                          "apisecret",
-                          "client_secret",
-                          "clientsecret"
-                        ])
+  @sensitive_exact_keys %{
+    "api_key" => true,
+    "apikey" => true,
+    "password" => true,
+    "secret" => true,
+    "token" => true,
+    "auth_token" => true,
+    "authtoken" => true,
+    "private_key" => true,
+    "privatekey" => true,
+    "access_key" => true,
+    "accesskey" => true,
+    "bearer" => true,
+    "api_secret" => true,
+    "apisecret" => true,
+    "client_secret" => true,
+    "clientsecret" => true
+  }
 
   @sensitive_contains ["secret_"]
   @sensitive_suffixes ["_secret", "_key", "_token", "_password"]
@@ -114,7 +114,7 @@ defmodule Jido.Harness.Observe do
   defp sensitive_key?(key) when is_binary(key) do
     key = String.downcase(key)
 
-    MapSet.member?(@sensitive_exact_keys, key) or
+    Map.has_key?(@sensitive_exact_keys, key) or
       Enum.any?(@sensitive_contains, &String.contains?(key, &1)) or
       Enum.any?(@sensitive_suffixes, &String.ends_with?(key, &1))
   end

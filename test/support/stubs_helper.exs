@@ -412,6 +412,17 @@ end
 
 defmodule Jido.Harness.Test.ExecShellState do
   @moduledoc false
+
+  @command_handlers [
+    %{match: "install-runtime-tool", effect: {:tool, "runtime-tool", true}, response: {:ok, "installed"}},
+    %{match: "bootstrap-runtime-auth", effect: {:env, "RUNTIME_KEY", "set"}, response: {:ok, "bootstrapped"}},
+    %{match: "probe-runtime", response: {:ok, "runtime ok"}},
+    %{match: "opencode --help", response: {:ok, "OpenCode CLI\nrun\n"}},
+    %{match: "opencode run --help", response: {:ok, "Usage: opencode run --format json"}},
+    %{match: "opencode models zai_custom", response: {:ok, "zai_custom/glm-4.5-air"}},
+    %{match: "gh auth status", response: {:ok, "authenticated"}},
+    %{match: "gh api user --jq .login", response: {:ok, "testuser"}}
+  ]
   use Agent
 
   def start_link(_opts \\ []) do
@@ -432,9 +443,7 @@ defmodule Jido.Harness.Test.ExecShellState do
   end
 
   def reset!(opts \\ %{}) do
-    ensure_started!()
-
-    Agent.update(__MODULE__, fn _ ->
+    update_state!(fn _ ->
       default_state()
       |> Map.merge(Map.take(opts, [:tools, :env]))
     end)
@@ -446,65 +455,22 @@ defmodule Jido.Harness.Test.ExecShellState do
   end
 
   def set_tool(tool, present?) when is_binary(tool) and is_boolean(present?) do
-    ensure_started!()
-
-    Agent.update(__MODULE__, fn state ->
+    update_state!(fn state ->
       %{state | tools: Map.put(state.tools, tool, present?)}
     end)
   end
 
   def set_env(key, value) when is_binary(key) do
-    ensure_started!()
-
-    Agent.update(__MODULE__, fn state ->
+    update_state!(fn state ->
       %{state | env: Map.put(state.env, key, value)}
     end)
   end
 
   def run(command) when is_binary(command) do
     ensure_started!()
-    Agent.update(__MODULE__, fn state -> %{state | runs: [command | state.runs]} end)
+    record_run(command)
 
-    cond do
-      String.contains?(command, "install-runtime-tool") ->
-        set_tool("runtime-tool", true)
-        {:ok, "installed"}
-
-      String.contains?(command, "bootstrap-runtime-auth") ->
-        set_env("RUNTIME_KEY", "set")
-        {:ok, "bootstrapped"}
-
-      String.contains?(command, "probe-runtime") ->
-        {:ok, "runtime ok"}
-
-      String.contains?(command, "opencode --help") ->
-        {:ok, "OpenCode CLI\nrun\n"}
-
-      String.contains?(command, "opencode run --help") ->
-        {:ok, "Usage: opencode run --format json"}
-
-      String.contains?(command, "opencode models zai_custom") ->
-        {:ok, "zai_custom/glm-4.5-air"}
-
-      String.contains?(command, "gh auth status") ->
-        {:ok, "authenticated"}
-
-      String.contains?(command, "gh api user --jq .login") ->
-        {:ok, "testuser"}
-
-      String.contains?(command, "${") ->
-        env_key = extract_env_key(command)
-        env_value = Agent.get(__MODULE__, fn state -> Map.get(state.env, env_key) end)
-        {:ok, if(present_env?(env_value), do: "present", else: "missing")}
-
-      String.contains?(command, "command -v ") ->
-        tool = extract_tool_name(command)
-        present = Agent.get(__MODULE__, fn state -> Map.get(state.tools, tool, false) end)
-        {:ok, if(present, do: "present", else: "missing")}
-
-      true ->
-        {:ok, "ok"}
-    end
+    handler_response(command) || env_query_response(command) || tool_query_response(command) || {:ok, "ok"}
   end
 
   defp extract_env_key(command) do
@@ -524,6 +490,51 @@ defmodule Jido.Harness.Test.ExecShellState do
   defp present_env?(value) when is_binary(value), do: String.trim(value) != ""
   defp present_env?(_), do: false
 
+  defp record_run(command) do
+    Agent.update(__MODULE__, fn state -> %{state | runs: [command | state.runs]} end)
+  end
+
+  defp handler_response(command) do
+    Enum.find_value(@command_handlers, &match_handler(command, &1))
+  end
+
+  defp match_handler(command, %{match: pattern, response: response} = handler) do
+    if String.contains?(command, pattern) do
+      apply_handler_effect(Map.get(handler, :effect))
+      response
+    end
+  end
+
+  defp apply_handler_effect({:tool, tool, present?}), do: set_tool(tool, present?)
+  defp apply_handler_effect({:env, key, value}), do: set_env(key, value)
+  defp apply_handler_effect(nil), do: :ok
+
+  defp env_query_response(command) do
+    if String.contains?(command, "${") do
+      env_key = extract_env_key(command)
+      env_value = Agent.get(__MODULE__, fn state -> Map.get(state.env, env_key) end)
+      {:ok, if(present_env?(env_value), do: "present", else: "missing")}
+    end
+  end
+
+  defp tool_query_response(command) do
+    if String.contains?(command, "command -v ") do
+      tool = extract_tool_name(command)
+      present = Agent.get(__MODULE__, fn state -> Map.get(state.tools, tool, false) end)
+      {:ok, if(present, do: "present", else: "missing")}
+    end
+  end
+
+  defp update_state!(fun) when is_function(fun, 1) do
+    ensure_started!()
+
+    Agent.update(__MODULE__, fun)
+  catch
+    :exit, {:noproc, _} ->
+      ensure_started!()
+      Agent.update(__MODULE__, fun)
+  end
+
   defp default_state do
     %{
       tools: %{"gh" => true, "git" => true},
@@ -536,8 +547,10 @@ end
 defmodule Jido.Harness.Test.ExecShellAgentStub do
   @moduledoc false
 
+  alias Jido.Harness.Test.ExecShellState
+
   def run(_session_id, command, _opts \\ []) when is_binary(command) do
-    Jido.Harness.Test.ExecShellState.run(command)
+    ExecShellState.run(command)
   end
 end
 

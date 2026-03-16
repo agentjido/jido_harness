@@ -5,6 +5,7 @@ defmodule Jido.Harness.SessionControl do
 
   @version "session_control/v1"
 
+  @doc "Returns the current Session Control schema version."
   @spec version() :: String.t()
   def version, do: @version
 end

@@ -2,6 +2,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
   use ExUnit.Case, async: false
 
   alias Jido.Harness.Exec
+  alias Jido.Harness.Exec.ProviderRuntime
 
   alias Jido.Harness.Test.{
     ExecShellAgentStub,
@@ -64,7 +65,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     Application.put_env(:jido_harness, :providers, %{runtime_missing_templates: MissingTemplatesRuntimeAdapterStub})
 
     assert {:error, %Jido.Harness.Error.InvalidInputError{message: message, details: details}} =
-             Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:runtime_missing_templates)
+             ProviderRuntime.provider_runtime_contract(:runtime_missing_templates)
 
     assert message =~ "must include command templates"
     assert :triage_command_template in details[:missing_fields]
@@ -74,7 +75,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     Application.put_env(:jido_harness, :providers, %{runtime_stub: RuntimeAdapterStub})
 
     assert {:ok, command} =
-             Jido.Harness.Exec.ProviderRuntime.build_command(
+             ProviderRuntime.build_command(
                :runtime_stub,
                :coding,
                "/tmp/prompt.txt"
@@ -87,7 +88,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
   test "provider_runtime_contract accepts opencode runtime contract shape" do
     Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
 
-    assert {:ok, contract} = Jido.Harness.Exec.ProviderRuntime.provider_runtime_contract(:opencode)
+    assert {:ok, contract} = ProviderRuntime.provider_runtime_contract(:opencode)
     assert contract.provider == :opencode
     assert "ZAI_API_KEY" in contract.host_env_required_any
     assert Enum.any?(contract.compatibility_probes, &(&1["name"] == "opencode_help_run"))
@@ -98,7 +99,7 @@ defmodule Jido.Harness.ProviderRuntimeHardeningTest do
     Application.put_env(:jido_harness, :providers, %{opencode: OpenCodeRuntimeAdapterStub})
 
     assert {:ok, command} =
-             Jido.Harness.Exec.ProviderRuntime.build_command(
+             ProviderRuntime.build_command(
                :opencode,
                :triage,
                "/tmp/prompt.txt"

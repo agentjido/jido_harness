@@ -3,25 +3,22 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   Provider-specific runtime checks, bootstrap steps, and command templates.
   """
 
-  alias Jido.Harness.{Registry, RuntimeContract}
   alias Jido.Harness.Exec.Error
+  alias Jido.Harness.Exec.ShellOps
+  alias Jido.Harness.{Registry, RuntimeContract}
   alias Jido.Shell.Exec
-
-  @env_var_name_regex ~r/^[A-Za-z_][A-Za-z0-9_]*$/
-  @tool_name_regex ~r/^[A-Za-z0-9._+-]+$/
 
   @doc """
   Loads and validates the provider runtime contract from the adapter.
   """
   @spec provider_runtime_contract(atom()) :: {:ok, RuntimeContract.t()} | {:error, term()}
   def provider_runtime_contract(provider) when is_atom(provider) do
-    with {:ok, module} <- Registry.lookup(provider) do
-      with :ok <- ensure_runtime_contract_callback(module, provider),
-           {:ok, contract} <- safe_runtime_contract(module, provider),
-           {:ok, normalized} <- normalize_contract(contract, provider),
-           :ok <- ensure_command_templates(normalized, provider) do
-        {:ok, normalized}
-      end
+    with {:ok, module} <- Registry.lookup(provider),
+         :ok <- ensure_runtime_contract_callback(module, provider),
+         {:ok, contract} <- safe_runtime_contract(module, provider),
+         {:ok, normalized} <- normalize_contract(contract, provider),
+         :ok <- ensure_command_templates(normalized, provider) do
+      {:ok, normalized}
     end
   end
 
@@ -162,52 +159,37 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     all = contract.host_env_required_all
     any = contract.host_env_required_any
 
-    with {:ok, all_results} <- check_env_vars(shell_agent_mod, session_id, all, timeout),
-         {:ok, any_results} <- check_env_vars(shell_agent_mod, session_id, any, timeout) do
-      any_ok =
-        if any == [] do
-          true
-        else
-          Enum.any?(any_results, fn {_key, present?} -> present? end)
-        end
-
-      {:ok, %{required_all: all_results, required_any: any_results, any_satisfied: any_ok}}
+    with {:ok, all_results} <-
+           ShellOps.check_env_vars(shell_agent_mod, session_id, timeout, all,
+             field: :runtime_contract_env,
+             invalid_message: "Invalid env var name in runtime contract",
+             type_message: "runtime contract env keys must be a list"
+           ),
+         {:ok, any_results} <-
+           ShellOps.check_env_vars(shell_agent_mod, session_id, timeout, any,
+             field: :runtime_contract_env,
+             invalid_message: "Invalid env var name in runtime contract",
+             type_message: "runtime contract env keys must be a list"
+           ) do
+      {:ok,
+       %{
+         required_all: all_results,
+         required_any: any_results,
+         any_satisfied: any_requirement_satisfied?(any_results)
+       }}
     end
   end
 
   defp validate_tool_contract(contract, shell_agent_mod, session_id, timeout) do
-    contract.runtime_tools_required
-    |> Enum.reduce_while({:ok, %{}}, fn tool, {:ok, acc} ->
-      tool_name = to_string(tool)
-
-      if valid_tool_name?(tool_name) do
-        {:cont, {:ok, Map.put(acc, tool_name, tool_present?(shell_agent_mod, session_id, tool_name, timeout))}}
-      else
-        {:halt,
-         {:error,
-          Error.invalid("Invalid runtime tool name", %{
-            field: :runtime_tools_required,
-            value: tool,
-            details: %{tool: tool}
-          })}}
-      end
-    end)
+    ShellOps.check_tools(shell_agent_mod, session_id, timeout, contract.runtime_tools_required,
+      field: :runtime_tools_required,
+      invalid_message: "Invalid runtime tool name",
+      type_message: "runtime_tools_required must be a list"
+    )
   end
 
   defp validate_compatibility_probes(contract, shell_agent_mod, session_id, cwd, timeout) do
-    probes = contract.compatibility_probes
-
-    probes
-    |> Enum.reduce_while({:ok, []}, fn probe, {:ok, acc} ->
-      case run_probe(probe, shell_agent_mod, session_id, cwd, timeout) do
-        {:ok, result} -> {:cont, {:ok, [result | acc]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
-      other -> other
-    end
+    collect_results(contract.compatibility_probes, &run_probe(&1, shell_agent_mod, session_id, cwd, timeout))
   end
 
   defp run_probe(probe, shell_agent_mod, session_id, cwd, timeout) when is_map(probe) do
@@ -216,35 +198,19 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     expect_all = normalize_list(map_get(probe, :expect_all, []))
     expect_any = normalize_list(map_get(probe, :expect_any, []))
 
-    if not is_binary(command) or String.trim(command) == "" do
-      {:error,
-       Error.invalid("Probe command is required", %{
-         field: :compatibility_probes,
-         details: %{probe: name}
-       })}
-    else
-      runner =
-        if is_binary(cwd) and cwd != "" do
-          Exec.run_in_dir(shell_agent_mod, session_id, cwd, command, timeout: timeout)
-        else
-          Exec.run(shell_agent_mod, session_id, command, timeout: timeout)
-        end
-
-      case runner do
+    with :ok <- ensure_non_empty_command(command, :compatibility_probes, "Probe command is required", %{probe: name}) do
+      case ShellOps.run_command(shell_agent_mod, session_id, cwd, command, timeout) do
         {:ok, output} ->
-          has_all = Enum.all?(expect_all, &String.contains?(output, &1))
-          has_any = if expect_any == [], do: true, else: Enum.any?(expect_any, &String.contains?(output, &1))
-          pass? = has_all and has_any
-
-          {:ok, %{name: name, command: command, pass?: pass?, output: output}}
+          {:ok,
+           %{
+             name: name,
+             command: command,
+             pass?: probe_passed?(output, expect_all, expect_any),
+             output: output
+           }}
 
         {:error, reason} ->
-          {:error,
-           Error.execution("Compatibility probe failed", %{
-             probe: name,
-             command: command,
-             reason: reason
-           })}
+          {:error, Error.execution("Compatibility probe failed", %{probe: name, command: command, reason: reason})}
       end
     end
   end
@@ -254,19 +220,7 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp execute_install_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
-    steps = contract.install_steps
-
-    steps
-    |> Enum.reduce_while({:ok, []}, fn step, {:ok, acc} ->
-      case run_install_step(step, shell_agent_mod, session_id, cwd, timeout) do
-        {:ok, result} -> {:cont, {:ok, [result | acc]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
-      other -> other
-    end
+    collect_results(contract.install_steps, &run_install_step(&1, shell_agent_mod, session_id, cwd, timeout))
   end
 
   defp run_install_step(step, shell_agent_mod, session_id, cwd, timeout) when is_map(step) do
@@ -274,30 +228,9 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     command = map_get(step, :command)
     when_missing? = map_get(step, :when_missing, true)
 
-    cond do
-      not is_binary(command) or String.trim(command) == "" ->
-        {:error,
-         Error.invalid("Install step command is required", %{
-           field: :install_steps,
-           details: %{step: step}
-         })}
-
-      is_binary(tool) and not valid_tool_name?(tool) ->
-        {:error,
-         Error.invalid("Install step tool name is invalid", %{
-           field: :install_steps,
-           value: tool,
-           details: %{tool: tool}
-         })}
-
-      when_missing? == true and is_binary(tool) and tool_present?(shell_agent_mod, session_id, tool, timeout) ->
-        {:ok, %{tool: tool, status: :skipped, reason: :already_present}}
-
-      true ->
-        case run_command(shell_agent_mod, session_id, cwd, command, timeout) do
-          {:ok, output} -> {:ok, %{tool: tool, status: :ok, output: output}}
-          {:error, reason} -> {:error, Error.execution("Install step failed", %{tool: tool, reason: reason})}
-        end
+    with :ok <- ensure_non_empty_command(command, :install_steps, "Install step command is required", %{step: step}),
+         :ok <- validate_install_tool(tool) do
+      maybe_execute_install_step(when_missing?, tool, shell_agent_mod, session_id, cwd, command, timeout)
     end
   end
 
@@ -306,79 +239,10 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp execute_auth_bootstrap_steps(contract, shell_agent_mod, session_id, cwd, timeout) do
-    steps = contract.auth_bootstrap_steps
-
-    steps
-    |> Enum.reduce_while({:ok, []}, fn command, {:ok, acc} ->
-      if is_binary(command) and String.trim(command) != "" do
-        case run_command(shell_agent_mod, session_id, cwd, command, timeout) do
-          {:ok, output} ->
-            {:cont, {:ok, [%{command: command, status: :ok, output: output} | acc]}}
-
-          {:error, reason} ->
-            {:halt, {:error, Error.execution("Auth bootstrap failed", %{command: command, reason: reason})}}
-        end
-      else
-        {:halt,
-         {:error,
-          Error.invalid("Auth bootstrap step must be a non-empty command", %{
-            field: :auth_bootstrap_steps,
-            value: command,
-            details: %{step: command}
-          })}}
-      end
-    end)
-    |> case do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
-      other -> other
-    end
-  end
-
-  defp run_command(shell_agent_mod, session_id, cwd, command, timeout) do
-    if is_binary(cwd) and cwd != "" do
-      Exec.run_in_dir(shell_agent_mod, session_id, cwd, command, timeout: timeout)
-    else
-      Exec.run(shell_agent_mod, session_id, command, timeout: timeout)
-    end
-  end
-
-  defp check_env_vars(shell_agent_mod, session_id, keys, timeout) do
-    keys
-    |> Enum.reduce_while({:ok, %{}}, fn key, {:ok, acc} ->
-      env_key = to_string(key)
-
-      if valid_env_var_name?(env_key) do
-        cmd = "if [ -n \"${#{env_key}:-}\" ]; then echo present; else echo missing; fi"
-
-        case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-          {:ok, "present"} -> {:cont, {:ok, Map.put(acc, env_key, true)}}
-          {:ok, "missing"} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
-          {:ok, _} -> {:cont, {:ok, Map.put(acc, env_key, false)}}
-          {:error, reason} -> {:halt, {:error, Error.execution("Env check failed", %{key: env_key, reason: reason})}}
-        end
-      else
-        {:halt,
-         {:error,
-          Error.invalid("Invalid env var name in runtime contract", %{
-            field: :runtime_contract_env,
-            value: key,
-            details: %{key: key}
-          })}}
-      end
-    end)
-  end
-
-  defp tool_present?(shell_agent_mod, session_id, tool, timeout) do
-    if valid_tool_name?(tool) do
-      cmd = "command -v #{Exec.escape_path(tool)} >/dev/null 2>&1 && echo present || echo missing"
-
-      case Exec.run(shell_agent_mod, session_id, cmd, timeout: timeout) do
-        {:ok, "present"} -> true
-        _ -> false
-      end
-    else
-      false
-    end
+    collect_results(
+      contract.auth_bootstrap_steps,
+      &run_auth_bootstrap_step(&1, shell_agent_mod, session_id, cwd, timeout)
+    )
   end
 
   defp collect_missing(checks) do
@@ -426,17 +290,15 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
   end
 
   defp safe_runtime_contract(module, provider) do
-    try do
-      {:ok, module.runtime_contract()}
-    rescue
-      reason ->
-        {:error,
-         Error.execution("Failed to fetch provider runtime contract", %{
-           provider: provider,
-           module: inspect(module),
-           reason: reason
-         })}
-    end
+    {:ok, module.runtime_contract()}
+  rescue
+    reason ->
+      {:error,
+       Error.execution("Failed to fetch provider runtime contract", %{
+         provider: provider,
+         module: inspect(module),
+         reason: reason
+       })}
   end
 
   defp ensure_command_templates(contract, provider) do
@@ -511,11 +373,94 @@ defmodule Jido.Harness.Exec.ProviderRuntime do
     end
   end
 
-  defp valid_env_var_name?(value) when is_binary(value) do
-    value != "" and Regex.match?(@env_var_name_regex, value)
+  defp any_requirement_satisfied?(checks) do
+    map_size(checks) == 0 or Enum.any?(checks, fn {_key, present?} -> present? end)
   end
 
-  defp valid_tool_name?(value) when is_binary(value) do
-    value != "" and Regex.match?(@tool_name_regex, value)
+  defp collect_results(items, fun) when is_list(items) and is_function(fun, 1) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      case fun.(item) do
+        {:ok, result} -> {:cont, {:ok, [result | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, results} -> {:ok, Enum.reverse(results)}
+      other -> other
+    end
+  end
+
+  defp ensure_non_empty_command(command, field, message, details) when is_binary(command) do
+    if String.trim(command) == "" do
+      {:error, Error.invalid(message, %{field: field, details: details})}
+    else
+      :ok
+    end
+  end
+
+  defp ensure_non_empty_command(command, field, message, details) do
+    {:error, Error.invalid(message, %{field: field, value: command, details: details})}
+  end
+
+  defp validate_install_tool(tool) when is_binary(tool) do
+    if ShellOps.valid_tool_name?(tool) do
+      :ok
+    else
+      {:error,
+       Error.invalid("Install step tool name is invalid", %{
+         field: :install_steps,
+         value: tool,
+         details: %{tool: tool}
+       })}
+    end
+  end
+
+  defp validate_install_tool(_tool), do: :ok
+
+  defp maybe_execute_install_step(true, tool, shell_agent_mod, session_id, cwd, command, timeout)
+       when is_binary(tool) do
+    if ShellOps.tool_present?(shell_agent_mod, session_id, tool, timeout) do
+      {:ok, %{tool: tool, status: :skipped, reason: :already_present}}
+    else
+      execute_install_command(tool, shell_agent_mod, session_id, cwd, command, timeout)
+    end
+  end
+
+  defp maybe_execute_install_step(_when_missing?, tool, shell_agent_mod, session_id, cwd, command, timeout) do
+    execute_install_command(tool, shell_agent_mod, session_id, cwd, command, timeout)
+  end
+
+  defp execute_install_command(tool, shell_agent_mod, session_id, cwd, command, timeout) do
+    case ShellOps.run_command(shell_agent_mod, session_id, cwd, command, timeout) do
+      {:ok, output} ->
+        {:ok, %{tool: tool, status: :ok, output: output}}
+
+      {:error, reason} ->
+        {:error, Error.execution("Install step failed", %{tool: tool, reason: reason})}
+    end
+  end
+
+  defp run_auth_bootstrap_step(command, shell_agent_mod, session_id, cwd, timeout) do
+    with :ok <-
+           ensure_non_empty_command(
+             command,
+             :auth_bootstrap_steps,
+             "Auth bootstrap step must be a non-empty command",
+             %{step: command}
+           ) do
+      case ShellOps.run_command(shell_agent_mod, session_id, cwd, command, timeout) do
+        {:ok, output} ->
+          {:ok, %{command: command, status: :ok, output: output}}
+
+        {:error, reason} ->
+          {:error, Error.execution("Auth bootstrap failed", %{command: command, reason: reason})}
+      end
+    end
+  end
+
+  defp probe_passed?(output, expect_all, expect_any) do
+    Enum.all?(expect_all, &String.contains?(output, &1)) and
+      (expect_any == [] or Enum.any?(expect_any, &String.contains?(output, &1)))
   end
 end

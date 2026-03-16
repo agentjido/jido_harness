@@ -81,7 +81,7 @@ defmodule Jido.Harness.AdapterContract do
         adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
         assert Code.ensure_loaded?(adapter)
         assert function_exported?(adapter, :runtime_contract, 0)
-        contract = apply(adapter, :runtime_contract, [])
+        contract = adapter.runtime_contract()
         assert %RuntimeContract{} = contract
         assert is_atom(contract.provider)
         assert is_list(contract.runtime_tools_required)

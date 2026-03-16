@@ -2,26 +2,18 @@ defmodule Jido.Harness.Exec do
   @moduledoc """
   Runtime orchestration helpers for provider execution in shell-backed sessions.
 
-  Each helper delegates to a corresponding `Jido.Harness.Actions.*` module through
-  `Jido.Exec.run/4` to keep runtime lifecycle execution Jido-native while preserving
-  ergonomic function call sites.
+  These functions provide the direct library API over the underlying runtime modules.
+  Matching `Jido.Harness.Actions.*` wrappers exist for Jido-native workflow composition.
   """
 
-  alias Jido.Harness.Actions.{
-    BootstrapProviderRuntime,
-    ProvisionWorkspace,
-    RunProviderStream,
-    TeardownWorkspace,
-    ValidateProviderRuntime,
-    ValidateSharedRuntime
-  }
+  alias Jido.Harness.Exec.{Preflight, ProviderRuntime, Stream, Workspace}
 
   @doc """
   Provisions the workspace runtime context for a session.
   """
   @spec provision_workspace(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def provision_workspace(workspace_id, opts \\ []) when is_binary(workspace_id) and is_list(opts) do
-    run_action(ProvisionWorkspace, %{workspace_id: workspace_id, opts: Map.new(opts)})
+    Workspace.provision_workspace(workspace_id, opts)
   end
 
   @doc """
@@ -29,7 +21,7 @@ defmodule Jido.Harness.Exec do
   """
   @spec validate_shared_runtime(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def validate_shared_runtime(session_id, opts \\ []) when is_binary(session_id) and is_list(opts) do
-    run_action(ValidateSharedRuntime, %{session_id: session_id, opts: Map.new(opts)})
+    Preflight.validate_shared_runtime(session_id, opts)
   end
 
   @doc """
@@ -38,7 +30,7 @@ defmodule Jido.Harness.Exec do
   @spec validate_provider_runtime(atom(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def validate_provider_runtime(provider, session_id, opts \\ [])
       when is_atom(provider) and is_binary(session_id) and is_list(opts) do
-    run_action(ValidateProviderRuntime, %{provider: provider, session_id: session_id, opts: Map.new(opts)})
+    ProviderRuntime.validate_provider_runtime(provider, session_id, opts)
   end
 
   @doc """
@@ -47,7 +39,7 @@ defmodule Jido.Harness.Exec do
   @spec bootstrap_provider_runtime(atom(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def bootstrap_provider_runtime(provider, session_id, opts \\ [])
       when is_atom(provider) and is_binary(session_id) and is_list(opts) do
-    run_action(BootstrapProviderRuntime, %{provider: provider, session_id: session_id, opts: Map.new(opts)})
+    ProviderRuntime.bootstrap_provider_runtime(provider, session_id, opts)
   end
 
   @doc """
@@ -57,12 +49,7 @@ defmodule Jido.Harness.Exec do
           {:ok, map()} | {:error, term()}
   def run_stream(provider, session_id, cwd, command_or_opts)
       when is_atom(provider) and is_binary(session_id) and is_binary(cwd) do
-    run_action(RunProviderStream, %{
-      provider: provider,
-      session_id: session_id,
-      cwd: cwd,
-      command_or_opts: command_or_opts
-    })
+    Stream.run_stream(provider, session_id, cwd, command_or_opts)
   end
 
   @doc """
@@ -70,24 +57,6 @@ defmodule Jido.Harness.Exec do
   """
   @spec teardown_workspace(String.t(), keyword()) :: map()
   def teardown_workspace(session_id, opts \\ []) when is_binary(session_id) and is_list(opts) do
-    case run_action(TeardownWorkspace, %{session_id: session_id, opts: Map.new(opts)}) do
-      {:ok, teardown} ->
-        teardown
-
-      {:error, reason} ->
-        %{
-          teardown_verified: false,
-          teardown_attempts: 0,
-          warnings: ["teardown action failed: #{inspect(reason)}"]
-        }
-    end
-  end
-
-  defp run_action(action, params) when is_atom(action) and is_map(params) do
-    case Jido.Exec.run(action, params, %{}) do
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, reason}
-      {:error, reason, _directive} -> {:error, reason}
-    end
+    Workspace.teardown_workspace(session_id, opts)
   end
 end
