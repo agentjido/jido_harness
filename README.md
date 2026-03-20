@@ -107,9 +107,16 @@ Jido.Harness.runtime_descriptor(:jido_session)
 {:ok, run, events} = Jido.Harness.stream_run(session, request)
 {:ok, result} = Jido.Harness.run_result(session, request)
 {:ok, status} = Jido.Harness.session_status(session)
+:ok = Jido.Harness.approve(session, "approval-1", :allow)
+{:ok, cost} = Jido.Harness.cost(session)
 :ok = Jido.Harness.cancel_run(session, run)
 :ok = Jido.Harness.stop_session(session)
 ```
+
+`Jido.Harness.run_result/3` is the public facade for a runtime driver's
+optional `run/3` callback. `Jido.Harness.RuntimeDriver` also defines optional
+`subscribe/2` and `resume/3` callbacks; drivers advertise those capabilities
+through `RuntimeDescriptor.subscribe?` and `RuntimeDescriptor.resume?`.
 
 ## Documentation
 

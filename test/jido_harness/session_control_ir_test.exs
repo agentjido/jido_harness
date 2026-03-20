@@ -81,6 +81,107 @@ defmodule Jido.Harness.SessionControlIRTest do
     assert session.metadata == %{"surface" => "runtime-driver"}
   end
 
+  test "session control ir structs retain the stable public field set" do
+    session =
+      SessionHandle.new!(%{
+        session_id: "session-shape-1",
+        runtime_id: :asm,
+        provider: :claude
+      })
+
+    run =
+      RunHandle.new!(%{
+        run_id: "run-shape-1",
+        session_id: session.session_id,
+        runtime_id: :asm,
+        provider: :claude
+      })
+
+    event =
+      ExecutionEvent.new!(%{
+        event_id: "event-shape-1",
+        type: :result,
+        session_id: session.session_id,
+        run_id: run.run_id,
+        runtime_id: :asm,
+        provider: :claude,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+    result =
+      ExecutionResult.new!(%{
+        run_id: run.run_id,
+        session_id: session.session_id,
+        runtime_id: :asm,
+        provider: :claude,
+        status: :completed
+      })
+
+    descriptor =
+      RuntimeDescriptor.new!(%{
+        runtime_id: :asm,
+        provider: :claude,
+        label: "ASM",
+        session_mode: :external
+      })
+
+    assert session |> Map.from_struct() |> Map.keys() |> Enum.sort() ==
+             [:metadata, :provider, :runtime_id, :schema_version, :session_id, :status]
+
+    assert run |> Map.from_struct() |> Map.keys() |> Enum.sort() ==
+             [:metadata, :provider, :run_id, :runtime_id, :schema_version, :session_id, :started_at, :status]
+
+    assert event |> Map.from_struct() |> Map.keys() |> Enum.sort() ==
+             [
+               :event_id,
+               :metadata,
+               :payload,
+               :provider,
+               :raw,
+               :run_id,
+               :runtime_id,
+               :schema_version,
+               :sequence,
+               :session_id,
+               :status,
+               :timestamp,
+               :type
+             ]
+
+    assert result |> Map.from_struct() |> Map.keys() |> Enum.sort() ==
+             [
+               :cost,
+               :duration_ms,
+               :error,
+               :messages,
+               :metadata,
+               :provider,
+               :run_id,
+               :runtime_id,
+               :schema_version,
+               :session_id,
+               :status,
+               :stop_reason,
+               :text
+             ]
+
+    assert descriptor |> Map.from_struct() |> Map.keys() |> Enum.sort() ==
+             [
+               :approvals?,
+               :cancellation?,
+               :cost?,
+               :label,
+               :metadata,
+               :provider,
+               :resume?,
+               :runtime_id,
+               :schema_version,
+               :session_mode,
+               :streaming?,
+               :subscribe?
+             ]
+  end
+
   test "session control ir constructors reject invalid inputs" do
     assert {:error, _} = SessionHandle.new(%{})
     assert {:error, _} = RunHandle.new(%{})

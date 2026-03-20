@@ -692,9 +692,13 @@ defmodule Jido.Harness.Test.RuntimeDriverStub do
      })}
   end
 
-  def approve(_session, _approval_id, _decision, _opts), do: :ok
+  def approve(%SessionHandle{} = session, approval_id, decision, opts) do
+    send(self(), {:runtime_driver_stub_approve, session.session_id, approval_id, decision, opts})
+    :ok
+  end
 
-  def cost(_session) do
+  def cost(%SessionHandle{} = session) do
+    send(self(), {:runtime_driver_stub_cost, session.session_id})
     {:ok, %{"input_tokens" => 1, "output_tokens" => 1, "cost_usd" => 0.01}}
   end
 end

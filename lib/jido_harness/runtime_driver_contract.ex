@@ -84,6 +84,23 @@ defmodule Jido.Harness.RuntimeDriverContract do
         end
       end
 
+      test "runtime driver contract: optional capability flags imply exported callbacks" do
+        driver = __runtime_driver_contract_resolve_module__(@runtime_driver_contract_driver)
+        descriptor = driver.runtime_descriptor(@runtime_driver_contract_descriptor_opts)
+
+        for {flag, function_name, arity} <- [
+              {:approvals?, :approve, 4},
+              {:cost?, :cost, 1},
+              {:subscribe?, :subscribe, 2},
+              {:resume?, :resume, 3}
+            ] do
+          if Map.fetch!(descriptor, flag) do
+            assert function_exported?(driver, function_name, arity),
+                   "expected #{inspect(driver)} to export #{function_name}/#{arity} when #{flag} is true"
+          end
+        end
+      end
+
       test "runtime driver contract: start_session/1 and session_status/1 return session control structs" do
         driver = __runtime_driver_contract_resolve_module__(@runtime_driver_contract_driver)
         assert {:ok, session} = driver.start_session(@runtime_driver_contract_start_session_opts)

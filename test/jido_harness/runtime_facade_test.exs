@@ -43,6 +43,8 @@ defmodule Jido.Harness.RuntimeFacadeTest do
     assert {:ok, run, stream} = Jido.Harness.stream_run(session, request, run_id: "runtime-run-1")
     assert {:ok, status} = Jido.Harness.session_status(session)
     assert {:ok, result} = Jido.Harness.run_result(session, request, run_id: "runtime-run-2")
+    assert :ok = Jido.Harness.approve(session, "approval-1", :allow, source: "runtime-facade-test")
+    assert {:ok, cost} = Jido.Harness.cost(session)
     assert :ok = Jido.Harness.cancel_run(session, run)
     assert :ok = Jido.Harness.stop_session(session)
 
@@ -54,11 +56,17 @@ defmodule Jido.Harness.RuntimeFacadeTest do
 
     assert_receive {:runtime_driver_stub_stream_run, "runtime-session-1", ^request, [run_id: "runtime-run-1"]}
     assert_receive {:runtime_driver_stub_run, "runtime-session-1", ^request, [run_id: "runtime-run-2"]}
+
+    assert_receive {:runtime_driver_stub_approve, "runtime-session-1", "approval-1", :allow,
+                    [source: "runtime-facade-test"]}
+
+    assert_receive {:runtime_driver_stub_cost, "runtime-session-1"}
     assert_receive {:runtime_driver_stub_cancel_run, "runtime-session-1", "runtime-run-1"}
     assert_receive {:runtime_driver_stub_stop_session, "runtime-session-1"}
 
     assert status.state == :ready
     assert result.run_id == "runtime-run-2"
+    assert cost["cost_usd"] == 0.01
 
     assert [%Jido.Harness.ExecutionEvent{type: :run_started}, %Jido.Harness.ExecutionEvent{type: :result}] =
              events

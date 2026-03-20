@@ -1,6 +1,12 @@
 defmodule Jido.Harness.RuntimeDriver do
   @moduledoc """
   Behaviour for runtime drivers that implement the Session Control IR.
+
+  Drivers must always expose the session lifecycle callbacks required for
+  start/stop, streaming runs, cancellation, and status. Optional callbacks for
+  synchronous `run/3`, approvals, cost inspection, subscription, and resume
+  semantics should only be advertised when the corresponding
+  `Jido.Harness.RuntimeDescriptor` capability flags are true.
   """
 
   alias Jido.Harness.{
