@@ -79,26 +79,27 @@ defmodule Jido.Harness.RuntimeDriverContract do
         assert is_binary(descriptor.label)
         assert is_atom(descriptor.session_mode)
 
-        for key <- [:streaming?, :cancellation?, :approvals?, :cost?, :subscribe?, :resume?] do
+        Enum.each([:streaming?, :cancellation?, :approvals?, :cost?, :subscribe?, :resume?], fn key ->
           assert is_boolean(Map.get(descriptor, key))
-        end
+        end)
       end
 
       test "runtime driver contract: optional capability flags imply exported callbacks" do
         driver = __runtime_driver_contract_resolve_module__(@runtime_driver_contract_driver)
         descriptor = driver.runtime_descriptor(@runtime_driver_contract_descriptor_opts)
 
-        for {flag, function_name, arity} <- [
-              {:approvals?, :approve, 4},
-              {:cost?, :cost, 1},
-              {:subscribe?, :subscribe, 2},
-              {:resume?, :resume, 3}
-            ] do
+        [
+          {:approvals?, :approve, 4},
+          {:cost?, :cost, 1},
+          {:subscribe?, :subscribe, 2},
+          {:resume?, :resume, 3}
+        ]
+        |> Enum.each(fn {flag, function_name, arity} ->
           if Map.fetch!(descriptor, flag) do
             assert function_exported?(driver, function_name, arity),
                    "expected #{inspect(driver)} to export #{function_name}/#{arity} when #{flag} is true"
           end
-        end
+        end)
       end
 
       test "runtime driver contract: start_session/1 and session_status/1 return session control structs" do

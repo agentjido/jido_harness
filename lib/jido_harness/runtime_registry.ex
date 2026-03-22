@@ -152,18 +152,16 @@ defmodule Jido.Harness.RuntimeRegistry do
     do: {:error, :invalid_module}
 
   defp ensure_runtime_driver_candidate(runtime_id, module) do
-    cond do
-      not Code.ensure_loaded?(module) ->
-        {:error, :module_not_loaded}
+    if Code.ensure_loaded?(module) do
+      missing = missing_required_callbacks(module)
 
-      true ->
-        missing = missing_required_callbacks(module)
-
-        if missing != [] do
-          {:error, {:missing_callbacks, missing}}
-        else
-          ensure_runtime_id_match(runtime_id, module)
-        end
+      if missing == [] do
+        ensure_runtime_id_match(runtime_id, module)
+      else
+        {:error, {:missing_callbacks, missing}}
+      end
+    else
+      {:error, :module_not_loaded}
     end
   end
 
