@@ -107,6 +107,36 @@ defmodule Jido.Harness.AdapterContract do
 
           assert Enum.all?(events, &match?(%Event{}, &1))
         end
+
+        test "adapter contract: usage events have canonical payload when usage? is true" do
+          adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
+          caps = adapter.capabilities()
+
+          if caps.usage? do
+            request = RunRequest.new!(@adapter_contract_run_request)
+            assert {:ok, stream} = adapter.run(request, @adapter_contract_run_opts)
+
+            events = Enum.take(stream, 100)
+            usage_events = Enum.filter(events, &(&1.type == :usage))
+
+            assert length(usage_events) >= 1,
+                   "adapter declares usage?: true but emitted no :usage events"
+
+            for event <- usage_events do
+              assert is_binary(event.session_id),
+                     ":usage event must have a non-nil session_id, got: #{inspect(event.session_id)}"
+
+              assert is_integer(event.payload["input_tokens"]),
+                     ":usage payload missing integer \"input_tokens\""
+
+              assert is_integer(event.payload["output_tokens"]),
+                     ":usage payload missing integer \"output_tokens\""
+
+              assert is_integer(event.payload["total_tokens"]),
+                     ":usage payload missing integer \"total_tokens\""
+            end
+          end
+        end
       end
     end
   end
