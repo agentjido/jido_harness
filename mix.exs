@@ -1,5 +1,9 @@
+Code.require_file("build_support/dependency_resolver.exs", __DIR__)
+
 defmodule Jido.Harness.MixProject do
   use Mix.Project
+
+  alias Jido.Harness.Build.DependencyResolver
 
   @version "0.1.0"
   @source_url "https://github.com/agentjido/jido_harness"
@@ -59,6 +63,7 @@ defmodule Jido.Harness.MixProject do
           "LICENSE",
           "README.md",
           "usage-rules.md",
+          "build_support",
           "config",
           "docs",
           "lib",
@@ -98,9 +103,9 @@ defmodule Jido.Harness.MixProject do
       {:jido, "~> 2.1"},
       {:jido_action, "~> 2.1"},
       {:jido_signal, "~> 2.0"},
-      {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
-      {:jido_vfs, github: "agentjido/jido_vfs", branch: "main", override: true},
-      {:sprites, github: "mikehostetler/sprites-ex", branch: "main", override: true},
+      DependencyResolver.jido_shell(override: true),
+      DependencyResolver.jido_vfs(override: true),
+      DependencyResolver.sprites(override: true),
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

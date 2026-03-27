@@ -20,6 +20,23 @@ def deps do
 end
 ```
 
+For active local development beside sibling checkouts, `jido_harness` can also
+be consumed from a relative path:
+
+```elixir
+{:jido_harness, path: "../jido_harness"}
+```
+
+Its runtime dependencies now follow one stable policy:
+
+- prefer sibling-relative paths for `jido_shell` and `jido_vfs` when those
+  checkouts exist
+- otherwise fall back to pinned git refs
+- use a pinned git ref for `sprites`, with an optional sibling checkout if one
+  exists locally
+
+Floating branch dependencies are no longer the default.
+
 ## Usage
 
 ### Legacy Adapter World

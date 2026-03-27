@@ -23,6 +23,16 @@ In practice that means:
 - Zoi: `~> 0.17`
 - Splode: `~> 0.3.0`
 
+## Local Path And Git Fallbacks
+
+Default dependency resolution for sibling Jido repos is:
+
+- prefer sibling-relative `path:` dependencies during active local development
+- otherwise fall back to exact pinned git `ref:` dependencies
+
+This keeps local development convenient without making builds depend on live
+branches or committed vendored `deps/` trees.
+
 ## Git/Branch Dependencies
 
 Use a git/branch dependency only when one of the following is true:
@@ -36,6 +46,8 @@ When using git/branch dependencies:
 - document why in the PR/commit message
 - prefer the narrowest affected package set
 - remove as soon as a compatible Hex release exists
+- do not use a floating branch as the default fallback when an exact `ref:`
+  will do
 
 ## `override: true` Usage
 
