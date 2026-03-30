@@ -7,6 +7,11 @@ defmodule Jido.Harness.RuntimeDriver do
   synchronous `run/3`, approvals, cost inspection, subscription, and resume
   semantics should only be advertised when the corresponding
   `Jido.Harness.RuntimeDescriptor` capability flags are true.
+
+  When a runtime consumes a lower boundary such as a sandbox bridge, it keeps
+  the IR stable by carrying the live boundary descriptor or attach metadata
+  under `metadata[SessionControl.boundary_metadata_key()]` on the relevant
+  runtime structs instead of widening the public Session Control field set.
   """
 
   alias Jido.Harness.{

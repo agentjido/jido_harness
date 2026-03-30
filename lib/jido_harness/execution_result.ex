@@ -1,6 +1,10 @@
 defmodule Jido.Harness.ExecutionResult do
   @moduledoc """
   Final run projection normalized through the Session Control IR.
+
+  Boundary-backed runtimes keep the result envelope stable and carry any live
+  boundary descriptor or attach metadata under
+  `metadata[SessionControl.boundary_metadata_key()]`.
   """
 
   alias Jido.Harness.SessionControl
@@ -42,8 +46,11 @@ defmodule Jido.Harness.ExecutionResult do
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do
-      {:ok, value} -> value
-      {:error, reason} -> raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
     end
   end
 end

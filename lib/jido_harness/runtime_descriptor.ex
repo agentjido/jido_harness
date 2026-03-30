@@ -1,6 +1,11 @@
 defmodule Jido.Harness.RuntimeDescriptor do
   @moduledoc """
   Provider-aware capability descriptor for a runtime driver.
+
+  Boundary-backed runtimes keep the durable runtime seam stable here. Any live
+  boundary descriptor or attach metadata belongs under
+  `metadata[SessionControl.boundary_metadata_key()]`; the runtime descriptor
+  does not grow sandbox-policy or backend-specific top-level fields.
   """
 
   alias Jido.Harness.SessionControl
@@ -41,8 +46,11 @@ defmodule Jido.Harness.RuntimeDescriptor do
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do
-      {:ok, value} -> value
-      {:error, reason} -> raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
     end
   end
 end

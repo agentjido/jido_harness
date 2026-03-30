@@ -1,6 +1,10 @@
 defmodule Jido.Harness.SessionHandle do
   @moduledoc """
   Opaque runtime session handle exposed through the Session Control IR.
+
+  Boundary-backed runtimes keep the handle shape stable and carry any live
+  boundary descriptor or attach metadata under
+  `metadata[SessionControl.boundary_metadata_key()]`.
   """
 
   alias Jido.Harness.SessionControl
@@ -35,8 +39,11 @@ defmodule Jido.Harness.SessionHandle do
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do
-      {:ok, value} -> value
-      {:error, reason} -> raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
     end
   end
 end

@@ -1,6 +1,10 @@
 defmodule Jido.Harness.ExecutionStatus do
   @moduledoc """
   Status projection for runtime session or run lifecycle checks.
+
+  Boundary-backed runtimes keep the top-level status shape stable. Any live
+  boundary descriptor or attach metadata belongs under
+  `details[SessionControl.boundary_metadata_key()]`.
   """
 
   alias Jido.Harness.SessionControl
@@ -38,8 +42,11 @@ defmodule Jido.Harness.ExecutionStatus do
   @spec new!(map()) :: t()
   def new!(attrs) do
     case new(attrs) do
-      {:ok, value} -> value
-      {:error, reason} -> raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise ArgumentError, "Invalid #{inspect(__MODULE__)}: #{inspect(reason)}"
     end
   end
 end

@@ -135,6 +135,11 @@ optional `run/3` callback. `Jido.Harness.RuntimeDriver` also defines optional
 `subscribe/2` and `resume/3` callbacks; drivers advertise those capabilities
 through `RuntimeDescriptor.subscribe?` and `RuntimeDescriptor.resume?`.
 
+For boundary-backed execution, runtimes carry live boundary descriptors or
+attach metadata under `metadata["boundary"]`. Harness keeps that carriage
+runtime-neutral and does not own sandbox policy, target selection, or boundary
+backend semantics.
+
 ## Documentation
 
 Full documentation is available at [https://hexdocs.pm/jido_harness](https://hexdocs.pm/jido_harness).
