@@ -145,6 +145,10 @@ Full documentation is available at [https://hexdocs.pm/jido_harness](https://hex
 adapters and Session Control runtime drivers. It owns the public IR, runtime
 driver behaviour, and generic runtime bootstrap/preflight helpers.
 
+It is intentionally not a transport registry. Runtime drivers may carry
+`execution_surface` and `execution_environment` through to deeper layers, but
+`jido_harness` itself does not enumerate or normalize transport families.
+
 ## Testing Paths
 
 - Unit/runtime tests: `mix test`
