@@ -18,7 +18,7 @@ In practice that means:
 
 ## Baseline Versions
 
-- Elixir: `~> 1.18`
+- Elixir: `~> 1.19`
 - Jido core line: `~> 2.0.0-rc.5`
 - Zoi: `~> 0.17`
 - Splode: `~> 0.3.0`

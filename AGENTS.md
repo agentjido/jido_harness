@@ -17,7 +17,7 @@ Jido.Harness is the core normalization layer for CLI AI coding agents. It define
 
 - Structs use the Zoi schema pattern (`@schema`, `new/1`, `new!/1`)
 - Errors use Splode (`Jido.Harness.Error`)
-- Elixir `~> 1.18`
+- Elixir `~> 1.19`
 - Run `mix quality` before committing
 - Use conventional commit format
 

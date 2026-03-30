@@ -13,7 +13,7 @@ defmodule Jido.Harness.MixProject do
     [
       app: :jido_harness,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -104,7 +104,6 @@ defmodule Jido.Harness.MixProject do
       {:jido_action, "~> 2.2"},
       {:jido_signal, "~> 2.1"},
       DependencyResolver.jido_shell(override: true),
-      DependencyResolver.jido_vfs(override: true),
       DependencyResolver.sprites(override: true),
 
       # Dev/Test

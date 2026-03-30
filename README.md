@@ -29,8 +29,7 @@ be consumed from a relative path:
 
 Its runtime dependencies now follow one stable policy:
 
-- prefer sibling-relative paths for `jido_shell` and `jido_vfs` when those
-  checkouts exist
+- prefer a sibling-relative path for `jido_shell` when that checkout exists
 - otherwise fall back to pinned git refs
 - use a pinned git ref for `sprites`, with an optional sibling checkout if one
   exists locally
