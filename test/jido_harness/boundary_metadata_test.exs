@@ -11,6 +11,16 @@ defmodule Jido.Harness.BoundaryMetadataTest do
 
   test "session control publishes the boundary metadata namespace" do
     assert SessionControl.boundary_metadata_key() == "boundary"
+
+    assert SessionControl.boundary_contract_keys() == [
+             "descriptor",
+             "route",
+             "attach_grant",
+             "replay",
+             "approval",
+             "callback",
+             "identity"
+           ]
   end
 
   test "runtime ir structs carry boundary metadata without widening the stable field set" do
@@ -18,10 +28,18 @@ defmodule Jido.Harness.BoundaryMetadataTest do
 
     boundary_metadata = %{
       boundary_key => %{
-        "descriptor_version" => 1,
-        "boundary_session_id" => "bnd-123",
-        "attach" => %{"mode" => "guest_bridge"},
-        "checkpointing" => %{"supported?" => true}
+        "descriptor" => %{
+          "descriptor_version" => 1,
+          "boundary_session_id" => "bnd-123"
+        },
+        "route" => %{"route_id" => "route-123", "idempotency_key" => "idem-123"},
+        "attach_grant" => %{"attach_mode" => "read_write"},
+        "replay" => %{"replayable?" => true},
+        "approval" => %{"approval_refs" => ["approval-123"]},
+        "callback" => %{"callback_ref" => "callback://123", "state" => "pending"},
+        "identity" => %{
+          "credential_handle_refs" => ["credential-handle://tenant-1/workload/123"]
+        }
       }
     }
 
@@ -61,9 +79,12 @@ defmodule Jido.Harness.BoundaryMetadataTest do
         metadata: boundary_metadata
       })
 
-    assert descriptor.metadata[boundary_key]["boundary_session_id"] == "bnd-123"
-    assert session.metadata[boundary_key]["attach"]["mode"] == "guest_bridge"
-    assert status.details[boundary_key]["checkpointing"]["supported?"] == true
-    assert result.metadata[boundary_key]["descriptor_version"] == 1
+    assert descriptor.metadata[boundary_key]["descriptor"]["boundary_session_id"] == "bnd-123"
+    assert session.metadata[boundary_key]["route"]["route_id"] == "route-123"
+    assert status.details[boundary_key]["replay"]["replayable?"] == true
+
+    assert result.metadata[boundary_key]["identity"]["credential_handle_refs"] == [
+             "credential-handle://tenant-1/workload/123"
+           ]
   end
 end

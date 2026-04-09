@@ -14,6 +14,17 @@ defmodule Jido.Harness.SessionControlIRTest do
   test "session control ir schemas validate required fields" do
     assert SessionControl.version() == "session_control/v1"
 
+    assert SessionControl.mapped_execution_contracts() == [
+             "BoundarySessionDescriptor.v1",
+             "ExecutionRoute.v1",
+             "AttachGrant.v1",
+             "CredentialHandleRef.v1",
+             "ExecutionEvent.v1",
+             "ExecutionOutcome.v1",
+             "ProcessExecutionIntent.v1",
+             "JsonRpcExecutionIntent.v1"
+           ]
+
     assert {:ok, %SessionHandle{session_id: "session-1", schema_version: "session_control/v1"}} =
              SessionHandle.new(%{
                session_id: "session-1",

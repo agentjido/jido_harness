@@ -8,10 +8,13 @@ runtimes.
 - legacy provider adapters registered under `:providers`
 - Session Control runtime drivers registered under `:runtime_drivers`
 
-It also now aligns its lower-boundary vocabulary with the frozen Wave 1 packet:
+It also now aligns its lower-boundary vocabulary with the frozen packet and the
+Wave 5 durable session-carriage vocabulary:
 
 - `BoundarySessionDescriptor.v1`
+- `ExecutionRoute.v1`
 - `AttachGrant.v1`
+- `CredentialHandleRef.v1`
 - `ExecutionEvent.v1`
 - `ExecutionOutcome.v1`
 - `ProcessExecutionIntent.v1`
@@ -147,7 +150,9 @@ optional `run/3` callback. `Jido.Harness.RuntimeDriver` also defines optional
 through `RuntimeDescriptor.subscribe?` and `RuntimeDescriptor.resume?`.
 
 For boundary-backed execution, runtimes carry live boundary descriptors or
-attach metadata under `metadata["boundary"]`. Harness keeps that carriage
+attach metadata under `metadata["boundary"]`. The named Wave 5 subcontracts
+inside that namespace are `descriptor`, `route`, `attach_grant`, `replay`,
+`approval`, `callback`, and `identity`. Harness keeps that carriage
 runtime-neutral and does not own sandbox policy, target selection, or boundary
 backend semantics.
 
