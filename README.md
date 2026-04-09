@@ -8,6 +8,18 @@ runtimes.
 - legacy provider adapters registered under `:providers`
 - Session Control runtime drivers registered under `:runtime_drivers`
 
+It also now aligns its lower-boundary vocabulary with the frozen Wave 1 packet:
+
+- `BoundarySessionDescriptor.v1`
+- `AttachGrant.v1`
+- `ExecutionEvent.v1`
+- `ExecutionOutcome.v1`
+- `ProcessExecutionIntent.v1`
+- `JsonRpcExecutionIntent.v1`
+
+Harness maps or carries those contracts. It does not re-export raw
+`execution_plane/*` packages as its public API.
+
 ## Installation
 
 Add `jido_harness` to your list of dependencies in `mix.exs`:
@@ -139,6 +151,18 @@ attach metadata under `metadata["boundary"]`. Harness keeps that carriage
 runtime-neutral and does not own sandbox policy, target selection, or boundary
 backend semantics.
 
+The current family-facing carrier details for `ProcessExecutionIntent.v1` and
+`JsonRpcExecutionIntent.v1` remain provisional until Wave 3 prove-out. Wave 1
+freezes the names, ownership, and carriage rules only.
+
+## Documentation Menu
+
+- `README.md` - install, public facade, and runtime-driver framing
+- `docs/execution_plane_alignment.md` - frozen lower-boundary packet and
+  carriage rules
+- `docs/telemetry.md` - signal and telemetry conventions
+- `docs/dependency_policy.md` - dependency posture and update rules
+
 ## Documentation
 
 Full documentation is available at [https://hexdocs.pm/jido_harness](https://hexdocs.pm/jido_harness).
@@ -152,6 +176,10 @@ driver behaviour, and generic runtime bootstrap/preflight helpers.
 It is intentionally not a transport registry. Runtime drivers may carry
 `execution_surface` and `execution_environment` through to deeper layers, but
 `jido_harness` itself does not enumerate or normalize transport families.
+
+The canonical lower-boundary packet vocabulary is exposed as metadata and
+mapped IR through `Jido.Harness.SessionControl.mapped_execution_contracts/0`,
+not as a wholesale re-export of raw lower packages.
 
 ## Testing Paths
 
