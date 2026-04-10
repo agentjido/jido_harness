@@ -415,7 +415,7 @@ defmodule Jido.Harness.Test.ExecShellState do
   use Agent
 
   def start_link(_opts \\ []) do
-    Agent.start_link(fn -> default_state() end, name: __MODULE__)
+    Agent.start(fn -> default_state() end, name: __MODULE__)
   end
 
   def ensure_started! do
