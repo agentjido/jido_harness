@@ -8,7 +8,7 @@ on:
 jobs:
   lint:
     name: Lint
-    uses: agentjido/github-actions/.github/workflows/elixir-lint.yml@main
+    uses: agentjido/github-actions/.github/workflows/elixir-lint.yml@v3
     with:
       otp_version: "27.2"
       elixir_version: "1.18.4"
@@ -16,7 +16,7 @@ jobs:
 
   test:
     name: Test
-    uses: agentjido/github-actions/.github/workflows/elixir-test.yml@main
+    uses: agentjido/github-actions/.github/workflows/elixir-test.yml@v3
     with:
       otp_versions: '["27.2"]'
       elixir_versions: '["1.18.4"]'
