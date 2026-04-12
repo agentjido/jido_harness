@@ -25,6 +25,15 @@ defmodule Jido.Harness.SessionControlIRTest do
              "JsonRpcExecutionIntent.v1"
            ]
 
+    assert SessionControl.lineage_metadata_keys() == [
+             "semantic_session_id",
+             "lane_session_id",
+             "provider_session_id",
+             "boundary_session_id",
+             "route_id",
+             "attach_grant_id"
+           ]
+
     assert {:ok, %SessionHandle{session_id: "session-1", schema_version: "session_control/v1"}} =
              SessionHandle.new(%{
                session_id: "session-1",
@@ -90,6 +99,30 @@ defmodule Jido.Harness.SessionControlIRTest do
 
     refute Map.has_key?(Map.from_struct(session), :driver_ref)
     assert session.metadata == %{"surface" => "runtime-driver"}
+  end
+
+  test "session control lineage stays under the reserved boundary metadata key" do
+    metadata =
+      SessionControl.put_lineage(%{"surface" => "runtime-driver"}, %{
+        semantic_session_id: "semantic-1",
+        lane_session_id: "lane-1",
+        provider_session_id: "provider-1",
+        boundary_session_id: "boundary-1",
+        route_id: "route-1",
+        attach_grant_id: "grant-1",
+        ignored: "ignored"
+      })
+
+    assert metadata["boundary"] == %{
+             "semantic_session_id" => "semantic-1",
+             "lane_session_id" => "lane-1",
+             "provider_session_id" => "provider-1",
+             "boundary_session_id" => "boundary-1",
+             "route_id" => "route-1",
+             "attach_grant_id" => "grant-1"
+           }
+
+    assert SessionControl.lineage(metadata) == metadata["boundary"]
   end
 
   test "session control ir structs retain the stable public field set" do

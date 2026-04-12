@@ -117,6 +117,7 @@ defmodule Jido.Harness.MixProject do
     [
       setup: ["deps.get", "git_hooks.install"],
       q: ["quality"],
+      ci: ["quality", "cmd env MIX_ENV=test mix test --cover --color"],
       quality: [
         "format --check-formatted",
         "compile --warnings-as-errors",

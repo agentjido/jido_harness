@@ -57,6 +57,14 @@ defmodule Jido.Harness.SessionControl do
     "ProcessExecutionIntent.v1",
     "JsonRpcExecutionIntent.v1"
   ]
+  @lineage_metadata_keys [
+    "semantic_session_id",
+    "lane_session_id",
+    "provider_session_id",
+    "boundary_session_id",
+    "route_id",
+    "attach_grant_id"
+  ]
 
   @doc "Returns the current Session Control schema version."
   @spec version() :: String.t()
@@ -77,4 +85,38 @@ defmodule Jido.Harness.SessionControl do
   @doc "Returns the lower family-intent shapes still provisional until Wave 3."
   @spec provisional_minimal_lane_contracts() :: [String.t(), ...]
   def provisional_minimal_lane_contracts, do: @provisional_minimal_lane_contracts
+
+  @doc "Returns the stable lineage keys carried under Harness boundary metadata."
+  @spec lineage_metadata_keys() :: [String.t(), ...]
+  def lineage_metadata_keys, do: @lineage_metadata_keys
+
+  @doc "Extracts normalized lineage from runtime or status metadata."
+  @spec lineage(map()) :: map()
+  def lineage(metadata) when is_map(metadata) do
+    boundary =
+      Map.get(metadata, @boundary_metadata_key, Map.get(metadata, String.to_atom(@boundary_metadata_key), %{}))
+
+    boundary = if is_map(boundary), do: boundary, else: %{}
+
+    Enum.reduce(@lineage_metadata_keys, %{}, fn key, acc ->
+      case Map.get(boundary, key, Map.get(boundary, String.to_atom(key))) do
+        nil -> acc
+        value -> Map.put(acc, key, value)
+      end
+    end)
+  end
+
+  @doc "Puts normalized lineage into boundary metadata without widening public structs."
+  @spec put_lineage(map(), map()) :: map()
+  def put_lineage(metadata, lineage) when is_map(metadata) and is_map(lineage) do
+    existing_boundary =
+      Map.get(metadata, @boundary_metadata_key, Map.get(metadata, String.to_atom(@boundary_metadata_key), %{}))
+
+    boundary =
+      existing_boundary
+      |> then(fn value -> if is_map(value), do: value, else: %{} end)
+      |> Map.merge(Map.take(Map.new(lineage, fn {key, value} -> {to_string(key), value} end), @lineage_metadata_keys))
+
+    Map.put(metadata, @boundary_metadata_key, boundary)
+  end
 end
