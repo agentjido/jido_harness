@@ -2,6 +2,15 @@ defmodule Jido.Harness.AdapterContract do
   @moduledoc """
   Shared contract tests for provider adapter packages.
 
+  The checklist enforced here is intentionally small and stable:
+
+  - `id/0` returns the provider atom
+  - `capabilities/0` returns `Jido.Harness.Capabilities`
+  - `runtime_contract/0` returns a complete `Jido.Harness.RuntimeContract`
+  - runtime command templates use canonical `{{prompt}}` or `{{prompt_file}}` placeholders
+  - `success_markers` are non-empty maps
+  - adapters that advertise `cancellation?: true` expose `cancel/1`
+
   ## Usage
 
       defmodule MyAdapterTest do
@@ -43,6 +52,16 @@ defmodule Jido.Harness.AdapterContract do
 
       defp __adapter_contract_resolve_module__(value) when is_atom(value), do: value
 
+      defp __adapter_contract_valid_template__(template) when is_binary(template) do
+        trimmed = String.trim(template)
+
+        trimmed != "" and
+          (String.contains?(trimmed, "{{prompt}}") or
+             String.contains?(trimmed, "{{prompt_file}}"))
+      end
+
+      defp __adapter_contract_valid_template__(_), do: false
+
       test "adapter contract: id/0 returns atom" do
         adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
         assert Code.ensure_loaded?(adapter), "adapter module could not be loaded: #{inspect(adapter)}"
@@ -77,6 +96,16 @@ defmodule Jido.Harness.AdapterContract do
         end
       end
 
+      test "adapter contract: cancellation capability matches cancel/1 support" do
+        adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
+        caps = adapter.capabilities()
+
+        if caps.cancellation? do
+          assert function_exported?(adapter, :cancel, 1),
+                 "adapter declares cancellation?: true but does not export cancel/1"
+        end
+      end
+
       test "adapter contract: runtime_contract/0 is complete" do
         adapter = __adapter_contract_resolve_module__(@adapter_contract_adapter)
         assert Code.ensure_loaded?(adapter)
@@ -84,13 +113,20 @@ defmodule Jido.Harness.AdapterContract do
         contract = apply(adapter, :runtime_contract, [])
         assert %RuntimeContract{} = contract
         assert is_atom(contract.provider)
+        assert contract.provider == adapter.id()
         assert is_list(contract.runtime_tools_required)
         assert is_list(contract.compatibility_probes)
         assert is_list(contract.install_steps)
         assert is_list(contract.auth_bootstrap_steps)
-        assert is_binary(contract.triage_command_template)
-        assert is_binary(contract.coding_command_template)
+        assert __adapter_contract_valid_template__(contract.triage_command_template)
+        assert __adapter_contract_valid_template__(contract.coding_command_template)
         assert is_list(contract.success_markers)
+
+        assert Enum.all?(contract.success_markers, fn marker ->
+                 is_map(marker) and map_size(marker) > 0 and
+                   Enum.all?(Map.keys(marker), &is_binary/1)
+               end),
+               "success_markers must contain non-empty maps with string keys"
       end
 
       if check_run do

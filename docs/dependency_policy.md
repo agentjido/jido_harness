@@ -2,6 +2,16 @@
 
 This policy governs `jido_harness` and sibling provider/runtime packages during consolidation.
 
+## Current Phase
+
+For the current adapter-alignment phase:
+
+- use GitHub dependencies for the Jido harness packages
+- keep the same branch-based dependency policy across the adapter repos
+- do not treat Hex packaging as an active delivery target yet
+
+This policy should remain in place until the adapter contract and CI baselines are aligned across the repo set.
+
 ## Baseline Versions
 
 - Elixir: `~> 1.18`
