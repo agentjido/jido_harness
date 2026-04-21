@@ -6,6 +6,10 @@ defmodule Jido.Harness.Signal.WorkspaceProvisioned do
   use Jido.Signal,
     type: "jido.harness.workspace.provisioned",
     default_source: "/jido/harness/workspace",
+    extension_policy: [
+      {Jido.Signal.Ext.Trace, :optional},
+      {Jido.Signal.Ext.Dispatch, :optional}
+    ],
     schema: [
       run_id: [type: :string, required: false],
       request_id: [type: :string, required: false],
