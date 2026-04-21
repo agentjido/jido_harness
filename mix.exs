@@ -20,10 +20,12 @@ defmodule Jido.Harness.MixProject do
       homepage_url: @source_url,
       docs: [
         main: "Jido.Harness",
+        source_ref: "v#{@version}",
         extras: [
           "README.md",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
+          "LICENSE",
           "docs/adapter_contract.md",
           "docs/telemetry.md",
           "docs/dependency_policy.md"
@@ -33,6 +35,7 @@ defmodule Jido.Harness.MixProject do
       test_coverage: [
         tool: ExCoveralls,
         summary: [threshold: 90],
+        export: "cov",
         ignore_modules: [
           Jido.Harness.Error.Invalid,
           Jido.Harness.Error.Execution,
@@ -65,8 +68,15 @@ defmodule Jido.Harness.MixProject do
           "lib",
           "mix.exs"
         ],
+        maintainers: ["Agent Jido Team"],
         licenses: ["Apache-2.0"],
-        links: %{"GitHub" => @source_url}
+        links: %{
+          "Changelog" => "https://github.com/agentjido/jido_harness/blob/main/CHANGELOG.md",
+          "Discord" => "https://jido.run/discord",
+          "Documentation" => "https://hexdocs.pm/jido_harness",
+          "GitHub" => @source_url,
+          "Website" => "https://jido.run"
+        }
       ]
     ]
   end
@@ -113,7 +123,8 @@ defmodule Jido.Harness.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get", "git_hooks.install"],
+      setup: ["deps.get"],
+      install_hooks: ["git_hooks.install"],
       q: ["quality"],
       quality: [
         "format --check-formatted",
