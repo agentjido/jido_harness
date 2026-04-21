@@ -6,6 +6,10 @@ defmodule Jido.Harness.Signal.ProviderBootstrapped do
   use Jido.Signal,
     type: "jido.harness.provider.bootstrapped",
     default_source: "/jido/harness/provider",
+    extension_policy: [
+      {Jido.Signal.Ext.Trace, :optional},
+      {Jido.Signal.Ext.Dispatch, :optional}
+    ],
     schema: [
       run_id: [type: :string, required: false],
       request_id: [type: :string, required: false],

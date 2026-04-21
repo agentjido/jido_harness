@@ -6,6 +6,10 @@ defmodule Jido.Harness.Signal.RuntimeValidated do
   use Jido.Signal,
     type: "jido.harness.runtime.validated",
     default_source: "/jido/harness/runtime",
+    extension_policy: [
+      {Jido.Signal.Ext.Trace, :optional},
+      {Jido.Signal.Ext.Dispatch, :optional}
+    ],
     schema: [
       run_id: [type: :string, required: false],
       request_id: [type: :string, required: false],
