@@ -1,23 +1,29 @@
 name: CI
 
 on:
-  push:
-    branches: ["main", "master"]
   pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     name: Lint
     uses: agentjido/github-actions/.github/workflows/elixir-lint.yml@v3
     with:
-      otp_version: "27.2"
-      elixir_version: "1.18.4"
       validate_hex_package: false
 
   test:
     name: Test
     uses: agentjido/github-actions/.github/workflows/elixir-test.yml@v3
     with:
-      otp_versions: '["27.2"]'
-      elixir_versions: '["1.18.4"]'
+      otp_versions: '["27", "28"]'
+      elixir_versions: '["1.18", "1.19"]'
+      experimental_compile_elixir_versions: '["v1.20.0-rc.4"]'
+      experimental_compile_otp_versions: '["28.4.1"]'
+      experimental_compile_otp_name: "28"
       test_command: mix test
