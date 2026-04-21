@@ -11,10 +11,12 @@ Add `jido_harness` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:jido_harness, "~> 0.1.0"}
+    {:jido_harness, github: "agentjido/jido_harness", branch: "main", override: true}
   ]
 end
 ```
+
+The adapter packages are currently being aligned as a GitHub-based repo set, so sibling adapters should use GitHub dependencies in this phase as well.
 
 ## Usage
 
@@ -69,7 +71,9 @@ Jido.Harness.cancel(:codex, "session_id")
 
 ## Documentation
 
-Full documentation is available at [https://hexdocs.pm/jido_harness](https://hexdocs.pm/jido_harness).
+- [`docs/adapter_contract.md`](docs/adapter_contract.md) for the shared adapter checklist
+- [`docs/dependency_policy.md`](docs/dependency_policy.md) for the current dependency policy
+- `mix docs` to build local package docs during this GitHub-dependency phase
 
 ## Package Purpose
 

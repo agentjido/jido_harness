@@ -17,7 +17,7 @@ defmodule Jido.Harness.Test.RuntimeContractStub do
       auth_bootstrap_steps: [],
       triage_command_template: "runtime --triage {{prompt}}",
       coding_command_template: "runtime --coding {{prompt}}",
-      success_markers: []
+      success_markers: [%{"type" => "result", "subtype" => "success"}]
     })
   end
 end

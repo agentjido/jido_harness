@@ -24,6 +24,7 @@ defmodule Jido.Harness.MixProject do
           "README.md",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
+          "docs/adapter_contract.md",
           "docs/telemetry.md",
           "docs/dependency_policy.md"
         ],

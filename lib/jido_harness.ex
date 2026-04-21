@@ -227,9 +227,10 @@ defmodule Jido.Harness do
     "#{id} (#{module_name})"
   end
 
-  defp docs_url_for(:amp), do: "https://hex.pm/packages/jido_amp"
-  defp docs_url_for(:claude), do: "https://hex.pm/packages/jido_claude"
-  defp docs_url_for(:codex), do: "https://hex.pm/packages/jido_codex"
-  defp docs_url_for(:gemini), do: "https://hex.pm/packages/jido_gemini"
+  defp docs_url_for(:amp), do: "https://github.com/agentjido/jido_amp"
+  defp docs_url_for(:claude), do: "https://github.com/agentjido/jido_claude"
+  defp docs_url_for(:codex), do: "https://github.com/agentjido/jido_codex"
+  defp docs_url_for(:gemini), do: "https://github.com/agentjido/jido_gemini"
+  defp docs_url_for(:opencode), do: "https://github.com/agentjido/jido_opencode"
   defp docs_url_for(_), do: nil
 end
