@@ -106,7 +106,7 @@ defmodule Jido.Harness.MixProject do
       {:zoi, "~> 0.17"},
       {:splode, "~> 0.3.0"},
       {:jason, "~> 1.4"},
-      {:jido, "~> 2.1"},
+      {:jido, "~> 2.2"},
       {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
       {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
 
