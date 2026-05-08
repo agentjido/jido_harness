@@ -14,6 +14,7 @@ defmodule Jido.Harness.RunRequest do
               system_prompt: Zoi.string() |> Zoi.nullish(),
               allowed_tools: Zoi.array(Zoi.string()) |> Zoi.nullish(),
               attachments: Zoi.array(Zoi.string()) |> Zoi.default([]),
+              session_id: Zoi.string() |> Zoi.nullish(),
               metadata: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{})
             },
             coerce: true

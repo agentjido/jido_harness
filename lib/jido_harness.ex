@@ -22,6 +22,7 @@ defmodule Jido.Harness do
     :system_prompt,
     :allowed_tools,
     :attachments,
+    :session_id,
     :metadata
   ]
 
