@@ -48,6 +48,8 @@ These flags are declarative contract metadata. They are not marketing claims. If
 - accepts `%Jido.Harness.RunRequest{}`
 - returns `{:ok, enumerable}` or `{:error, reason}`
 - emits `%Jido.Harness.Event{}` values only
+- treats `request.session_id` as the provider-neutral resume/session hint when
+  `capabilities().resume?` is true
 - uses provider-specific metadata from `request.metadata`
 - returns structured validation/config/execution errors on adapter-facing failures
 

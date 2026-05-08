@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional `session_id` field on `Jido.Harness.RunRequest` so callers can pass
+  a provider-neutral resume/session hint through the harness API.
 - Expanded `Jido.Harness` facade into a multi-provider wrapper layer:
   - `run/2` (default provider dispatch)
   - `run_request/2` and `run_request/3`

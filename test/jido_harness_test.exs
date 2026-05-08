@@ -38,7 +38,7 @@ defmodule Jido.HarnessTest do
 
   test "run/3 delegates to configured adapter modules" do
     Application.put_env(:jido_harness, :providers, %{stub: AdapterStub})
-    request_opts = [cwd: "/tmp/project"]
+    request_opts = [cwd: "/tmp/project", session_id: "session-resume-1"]
     runtime_opts = [transport: :exec]
 
     assert {:ok, stream} = Jido.Harness.run(:stub, "hello", request_opts ++ runtime_opts)
@@ -47,6 +47,7 @@ defmodule Jido.HarnessTest do
     assert_receive {:adapter_stub_run, request, [transport: :exec]}
     assert request.prompt == "hello"
     assert request.cwd == "/tmp/project"
+    assert request.session_id == "session-resume-1"
     assert [%Jido.Harness.Event{type: :session_started}] = events
   end
 

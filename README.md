@@ -33,6 +33,9 @@ config :jido_harness, :default_provider, :codex
 # Run with explicit provider
 {:ok, events} = Jido.Harness.run(:codex, "fix the bug", cwd: "/my/project")
 
+# Resume a provider session when the adapter supports it
+{:ok, events} = Jido.Harness.run(:codex, "continue", session_id: "thread_or_session_id")
+
 # Or run through the default provider
 {:ok, events} = Jido.Harness.run("fix the bug", cwd: "/my/project")
 ```

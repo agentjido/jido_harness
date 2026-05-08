@@ -5,8 +5,11 @@ defmodule Jido.Harness.SchemaTest do
 
   test "run_request schema constructors validate inputs" do
     assert is_struct(RunRequest.schema())
-    assert {:ok, %RunRequest{prompt: "hello"}} = RunRequest.new(%{prompt: "hello"})
-    assert %RunRequest{prompt: "hello"} = RunRequest.new!(%{prompt: "hello"})
+    assert {:ok, %RunRequest{prompt: "hello", session_id: nil}} = RunRequest.new(%{prompt: "hello"})
+
+    assert %RunRequest{prompt: "hello", session_id: "session-1"} =
+             RunRequest.new!(%{prompt: "hello", session_id: "session-1"})
+
     assert {:error, _} = RunRequest.new(%{})
     assert_raise ArgumentError, ~r/Invalid Jido.Harness.RunRequest/, fn -> RunRequest.new!(%{}) end
   end
