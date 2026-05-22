@@ -1,5 +1,13 @@
 # Jido.Harness
 
+[![Hex.pm](https://img.shields.io/hexpm/v/jido_harness.svg)](https://hex.pm/packages/jido_harness)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/jido_harness/)
+[![CI](https://github.com/agentjido/jido_harness/actions/workflows/ci.yml/badge.svg)](https://github.com/agentjido/jido_harness/actions/workflows/ci.yml)
+[![License](https://img.shields.io/hexpm/l/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
+[![Website](https://img.shields.io/badge/website-jido.run-0f172a.svg)](https://jido.run)
+[![Ecosystem](https://img.shields.io/badge/ecosystem-jido.run-0ea5e9.svg)](https://jido.run/ecosystem)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2.svg?logo=discord&logoColor=white)](https://jido.run/discord)
+
 Normalized Elixir protocol for CLI AI coding agents. Jido.Harness defines the
 behaviours, schemas, and error types that provider adapter packages implement to
 expose a unified interface for agents like Amp, Claude Code, Codex, and Gemini CLI.
