@@ -1,6 +1,23 @@
 defmodule Jido.Harness.RunRequest do
   @moduledoc """
   Validated request struct for running a CLI coding agent.
+
+  ## Permission fields
+
+  In addition to `allowed_tools`, the schema carries first-class permission
+  inputs so callers MAY express persona-level deny rules, filesystem scopes,
+  MCP server bundles, and permission modes without per-provider metadata
+  hacks:
+
+    * `disallowed_tools` — explicit deny list (counterpart to `allowed_tools`)
+    * `add_dirs` — additional filesystem directories the agent MAY access
+    * `mcp_config` — MCP server configuration (map for programmatic servers
+      or path string for a JSON config file)
+    * `permission_mode` — one of `:default`, `:plan`, `:accept_edits`,
+      `:bypass_permissions` (or the equivalent string)
+
+  All fields are optional. Adapters that recognise a field MUST forward it to
+  the underlying provider; adapters that do not MAY silently ignore it.
   """
 
   @schema Zoi.struct(
@@ -13,6 +30,10 @@ defmodule Jido.Harness.RunRequest do
               timeout_ms: Zoi.integer() |> Zoi.nullish(),
               system_prompt: Zoi.string() |> Zoi.nullish(),
               allowed_tools: Zoi.array(Zoi.string()) |> Zoi.nullish(),
+              disallowed_tools: Zoi.array(Zoi.string()) |> Zoi.nullish(),
+              add_dirs: Zoi.array(Zoi.string()) |> Zoi.nullish(),
+              mcp_config: Zoi.any() |> Zoi.nullish(),
+              permission_mode: Zoi.any() |> Zoi.nullish(),
               attachments: Zoi.array(Zoi.string()) |> Zoi.default([]),
               session_id: Zoi.string() |> Zoi.nullish(),
               metadata: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{})

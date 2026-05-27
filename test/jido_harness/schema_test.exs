@@ -14,6 +14,64 @@ defmodule Jido.Harness.SchemaTest do
     assert_raise ArgumentError, ~r/Invalid Jido.Harness.RunRequest/, fn -> RunRequest.new!(%{}) end
   end
 
+  test "run_request permission fields default to nil when omitted" do
+    assert {:ok,
+            %RunRequest{
+              disallowed_tools: nil,
+              add_dirs: nil,
+              mcp_config: nil,
+              permission_mode: nil
+            }} = RunRequest.new(%{prompt: "hello"})
+  end
+
+  test "run_request permission fields round-trip when set" do
+    attrs = %{
+      prompt: "hello",
+      allowed_tools: ["Read", "Edit"],
+      disallowed_tools: ["Bash(rm *)", "Bash(curl *)"],
+      add_dirs: ["/tmp", "/var/log"],
+      mcp_config: %{"servers" => %{"github" => %{"command" => "github-mcp"}}},
+      permission_mode: :plan
+    }
+
+    assert {:ok, request} = RunRequest.new(attrs)
+    assert request.allowed_tools == ["Read", "Edit"]
+    assert request.disallowed_tools == ["Bash(rm *)", "Bash(curl *)"]
+    assert request.add_dirs == ["/tmp", "/var/log"]
+    assert request.mcp_config == %{"servers" => %{"github" => %{"command" => "github-mcp"}}}
+    assert request.permission_mode == :plan
+  end
+
+  test "run_request permission_mode accepts string variants" do
+    assert {:ok, %RunRequest{permission_mode: "accept_edits"}} =
+             RunRequest.new(%{prompt: "hello", permission_mode: "accept_edits"})
+  end
+
+  test "run_request disallowed_tools rejects non-string elements" do
+    assert {:error, _} =
+             RunRequest.new(%{prompt: "hello", disallowed_tools: [:not_a_string]})
+  end
+
+  test "run_request add_dirs rejects non-string elements" do
+    assert {:error, _} = RunRequest.new(%{prompt: "hello", add_dirs: [123]})
+  end
+
+  test "run_request new! accepts the full permission set" do
+    request =
+      RunRequest.new!(%{
+        prompt: "hello",
+        disallowed_tools: ["Bash(rm *)"],
+        add_dirs: ["/tmp"],
+        mcp_config: %{"foo" => "bar"},
+        permission_mode: :bypass_permissions
+      })
+
+    assert request.disallowed_tools == ["Bash(rm *)"]
+    assert request.add_dirs == ["/tmp"]
+    assert request.mcp_config == %{"foo" => "bar"}
+    assert request.permission_mode == :bypass_permissions
+  end
+
   test "event schema constructors validate inputs" do
     assert is_struct(Event.schema())
 
