@@ -20,6 +20,7 @@ Jido.Harness is the core normalization layer for CLI AI coding agents. It define
 - Elixir `~> 1.18`
 - Run `mix quality` before committing
 - Use conventional commit format
+- Do not modify `CHANGELOG.md`; release notes are generated from Git history during release, so keep changes focused on proper Conventional Commits.
 
 ## Commands
 
