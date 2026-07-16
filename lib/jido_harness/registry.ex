@@ -9,7 +9,8 @@ defmodule Jido.Harness.Registry do
     codex: Jido.Harness.Adapters.Codex,
     gemini: Jido.Harness.Adapters.Gemini,
     opencode: Jido.Harness.Adapters.OpenCode,
-    grok: Jido.Harness.Adapters.Grok
+    grok: Jido.Harness.Adapters.Grok,
+    zai: Jido.Harness.Adapters.Zai
   }
 
   @spec providers() :: %{optional(atom()) => module()}

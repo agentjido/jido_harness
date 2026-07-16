@@ -1,7 +1,7 @@
 defmodule Jido.Harness.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, OpenCode}
+  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, OpenCode, Zai}
   alias Jido.Harness.{Error, Event, RunRequest}
 
   setup do
@@ -46,6 +46,47 @@ defmodule Jido.Harness.AdapterTest do
     assert options.permission_mode == :accept_edits
     assert options.sandbox == %{enabled: true}
     assert options.timeout_ms == 2_147_483_647
+  end
+
+  test "Z.AI uses the official Claude Code endpoint without exposing its source API-key variable" do
+    request =
+      RunRequest.new!(%{
+        prompt: "zai",
+        model: "glm-5.2",
+        env: %{"ZAI_API_KEY" => "integration-test-key", "KEEP_ME" => "yes"}
+      })
+
+    context = %{
+      config: %{
+        sdk_module: Jido.Harness.ZaiCaptureSDK,
+        env: %{"CONFIGURED" => "yes", "ZAI_API_KEY" => "configured-key"}
+      }
+    }
+
+    assert {:ok, stream} = Zai.run(request, context)
+    assert [%Event{provider: :zai, type: :session_started, session_id: "zai-session"}] = Enum.to_list(stream)
+    assert_receive {:zai_options, :query, "zai", options}
+    assert options.model == "glm-5.2"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://api.z.ai/api/anthropic"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "integration-test-key"
+    assert options.env["API_TIMEOUT_MS"] == "2147483647"
+    assert options.env["CONFIGURED"] == "yes"
+    assert options.env["KEEP_ME"] == "yes"
+    refute Map.has_key?(options.env, "ZAI_API_KEY")
+
+    child_env = ClaudeAgentSDK.Process.__env_vars__(options)
+    refute Map.has_key?(child_env, "ANTHROPIC_API_KEY")
+    refute Map.has_key?(child_env, "CLAUDE_AGENT_OAUTH_TOKEN")
+  end
+
+  test "Z.AI validates its endpoint and transport timeout before execution" do
+    request = RunRequest.new!(%{prompt: "zai"})
+
+    assert {:error, %Error{category: :validation, provider: :zai}} =
+             Zai.resolve_env(request, %{}, %{base_url: ""})
+
+    assert {:error, %Error{category: :validation, provider: :zai}} =
+             Zai.resolve_env(request, %{}, %{api_timeout_ms: 0})
   end
 
   test "Gemini SDK receives supported normalized options and rejects read-only" do

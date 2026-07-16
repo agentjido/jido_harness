@@ -37,12 +37,15 @@ jobs:
             package: "opencode-ai"
           - provider: grok
             package: "@xai-official/grok"
+          - provider: zai
+            package: "@anthropic-ai/claude-code"
     env:
       AMP_API_KEY: ${{ secrets.AMP_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1

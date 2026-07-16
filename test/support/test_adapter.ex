@@ -151,6 +151,28 @@ defmodule Jido.Harness.ClaudeCaptureSDK do
   end
 end
 
+defmodule Jido.Harness.ZaiCaptureSDK do
+  @moduledoc false
+
+  def query(prompt, options) do
+    send(Process.get(:capture_owner), {:zai_options, :query, prompt, options})
+
+    [
+      %ClaudeAgentSDK.Message{
+        type: :system,
+        subtype: :init,
+        data: %{session_id: "zai-session", cwd: options.cwd, model: options.model, tools: []},
+        raw: %{}
+      }
+    ]
+  end
+
+  def resume(session_id, prompt, options) do
+    send(Process.get(:capture_owner), {:zai_options, {:resume, session_id}, prompt, options})
+    []
+  end
+end
+
 defmodule Jido.Harness.GeminiCaptureSDK do
   @moduledoc false
 

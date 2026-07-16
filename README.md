@@ -6,9 +6,9 @@
 [![License](https://img.shields.io/hexpm/l/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
 
 `Jido.Harness` 2.0 is the single supervised Elixir runtime for Amp, Claude Code,
-Codex, Gemini CLI, OpenCode, and Grok. It normalizes provider requests, events,
-results, errors, status checks, installation recipes, and cancellation while
-preserving provider-specific options under `provider_options`.
+Codex, Gemini CLI, OpenCode, Grok, and Z.AI. It normalizes provider requests,
+events, results, errors, status checks, installation recipes, and cancellation
+while preserving provider-specific options under `provider_options`.
 
 Runs and managed OS processes belong to the application supervision tree. They
 survive the process that started or streamed them and can be reattached by ID.
@@ -24,7 +24,7 @@ def deps do
 end
 ```
 
-The six built-in adapters are registered automatically. A providerless request
+The seven built-in adapters are registered automatically. A providerless request
 requires an explicit default:
 
 ```elixir
@@ -90,6 +90,19 @@ Jido.Harness.start(:grok, %{
     allow_rules: ["Bash(git *)"],
     deny_rules: ["Bash(git push *)"]
   }
+})
+```
+
+Z.AI is exposed as `:zai` through its officially supported Claude Code
+integration. The adapter maps `ZAI_API_KEY` to the child process's
+`ANTHROPIC_AUTH_TOKEN`, sets the Z.AI endpoint, and keeps long-run API timeouts
+aligned with the harness runtime:
+
+```elixir
+Jido.Harness.start(:zai, %{
+  prompt: "Review the current branch",
+  model: "glm-5.2",
+  cwd: File.cwd!()
 })
 ```
 

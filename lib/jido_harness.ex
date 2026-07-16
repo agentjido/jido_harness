@@ -1,6 +1,6 @@
 defmodule Jido.Harness do
   @moduledoc """
-  Unified, supervised interface for Amp, Claude, Codex, Gemini, OpenCode, and Grok CLIs.
+  Unified, supervised interface for Amp, Claude, Codex, Gemini, OpenCode, Grok, and Z.AI coding agents.
 
   Runs and direct CLI processes are owned by the application supervision tree, not by
   the caller that starts or consumes them.

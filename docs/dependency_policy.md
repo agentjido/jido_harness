@@ -11,7 +11,9 @@ Sprites, or Splode.
 - `telemetry` is the direct observation boundary.
 - `zoi` validates normalized public data.
 - `jason` encodes journals and decodes CLI JSONL.
-- Amp, Claude, Codex, and Gemini retain their existing SDK backends.
+- Amp, Claude, Codex, and Gemini retain their existing SDK backends. Z.AI
+  shares the Claude Agent SDK backend because Z.AI officially integrates GLM
+  Coding Plan through Claude Code.
 
 Gemini CLI SDK was retired before moving to `cli_subprocess_core` 0.2. The v2
 package therefore pins the mutually compatible SDK generation on
@@ -21,7 +23,7 @@ timeouts, cancellation, and subprocess cleanup all pass.
 
 ## Overrides and revisions
 
-An override or source revision is acceptable only when it is needed for the six
+An override or source revision is acceptable only when it is needed for the seven
 provider set to compile together or for a verified lifecycle fix. Each change
 must preserve the provider SDK backend and pass:
 

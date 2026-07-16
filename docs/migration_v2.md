@@ -1,7 +1,9 @@
 # Migrating to Jido.Harness 2.0
 
 Jido.Harness 2.0 consolidates the former Amp, Claude, Codex, Gemini, and
-OpenCode harness packages and adds Grok. It is a clean breaking API.
+OpenCode harness packages and adds Grok and Z.AI. Z.AI uses its officially
+supported Claude Code integration under the distinct `:zai` provider. It is a
+clean breaking API.
 
 ## Removed
 
