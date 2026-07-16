@@ -30,4 +30,5 @@ Jido.Harness is the unified normalization and lifecycle layer for CLI AI coding 
 
 - `mix test` — Run tests
 - `mix quality` — Full quality check (compile, format, credo, dialyzer, doctor)
+- `mix jido_harness.query codex "PROMPT"` — Run an explicit live ad hoc query
 - `mix jido_harness.integration` — Run explicitly selected live integration profiles

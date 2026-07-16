@@ -36,6 +36,28 @@ Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity, Aider, and
 Goose remain probe-only: no provider adapter is registered and no contract or
 live prompt is run for them.
 
+## Ad hoc queries
+
+Send a custom prompt through one provider:
+
+```console
+mix jido_harness.query codex "Explain this repository in one sentence."
+```
+
+Run the same deterministic check sequentially across selected or all registered
+providers:
+
+```console
+mix jido_harness.query amp,claude,codex "Reply with exactly: ready" --expect ready
+mix jido_harness.query all "Reply with exactly: ready" --expect ready --timeout 120
+```
+
+The task attempts every selected provider and reports the complete matrix before
+failing if any run failed, returned empty text, or missed `--expect`. Additional
+options include `--cwd`, `--model`, `--session-id`, `--max-turns`,
+`--idle-timeout`, `--env-file`, and `--json`. Timeout values are seconds. Query
+runs are live provider work and may consume paid API or subscription usage.
+
 Start with the live operator task. With no flags it only runs non-billable
 version and readiness probes for all registered providers:
 

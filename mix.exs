@@ -54,6 +54,7 @@ defmodule Jido.Harness.MixProject do
           Jido.Harness.IntegrationCase,
           Mix.Tasks.JidoHarness.Integration,
           Mix.Tasks.JidoHarness.Live,
+          Mix.Tasks.JidoHarness.Query,
           Mix.Tasks.JidoHarness.Tools
         ]
       ],
@@ -96,6 +97,7 @@ defmodule Jido.Harness.MixProject do
         "coveralls.html": :test,
         "jido_harness.integration": :test,
         "jido_harness.live": :test,
+        "jido_harness.query": :test,
         "jido_harness.tools": :test
       ]
     ]

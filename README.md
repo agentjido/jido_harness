@@ -195,6 +195,8 @@ Integration tests are excluded by default. Run live profiles explicitly:
 ```console
 mix jido_harness.tools --strict
 mix jido_harness.live
+mix jido_harness.query codex "Explain this repository in one sentence."
+mix jido_harness.query all "Reply with exactly: ready" --expect ready
 mix jido_harness.live --providers codex,kimi --install
 mix jido_harness.live --providers codex,grok --test --profile smoke
 mix jido_harness.live --test --profile smoke --strict
@@ -215,6 +217,14 @@ The inventory includes Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI,
 Kimi Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity,
 Aider, and Goose are probe-only inventory entries: they do not have adapters
 and cannot be selected for harness contract or live provider tests.
+
+`mix jido_harness.query` sends an arbitrary prompt through one adapter, a
+comma-separated selection, or every registered adapter. Multi-provider queries
+run sequentially and print a complete success/failure matrix. Use `--timeout`
+for a per-provider limit in seconds, `--cwd`, `--model`, `--session-id`,
+`--max-turns`, `--expect` for an exact-response assertion, or `--json` for
+machine-readable results. Unlike inventory and readiness checks, query runs can
+consume paid API or subscription usage.
 
 `mix jido_harness.live` is non-billable by default: it probes every registered
 CLI, reports installation, compatibility, authentication, and smoke readiness,
