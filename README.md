@@ -166,10 +166,22 @@ end
 Integration tests are excluded by default. Run live profiles explicitly:
 
 ```console
+mix jido_harness.live
+mix jido_harness.live --providers codex,kimi --install
+mix jido_harness.live --providers codex,grok --test --profile smoke
+mix jido_harness.live --test --profile smoke --strict
+
+# Lower-level integration runner
 mix jido_harness.integration --providers codex,grok --profile smoke
 mix jido_harness.integration --providers codex --profile lifecycle --strict
 mix jido_harness.integration --profile soak
 ```
+
+`mix jido_harness.live` is non-billable by default: it probes every registered
+CLI, reports installation, compatibility, authentication, and smoke readiness,
+then prints installation recipes for anything unavailable. `--install` runs the
+reported npm recipes through the managed process runtime. `--test` is the
+explicit switch that starts provider requests and may incur usage.
 
 See [integration testing](docs/integration_testing.md) and the
 [v2 migration guide](docs/migration_v2.md).

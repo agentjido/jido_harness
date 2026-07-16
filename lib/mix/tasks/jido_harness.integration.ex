@@ -26,7 +26,8 @@ defmodule Mix.Tasks.JidoHarness.Integration do
     Mix.Task.run("test", ["--include", include, "--timeout", "7200000"])
   end
 
-  defp load_env_file(path) do
+  @doc false
+  def load_env_file(path) do
     path
     |> File.stream!(:line, [])
     |> Enum.each(fn line ->
