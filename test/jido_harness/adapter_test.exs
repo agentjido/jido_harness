@@ -92,6 +92,7 @@ defmodule Jido.Harness.AdapterTest do
     assert thread_options.shell_environment_policy == %{"set" => %{"HARNESS_TEST" => "yes"}}
     assert_receive {:codex_turn, "codex", turn_options}
     assert turn_options.timeout_ms == 2_147_483_647
+    assert turn_options.completion_timeout_ms == 2_147_483_647
     assert turn_options.env == %{"HARNESS_TEST" => "yes"}
   end
 

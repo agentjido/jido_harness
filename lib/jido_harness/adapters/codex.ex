@@ -81,8 +81,10 @@ defmodule Jido.Harness.Adapters.Codex do
 
     thread_options = Map.merge(provider[:thread_options] || %{}, normalized_thread_options)
 
+    sdk_timeout = Helpers.sdk_timeout(request.runtime_timeout_ms)
+
     normalized_turn_options =
-      %{max_turns: request.max_turns, timeout_ms: Helpers.sdk_timeout(request.runtime_timeout_ms), env: request.env}
+      %{max_turns: request.max_turns, timeout_ms: sdk_timeout, completion_timeout_ms: sdk_timeout, env: request.env}
       |> compact()
 
     turn_options = Map.merge(provider[:turn_options] || %{}, normalized_turn_options)
