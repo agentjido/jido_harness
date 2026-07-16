@@ -1,82 +1,42 @@
 defmodule Jido.Harness.Error do
-  @moduledoc """
-  Centralized error handling for Jido.Harness using Splode.
+  @moduledoc "A provider-neutral harness error."
 
-  Error classes are for classification; concrete `...Error` structs are for raising/matching.
-  """
+  @type category :: :validation | :configuration | :provider | :process | :execution | :timeout | :cancelled | :internal
+  @type t :: %__MODULE__{
+          category: category(),
+          provider: atom() | nil,
+          run_id: String.t() | nil,
+          message: String.t(),
+          details: map(),
+          cause: term()
+        }
 
-  use Splode,
-    error_classes: [
-      invalid: Invalid,
-      execution: Execution,
-      config: Config,
-      internal: Internal
-    ],
-    unknown_error: __MODULE__.Internal.UnknownError
+  defexception category: :internal,
+               provider: nil,
+               run_id: nil,
+               message: "harness error",
+               details: %{},
+               cause: nil
 
-  defmodule Invalid do
-    @moduledoc "Invalid input error class for Splode."
-    use Splode.ErrorClass, class: :invalid
+  @spec new(category(), String.t(), keyword() | map()) :: t()
+  @doc "Builds a normalized harness error."
+  def new(category, message, attrs \\ %{}) when is_atom(category) and is_binary(message) do
+    attrs = Map.new(attrs)
+    struct!(__MODULE__, Map.merge(attrs, %{category: category, message: message}))
   end
 
-  defmodule Execution do
-    @moduledoc "Execution error class for Splode."
-    use Splode.ErrorClass, class: :execution
-  end
+  @spec validation(String.t(), keyword() | map()) :: t()
+  @doc "Builds a validation-category error."
+  def validation(message, attrs \\ %{}), do: new(:validation, message, attrs)
 
-  defmodule Config do
-    @moduledoc "Configuration error class for Splode."
-    use Splode.ErrorClass, class: :config
-  end
+  @spec execution(String.t(), keyword() | map()) :: t()
+  @doc "Builds an execution-category error."
+  def execution(message, attrs \\ %{}), do: new(:execution, message, attrs)
 
-  defmodule Internal do
-    @moduledoc "Internal error class for Splode."
-    use Splode.ErrorClass, class: :internal
-
-    defmodule UnknownError do
-      @moduledoc false
-      defexception [:message, :details]
-    end
-  end
-
-  defmodule InvalidInputError do
-    @moduledoc "Error for invalid input parameters."
-    @type t :: %__MODULE__{
-            message: String.t() | nil,
-            field: atom() | nil,
-            value: term() | nil,
-            details: map() | nil
-          }
-    defexception [:message, :field, :value, :details]
-  end
-
-  defmodule ProviderNotFoundError do
-    @moduledoc "Error when a provider is not registered."
-    @type t :: %__MODULE__{
-            message: String.t() | nil,
-            provider: atom() | nil
-          }
-    defexception [:message, :provider]
-  end
-
-  defmodule ExecutionFailureError do
-    @moduledoc "Error for runtime execution failures."
-    @type t :: %__MODULE__{
-            message: String.t() | nil,
-            details: map() | nil
-          }
-    defexception [:message, :details]
-  end
-
-  @doc "Builds an invalid input error exception."
-  @spec validation_error(String.t(), map()) :: InvalidInputError.t()
-  def validation_error(message, details \\ %{}) do
-    InvalidInputError.exception(Keyword.merge([message: message], Map.to_list(details)))
-  end
-
-  @doc "Builds an execution failure error exception."
-  @spec execution_error(String.t(), map()) :: ExecutionFailureError.t()
-  def execution_error(message, details \\ %{}) do
-    ExecutionFailureError.exception(message: message, details: details)
+  @impl true
+  @doc false
+  def message(%__MODULE__{} = error) do
+    prefix = if error.provider, do: "#{error.provider}: ", else: ""
+    prefix <> error.message
   end
 end

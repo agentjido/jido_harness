@@ -1,12 +1,22 @@
 defmodule Jido.Harness.Adapter do
-  @moduledoc "Behaviour that all CLI agent adapters must implement."
+  @moduledoc "Behaviour implemented by built-in and custom harness providers."
 
-  @callback id() :: atom()
-  @callback capabilities() :: Jido.Harness.Capabilities.t()
-  @callback run(Jido.Harness.RunRequest.t(), keyword()) ::
-              {:ok, Enumerable.t(Jido.Harness.Event.t())} | {:error, term()}
-  @callback cancel(String.t()) :: :ok | {:error, term()}
-  @callback runtime_contract() :: Jido.Harness.RuntimeContract.t()
+  alias Jido.Harness.{AdapterSpec, Event, ProviderStatus, RunRequest}
 
-  @optional_callbacks [cancel: 1]
+  @type context :: %{
+          required(:run_id) => String.t(),
+          required(:provider) => atom(),
+          required(:config) => map(),
+          required(:telemetry_context) => map(),
+          required(:process_manager) => module(),
+          optional(:run_owner) => pid()
+        }
+
+  @callback spec() :: AdapterSpec.t()
+  @callback run(RunRequest.t(), context()) :: {:ok, Enumerable.t(Event.t())} | {:error, term()}
+  @callback status(map()) :: {:ok, ProviderStatus.t()} | {:error, term()}
+  @callback install(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @callback cancel(String.t(), context()) :: :ok | {:error, term()}
+
+  @optional_callbacks install: 2, cancel: 2
 end

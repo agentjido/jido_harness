@@ -1,15 +1,15 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "2.0.0"
   @source_url "https://github.com/agentjido/jido_harness"
-  @description "Normalized Elixir protocol for CLI AI coding agents"
+  @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
   def project do
     [
       app: :jido_harness,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -39,7 +39,10 @@ defmodule Jido.Harness.MixProject do
           "LICENSE",
           "docs/adapter_contract.md",
           "docs/telemetry.md",
-          "docs/dependency_policy.md"
+          "docs/dependency_policy.md",
+          "docs/process_management.md",
+          "docs/integration_testing.md",
+          "docs/migration_v2.md"
         ],
         formatters: ["html"]
       ],
@@ -48,21 +51,11 @@ defmodule Jido.Harness.MixProject do
         summary: [threshold: 90],
         export: "cov",
         ignore_modules: [
-          Jido.Harness.Error.Invalid,
-          Jido.Harness.Error.Execution,
-          Jido.Harness.Error.Config,
-          Jido.Harness.Error.Internal,
-          Jido.Harness.Error.Internal.UnknownError,
-          Jido.Harness.Test.AdapterStub,
-          Jido.Harness.Test.PromptRunnerStub,
-          Jido.Harness.Test.StreamRunnerStub,
-          Jido.Harness.Test.RunRequestRunnerStub,
-          Jido.Harness.Test.ExecuteRunnerStub,
-          Jido.Harness.Test.NoCancelStub,
-          Jido.Harness.Test.AtomMapStreamRunnerStub,
-          Jido.Harness.Test.UnsupportedRunnerStub
+          Jido.Harness.IntegrationCase,
+          Mix.Tasks.JidoHarness.Integration
         ]
       ],
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
       # Hex packaging
       package: [
         name: :jido_harness,
@@ -77,6 +70,7 @@ defmodule Jido.Harness.MixProject do
           "config",
           "docs",
           "lib",
+          "priv",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],
@@ -97,14 +91,16 @@ defmodule Jido.Harness.MixProject do
       preferred_envs: [
         coveralls: :test,
         "coveralls.github": :test,
-        "coveralls.html": :test
+        "coveralls.html": :test,
+        "jido_harness.integration": :test
       ]
     ]
   end
 
   def application do
     [
-      extra_applications: [:logger]
+      mod: {Jido.Harness.Application, []},
+      extra_applications: [:logger, :erlexec]
     ]
   end
 
@@ -114,12 +110,18 @@ defmodule Jido.Harness.MixProject do
   defp deps do
     [
       # Runtime
-      {:zoi, "~> 0.17"},
-      {:splode, "~> 0.3.0"},
+      {:zoi, "~> 0.18"},
       {:jason, "~> 1.4"},
-      {:jido, "~> 2.2"},
-      {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
-      {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
+      {:telemetry, "~> 1.3"},
+      {:erlexec, "~> 2.3"},
+      # Gemini SDK was retired before migrating to cli_subprocess_core 0.2.
+      # Pin the mutually compatible SDK generation so all four SDK backends
+      # can coexist in one Mix application.
+      {:cli_subprocess_core, "~> 0.1.0"},
+      {:amp_sdk, "~> 0.5.0"},
+      {:claude_agent_sdk, "~> 0.14.0"},
+      {:codex_sdk, "~> 0.10.0"},
+      {:gemini_cli_sdk, "~> 0.2.0"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

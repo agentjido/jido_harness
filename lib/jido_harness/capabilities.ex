@@ -1,7 +1,5 @@
 defmodule Jido.Harness.Capabilities do
-  @moduledoc """
-  Describes the capabilities supported by a CLI agent adapter.
-  """
+  @moduledoc "Normalized provider capabilities."
 
   defstruct streaming?: true,
             tool_calls?: false,
@@ -10,7 +8,7 @@ defmodule Jido.Harness.Capabilities do
             resume?: false,
             usage?: false,
             file_changes?: false,
-            cancellation?: false
+            native_cancel?: false
 
   @type t :: %__MODULE__{
           streaming?: boolean(),
@@ -20,6 +18,6 @@ defmodule Jido.Harness.Capabilities do
           resume?: boolean(),
           usage?: boolean(),
           file_changes?: boolean(),
-          cancellation?: boolean()
+          native_cancel?: boolean()
         }
 end
