@@ -127,6 +127,7 @@ defmodule Jido.Harness.AdapterTest do
     assert {:ok, stream} = Codex.run(request, context)
     assert Enum.to_list(stream) == []
     assert_receive {:codex_options, {:resume, "thread-2"}, options, thread_options}
+    assert options.model == nil
     assert options.reasoning_effort == :low
     assert thread_options.ask_for_approval == :on_request
     assert thread_options.sandbox == :read_only

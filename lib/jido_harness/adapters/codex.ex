@@ -57,6 +57,7 @@ defmodule Jido.Harness.Adapters.Codex do
       Map.get(context.config, :codex_options, %{})
       |> Map.merge(provider[:codex_options] || %{})
       |> put_if_present(:codex_path_override, provider[:cli_path] || Map.get(context.config, :cli_path))
+      |> clear_sdk_model_default(request.model)
       |> put_if_present(:reasoning_effort, request.reasoning_effort)
       |> compact()
 
@@ -144,6 +145,8 @@ defmodule Jido.Harness.Adapters.Codex do
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
+  defp clear_sdk_model_default(map, nil), do: Map.put(map, :model, "")
+  defp clear_sdk_model_default(map, _explicit_model), do: map
 
   defp env_policy(env) when map_size(env) == 0, do: nil
   defp env_policy(env), do: %{"set" => env}
