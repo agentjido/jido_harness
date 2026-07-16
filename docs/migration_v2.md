@@ -1,10 +1,10 @@
 # Migrating to Jido.Harness 2.0
 
 Jido.Harness 2.0 consolidates the former Amp, Claude, Codex, Gemini, and
-OpenCode harness packages and adds Grok, Z.AI, and Kimi Code. Z.AI uses its
+OpenCode harness packages and adds Grok, Z.AI, Kimi Code, and Pi. Z.AI uses its
 officially supported Claude Code integration under the distinct `:zai`
-provider. Kimi Code uses its official headless JSONL interface under `:kimi`.
-It is a clean breaking API.
+provider. Kimi Code and Pi use their official headless JSONL interfaces under
+`:kimi` and `:pi`. It is a clean breaking API.
 
 ## Removed
 

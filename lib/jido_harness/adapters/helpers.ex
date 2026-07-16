@@ -42,18 +42,18 @@ defmodule Jido.Harness.Adapters.Helpers do
     status =
       case Jido.Harness.ProcessSpec.resolve_executable(executable) do
         {:ok, path} ->
-          case probe(path, version_argv) do
-            {:ok, output} ->
-              %ProviderStatus{
-                provider: provider,
-                installed: true,
-                compatible: true,
-                authenticated: authenticated,
-                capabilities: capabilities,
-                version: first_line(output),
-                executable: path
-              }
-
+          with {:ok, output} <- probe(path, version_argv),
+               :ok <- compatibility_probe(path, options) do
+            %ProviderStatus{
+              provider: provider,
+              installed: true,
+              compatible: true,
+              authenticated: authenticated,
+              capabilities: capabilities,
+              version: first_line(output),
+              executable: path
+            }
+          else
             {:error, reason} ->
               %ProviderStatus{
                 provider: provider,
@@ -80,8 +80,8 @@ defmodule Jido.Harness.Adapters.Helpers do
     {:ok, ProviderStatus.finalize(status)}
   end
 
-  def install_npm(provider, package, options) do
-    recipe = %{executable: "npm", argv: ["install", "-g", package], package: package}
+  def install_npm(provider, package, options, npm_args \\ []) do
+    recipe = %{executable: "npm", argv: ["install", "-g"] ++ npm_args ++ [package], package: package}
 
     if Keyword.get(options, :dry_run, false) do
       {:ok, %{provider: provider, status: :dry_run, recipe: recipe}}
@@ -122,6 +122,18 @@ defmodule Jido.Harness.Adapters.Helpers do
       output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
       _ = ProcessManager.prune_process(id)
       if info.state == :exited, do: {:ok, output}, else: {:error, info.error || {:exit_status, info.exit_status}}
+    end
+  end
+
+  defp compatibility_probe(path, options) do
+    with argv when is_list(argv) <- Keyword.get(options, :compatibility_argv),
+         pattern when is_binary(pattern) <- Keyword.get(options, :compatibility_pattern),
+         {:ok, output} <- probe(path, argv) do
+      if String.contains?(output, pattern), do: :ok, else: {:error, {:incompatible_cli, pattern}}
+    else
+      nil -> :ok
+      {:error, reason} -> {:error, reason}
+      _invalid -> {:error, :invalid_compatibility_probe}
     end
   end
 

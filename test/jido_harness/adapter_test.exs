@@ -1,7 +1,7 @@
 defmodule Jido.Harness.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Zai}
+  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, Zai}
   alias Jido.Harness.{Error, Event, RequestResolver, RunRequest}
 
   setup do
@@ -318,6 +318,157 @@ defmodule Jido.Harness.AdapterTest do
 
     assert {:error, %Error{category: :validation, details: %{field: :max_turns}}} =
              RequestResolver.resolve(:kimi, %{prompt: "kimi", max_turns: 2})
+  end
+
+  test "Pi builds official JSON-mode argv and disables startup update telemetry" do
+    request =
+      RunRequest.new!(%{
+        prompt: "pi prompt",
+        model: "claude-sonnet-4-5",
+        session_id: "session-uuid",
+        system_prompt: "system",
+        allowed_tools: ["read", "grep"],
+        disallowed_tools: ["bash"],
+        attachments: ["prompt.md", "/tmp/image.png"],
+        reasoning_effort: :high,
+        env: %{"KEEP_ME" => "yes"}
+      })
+
+    assert {:ok, argv} =
+             Pi.build_argv(request, %{
+               model_provider: "anthropic",
+               project_trust: :approve,
+               extensions: ["./extension.ts"],
+               skills: ["./skills/review"],
+               no_context_files: true
+             })
+
+    assert Enum.take(argv, 2) == ["--mode", "json"]
+    assert pairs(argv, "--provider") == ["anthropic"]
+    assert pairs(argv, "--model") == ["claude-sonnet-4-5"]
+    assert pairs(argv, "--thinking") == ["high"]
+    assert pairs(argv, "--session") == ["session-uuid"]
+    assert pairs(argv, "--tools") == ["read,grep"]
+    assert pairs(argv, "--exclude-tools") == ["bash"]
+    assert pairs(argv, "--system-prompt") == ["system"]
+    assert pairs(argv, "--extension") == ["./extension.ts"]
+    assert pairs(argv, "--skill") == ["./skills/review"]
+    assert "--approve" in argv
+    assert "--no-context-files" in argv
+    assert Enum.take(argv, -3) == ["@prompt.md", "@/tmp/image.png", "pi prompt"]
+
+    prepared = Pi.prepare_request(request)
+    assert prepared.env["PI_SKIP_VERSION_CHECK"] == "1"
+    assert prepared.env["PI_TELEMETRY"] == "0"
+    assert prepared.env["KEEP_ME"] == "yes"
+
+    assert {:ok, %{recipe: %{argv: ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent"]}}} =
+             Pi.install(%{}, dry_run: true)
+  end
+
+  test "Pi maps session, streaming, usage, and tool JSONL records" do
+    assert [%Event{provider: :pi, type: :session_started, session_id: "pi-session"}] =
+             Pi.map_event(%{"type" => "session", "id" => "pi-session", "cwd" => "/tmp"})
+
+    assert [%Event{type: :output_text_delta, payload: %{"text" => "hello"}}] =
+             Pi.map_event(%{
+               "type" => "message_update",
+               "assistantMessageEvent" => %{"type" => "text_delta", "delta" => "hello"}
+             })
+
+    assert [%Event{type: :thinking_delta, payload: %{"text" => "considering"}}] =
+             Pi.map_event(%{
+               "type" => "message_update",
+               "assistantMessageEvent" => %{"type" => "thinking_delta", "delta" => "considering"}
+             })
+
+    assert [
+             %Event{type: :output_text_final, payload: %{"text" => "final answer"}},
+             %Event{type: :usage, payload: %{"input" => 10, "output" => 2, "totalTokens" => 12}}
+           ] =
+             Pi.map_event(%{
+               "type" => "message_end",
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => [%{"type" => "text", "text" => "final answer"}],
+                 "usage" => %{"input" => 10, "output" => 2, "totalTokens" => 12}
+               }
+             })
+
+    assert [
+             %Event{
+               type: :tool_call,
+               payload: %{"call_id" => "tool-1", "name" => "read", "input" => %{"path" => "README.md"}}
+             }
+           ] =
+             Pi.map_event(%{
+               "type" => "tool_execution_start",
+               "toolCallId" => "tool-1",
+               "toolName" => "read",
+               "args" => %{"path" => "README.md"}
+             })
+
+    assert [
+             %Event{
+               type: :tool_result,
+               payload: %{"call_id" => "tool-1", "name" => "read", "output" => %{"text" => "contents"}}
+             }
+           ] =
+             Pi.map_event(%{
+               "type" => "tool_execution_end",
+               "toolCallId" => "tool-1",
+               "toolName" => "read",
+               "result" => %{"text" => "contents"},
+               "isError" => false
+             })
+
+    assert [%Event{type: :provider_event}] =
+             Pi.map_event(%{
+               "type" => "agent_end",
+               "willRetry" => true,
+               "messages" => [
+                 %{"role" => "assistant", "stopReason" => "error", "errorMessage" => "temporary"}
+               ]
+             })
+
+    assert [%Event{type: :session_failed, payload: %{"error" => "authentication failed"}}] =
+             Pi.map_event(%{
+               "type" => "agent_end",
+               "willRetry" => false,
+               "messages" => [
+                 %{"role" => "assistant", "stopReason" => "error", "errorMessage" => "authentication failed"}
+               ]
+             })
+  end
+
+  test "Pi rejects conflicting sessions, unsafe credential argv, and unsupported controls" do
+    session_request = RunRequest.new!(%{prompt: "pi", session_id: "session-uuid"})
+
+    assert {:error, %Error{category: :validation, provider: :pi}} =
+             Pi.build_argv(session_request, %{continue: true})
+
+    assert {:error, %Error{category: :validation, details: %{argument: "--api-key=secret"}}} =
+             Pi.build_argv(session_request, %{extra_args: ["--api-key=secret"]})
+
+    assert {:error, %Error{category: :validation, details: %{field: :approval_mode}}} =
+             RequestResolver.resolve(:pi, %{prompt: "pi", approval_mode: :prompt})
+
+    assert {:ok, %{approval_mode: :auto_approve, sandbox_mode: :unrestricted}} =
+             RequestResolver.resolve(:pi, %{
+               prompt: "pi",
+               approval_mode: :auto_approve,
+               sandbox_mode: :unrestricted
+             })
+
+    assert {:ok, read_only} = RequestResolver.resolve(:pi, %{prompt: "pi", sandbox_mode: :read_only})
+    assert {:ok, read_only_argv} = Pi.build_argv(read_only, %{})
+    assert pairs(read_only_argv, "--tools") == ["read,grep,find,ls"]
+
+    assert {:error, %Error{category: :validation, details: %{field: :allowed_tools}}} =
+             Pi.build_argv(%{read_only | allowed_tools: ["read", "bash"]}, %{})
+
+    assert {:error, %Error{category: :validation, details: %{field: :sandbox_mode}}} =
+             RequestResolver.resolve(:pi, %{prompt: "pi", sandbox_mode: :workspace_write})
   end
 
   test "CLI escape hatches cannot shadow normalized or harness-owned flags" do

@@ -97,6 +97,9 @@ defmodule Mix.Tasks.JidoHarness.LiveTest do
     assert Live.install_command(Jido.Harness.Adapters.Kimi.spec()) ==
              "npm install --global @moonshot-ai/kimi-code"
 
+    assert Live.install_command(Jido.Harness.Adapters.Pi.spec()) ==
+             "npm install --global --ignore-scripts @earendil-works/pi-coding-agent"
+
     assert Live.install_command(%AdapterSpec{
              provider: :manual,
              name: "Manual",

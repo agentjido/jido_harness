@@ -37,6 +37,21 @@ defmodule Jido.Harness.RunManagerTest do
              Jido.Harness.replay(run_id, limit: 10_001)
   end
 
+  test "provider-emitted failures produce a normalized result error" do
+    assert {:ok, result} = Jido.Harness.run_sync(:test, "terminal-fail", await_timeout: 5_000)
+    assert result.status == :failed
+
+    assert %Jido.Harness.Error{
+             category: :execution,
+             provider: :test,
+             run_id: run_id,
+             message: "fixture terminal failure"
+           } = result.error
+
+    assert run_id == result.run_id
+    assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+  end
+
   test "status exposes smoke readiness and lifecycle capabilities" do
     assert {:ok, status} = Jido.Harness.status(:test)
     assert status.smoke_ready

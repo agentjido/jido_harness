@@ -3,7 +3,7 @@
 ## Scope
 
 - Use `jido_harness` as the single runtime for Amp, Claude, Codex, Gemini,
-  Kimi Code, OpenCode, Grok, and Z.AI.
+  Grok, Kimi Code, OpenCode, Pi, and Z.AI.
 - Treat `jido_shell` as unrelated; do not depend on it for harness execution.
 - Keep run supervision and direct OS-process ownership inside Jido.Harness.
 
@@ -33,4 +33,4 @@
 
 - Keep provider integration tests opt-in.
 - Use deterministic fixture CLIs for PR tests and the 65-minute soak profile.
-- Run strict live smoke tests for all eight providers before a release.
+- Run strict live smoke tests for all nine providers before a release.

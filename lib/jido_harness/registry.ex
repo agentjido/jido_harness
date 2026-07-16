@@ -11,6 +11,7 @@ defmodule Jido.Harness.Registry do
     kimi: Jido.Harness.Adapters.Kimi,
     opencode: Jido.Harness.Adapters.OpenCode,
     grok: Jido.Harness.Adapters.Grok,
+    pi: Jido.Harness.Adapters.Pi,
     zai: Jido.Harness.Adapters.Zai
   }
 

@@ -271,7 +271,7 @@ defmodule Jido.Harness.RunWorker do
 
   defp finish_success(%{terminal_event: %{type: :session_completed}} = state), do: finalize(state, :completed, nil)
   defp finish_success(%{terminal_event: %{type: :session_cancelled}} = state), do: finalize(state, :cancelled, nil)
-  defp finish_success(%{terminal_event: %{type: :session_failed}} = state), do: finalize(state, :failed, state.error)
+  defp finish_success(%{terminal_event: %{type: :session_failed}} = state), do: finalize_from_terminal(state)
 
   defp finish_error(%{terminal_event: nil} = state, reason) do
     error = normalize_error(state, reason)
@@ -357,8 +357,14 @@ defmodule Jido.Harness.RunWorker do
   defp finalize_from_terminal(%{terminal_event: %Event{type: :session_cancelled}} = state),
     do: finalize(state, :cancelled, nil)
 
-  defp finalize_from_terminal(%{terminal_event: %Event{type: :session_failed}} = state) do
-    error = state.error || Error.execution("provider reported failure", provider: state.provider, run_id: state.id)
+  defp finalize_from_terminal(%{terminal_event: %Event{type: :session_failed, payload: payload}} = state) do
+    message =
+      case Map.get(payload, "error") do
+        value when is_binary(value) and value != "" -> value
+        _value -> "provider reported failure"
+      end
+
+    error = state.error || Error.execution(message, provider: state.provider, run_id: state.id)
     finalize(state, :failed, error)
   end
 

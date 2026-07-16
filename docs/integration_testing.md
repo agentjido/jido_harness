@@ -44,6 +44,7 @@ The built-in recipes are:
 | Grok | `npm install --global @xai-official/grok` |
 | Kimi Code | `npm install --global @moonshot-ai/kimi-code` |
 | OpenCode | `npm install --global opencode-ai` |
+| Pi | `npm install --global --ignore-scripts @earendil-works/pi-coding-agent` |
 | Z.AI | `npm install --global @anthropic-ai/claude-code` |
 
 Z.AI uses the officially supported Claude Code integration, so Claude and Z.AI

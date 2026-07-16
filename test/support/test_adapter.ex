@@ -46,11 +46,23 @@ defmodule Jido.Harness.TestAdapter do
   @impl true
   def run(request, _context) do
     case request.prompt do
-      "fail" -> {:error, :fixture_failure}
-      "raise" -> raise "fixture raised"
-      "wait" -> {:ok, waiting_stream()}
-      "slow" -> {:ok, slow_stream(request)}
-      _ -> {:ok, successful_stream(request)}
+      "fail" ->
+        {:error, :fixture_failure}
+
+      "terminal-fail" ->
+        {:ok, [Event.new!(provider: :test, type: :session_failed, payload: %{"error" => "fixture terminal failure"})]}
+
+      "raise" ->
+        raise "fixture raised"
+
+      "wait" ->
+        {:ok, waiting_stream()}
+
+      "slow" ->
+        {:ok, slow_stream(request)}
+
+      _ ->
+        {:ok, successful_stream(request)}
     end
   end
 

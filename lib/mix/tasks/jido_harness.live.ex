@@ -102,6 +102,10 @@ defmodule Mix.Tasks.JidoHarness.Live do
   end
 
   @doc false
+  def install_command(%AdapterSpec{install: %{npm: package, npm_args: args}})
+      when is_binary(package) and is_list(args),
+      do: Enum.join(["npm", "install", "--global"] ++ args ++ [package], " ")
+
   def install_command(%AdapterSpec{install: %{npm: package}}) when is_binary(package),
     do: "npm install --global #{package}"
 

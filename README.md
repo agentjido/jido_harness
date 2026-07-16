@@ -6,9 +6,9 @@
 [![License](https://img.shields.io/hexpm/l/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
 
 `Jido.Harness` 2.0 is the single supervised Elixir runtime for Amp, Claude Code,
-Codex, Gemini CLI, Kimi Code, OpenCode, Grok, and Z.AI. It normalizes provider
-requests, events, results, errors, status checks, installation recipes, and
-cancellation while preserving provider-specific options under
+Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI. It normalizes
+provider requests, events, results, errors, status checks, installation recipes,
+and cancellation while preserving provider-specific options under
 `provider_options`.
 
 Runs and managed OS processes belong to the application supervision tree. They
@@ -25,7 +25,7 @@ def deps do
 end
 ```
 
-The eight built-in adapters are registered automatically. A providerless request
+The nine built-in adapters are registered automatically. A providerless request
 requires an explicit default:
 
 ```elixir
@@ -125,6 +125,33 @@ The adapter disables CLI self-updates, persistent cron creation, and detached
 background survival for harness-owned runs. Model selection, session resume,
 additional directories, reasoning effort, and skills directories remain
 available through normalized fields or `provider_options`.
+
+Pi is exposed as `:pi` through its official JSON event-stream mode. Pi can route
+to any model provider configured through its cached login, API-key environment,
+or `models.json`:
+
+```elixir
+Jido.Harness.start(:pi, %{
+  prompt: "Review the current branch",
+  model: "anthropic/claude-sonnet-4-5",
+  cwd: File.cwd!(),
+  reasoning_effort: :high,
+  provider_options: %{
+    project_trust: :deny,
+    no_context_files: true,
+    no_extensions: true,
+    no_skills: true
+  }
+})
+```
+
+Pi tools do not display approval prompts, so `:auto_approve` is supported while
+`:prompt` and `:auto_edit` are rejected. Pi's documented read-only tool set maps
+to `sandbox_mode: :read_only`; `:unrestricted` is also supported, but Pi cannot
+enforce workspace-only writes. Use the separate `project_trust` provider option
+only when project-local Pi settings, skills, or extensions should be loaded.
+Extensions execute with full process access. Harness-managed Pi runs disable
+Pi's startup version check and install telemetry.
 
 ## Managed processes
 
