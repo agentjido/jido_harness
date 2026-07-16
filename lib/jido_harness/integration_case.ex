@@ -20,6 +20,7 @@ defmodule Jido.Harness.IntegrationCase do
     "CODEX_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
+    "KIMI_MODEL_API_KEY",
     "OPENCODE_API_KEY",
     "ZAI_API_KEY",
     "XAI_API_KEY"

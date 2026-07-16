@@ -8,6 +8,7 @@ defmodule Jido.Harness.Registry do
     claude: Jido.Harness.Adapters.Claude,
     codex: Jido.Harness.Adapters.Codex,
     gemini: Jido.Harness.Adapters.Gemini,
+    kimi: Jido.Harness.Adapters.Kimi,
     opencode: Jido.Harness.Adapters.OpenCode,
     grok: Jido.Harness.Adapters.Grok,
     zai: Jido.Harness.Adapters.Zai

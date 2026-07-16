@@ -6,9 +6,10 @@
 [![License](https://img.shields.io/hexpm/l/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
 
 `Jido.Harness` 2.0 is the single supervised Elixir runtime for Amp, Claude Code,
-Codex, Gemini CLI, OpenCode, Grok, and Z.AI. It normalizes provider requests,
-events, results, errors, status checks, installation recipes, and cancellation
-while preserving provider-specific options under `provider_options`.
+Codex, Gemini CLI, Kimi Code, OpenCode, Grok, and Z.AI. It normalizes provider
+requests, events, results, errors, status checks, installation recipes, and
+cancellation while preserving provider-specific options under
+`provider_options`.
 
 Runs and managed OS processes belong to the application supervision tree. They
 survive the process that started or streamed them and can be reattached by ID.
@@ -24,7 +25,7 @@ def deps do
 end
 ```
 
-The seven built-in adapters are registered automatically. A providerless request
+The eight built-in adapters are registered automatically. A providerless request
 requires an explicit default:
 
 ```elixir
@@ -105,6 +106,25 @@ Jido.Harness.start(:zai, %{
   cwd: File.cwd!()
 })
 ```
+
+Kimi Code is exposed as `:kimi` through its official non-interactive
+`stream-json` interface. Cached OAuth and `config.toml` credentials work
+unchanged. For ephemeral API-key runs, use Kimi's documented
+`KIMI_MODEL_NAME` and `KIMI_MODEL_API_KEY` environment channel:
+
+```elixir
+Jido.Harness.start(:kimi, %{
+  prompt: "Review the current branch",
+  model: "k3",
+  cwd: File.cwd!(),
+  runtime_timeout_ms: :infinity
+})
+```
+
+The adapter disables CLI self-updates, persistent cron creation, and detached
+background survival for harness-owned runs. Model selection, session resume,
+additional directories, reasoning effort, and skills directories remain
+available through normalized fields or `provider_options`.
 
 ## Managed processes
 

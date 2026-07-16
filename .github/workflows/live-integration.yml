@@ -33,6 +33,8 @@ jobs:
             package: "@openai/codex"
           - provider: gemini
             package: "@google/gemini-cli"
+          - provider: kimi
+            package: "@moonshot-ai/kimi-code"
           - provider: opencode
             package: "opencode-ai"
           - provider: grok
@@ -44,6 +46,8 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KIMI_MODEL_NAME: "k3"
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
       XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
       ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
     steps:

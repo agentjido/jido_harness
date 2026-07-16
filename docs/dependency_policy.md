@@ -14,6 +14,8 @@ Sprites, or Splode.
 - Amp, Claude, Codex, and Gemini retain their existing SDK backends. Z.AI
   shares the Claude Agent SDK backend because Z.AI officially integrates GLM
   Coding Plan through Claude Code.
+- OpenCode, Grok, and Kimi Code use their official direct CLI interfaces through
+  the harness process manager.
 
 Gemini CLI SDK was retired before moving to `cli_subprocess_core` 0.2. The v2
 package therefore pins the mutually compatible SDK generation on
@@ -23,7 +25,7 @@ timeouts, cancellation, and subprocess cleanup all pass.
 
 ## Overrides and revisions
 
-An override or source revision is acceptable only when it is needed for the seven
+An override or source revision is acceptable only when it is needed for the eight
 provider set to compile together or for a verified lifecycle fix. Each change
 must preserve the provider SDK backend and pass:
 

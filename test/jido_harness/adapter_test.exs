@@ -1,8 +1,8 @@
 defmodule Jido.Harness.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, OpenCode, Zai}
-  alias Jido.Harness.{Error, Event, RunRequest}
+  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Zai}
+  alias Jido.Harness.{Error, Event, RequestResolver, RunRequest}
 
   setup do
     Process.put(:capture_owner, self())
@@ -227,6 +227,97 @@ defmodule Jido.Harness.AdapterTest do
     assert "--auto" in argv
     assert "--thinking" in argv
     assert pairs(argv, "--format") == ["json"]
+  end
+
+  test "Kimi builds official print-mode argv and managed long-run environment" do
+    request =
+      RunRequest.new!(%{
+        prompt: "kimi prompt",
+        model: "k3",
+        session_id: "ses_123",
+        add_dirs: ["../shared", "/tmp/extra"],
+        reasoning_effort: :high,
+        env: %{"KIMI_MODEL_API_KEY" => "integration-test-key"}
+      })
+
+    assert {:ok, prepared} = Kimi.prepare_request(request)
+    assert prepared.env["KIMI_MODEL_NAME"] == "k3"
+    assert prepared.env["KIMI_MODEL_API_KEY"] == "integration-test-key"
+    assert prepared.env["KIMI_MODEL_THINKING_EFFORT"] == "high"
+    assert prepared.env["KIMI_CODE_NO_AUTO_UPDATE"] == "1"
+    assert prepared.env["KIMI_DISABLE_CRON"] == "1"
+    assert prepared.env["KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT"] == "0"
+
+    assert {:ok, argv} = Kimi.build_argv(prepared, %{skills_dirs: ["./team-skills"]})
+    assert Enum.take(argv, 4) == ["-p", "kimi prompt", "--output-format", "stream-json"]
+    assert pairs(argv, "--session") == ["ses_123"]
+    assert pairs(argv, "--add-dir") == ["../shared", "/tmp/extra"]
+    assert pairs(argv, "--skills-dir") == ["./team-skills"]
+    refute "--model" in argv
+
+    cached_request = RunRequest.new!(%{prompt: "cached", model: "configured-alias"})
+    assert {:ok, cached_argv} = Kimi.build_argv(cached_request, %{})
+    assert pairs(cached_argv, "--model") == ["configured-alias"]
+  end
+
+  test "Kimi maps its official assistant, tool, and resume JSONL records" do
+    assistant = %{
+      "role" => "assistant",
+      "content" => "checking",
+      "tool_calls" => [
+        %{
+          "type" => "function",
+          "id" => "tc_1",
+          "function" => %{"name" => "Shell", "arguments" => ~s({"command":"ls"})}
+        }
+      ]
+    }
+
+    assert [
+             %Event{provider: :kimi, type: :output_text_delta, payload: %{"text" => "checking"}},
+             %Event{
+               provider: :kimi,
+               type: :tool_call,
+               payload: %{"call_id" => "tc_1", "name" => "Shell", "input" => %{"command" => "ls"}}
+             }
+           ] = Kimi.map_event(assistant)
+
+    assert [
+             %Event{
+               provider: :kimi,
+               type: :tool_result,
+               payload: %{"call_id" => "tc_1", "output" => "file.py", "is_error" => false}
+             }
+           ] = Kimi.map_event(%{"role" => "tool", "tool_call_id" => "tc_1", "content" => "file.py"})
+
+    assert [
+             %Event{
+               provider: :kimi,
+               type: :provider_event,
+               session_id: "ses_123",
+               payload: %{"type" => "session.resume_hint"}
+             }
+           ] =
+             Kimi.map_event(%{
+               "role" => "meta",
+               "type" => "session.resume_hint",
+               "session_id" => "ses_123",
+               "command" => "kimi -r ses_123",
+               "content" => "resume"
+             })
+  end
+
+  test "Kimi rejects conflicting or unsupported normalized controls" do
+    request = RunRequest.new!(%{prompt: "kimi", session_id: "ses_123"})
+
+    assert {:error, %Error{category: :validation, provider: :kimi}} =
+             Kimi.build_argv(request, %{extra_args: ["--output-format=json"]})
+
+    assert {:error, %Error{category: :validation, details: %{field: :approval_mode}}} =
+             RequestResolver.resolve(:kimi, %{prompt: "kimi", approval_mode: :auto_approve})
+
+    assert {:error, %Error{category: :validation, details: %{field: :max_turns}}} =
+             RequestResolver.resolve(:kimi, %{prompt: "kimi", max_turns: 2})
   end
 
   test "CLI escape hatches cannot shadow normalized or harness-owned flags" do
