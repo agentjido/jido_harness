@@ -53,7 +53,8 @@ defmodule Jido.Harness.MixProject do
         ignore_modules: [
           Jido.Harness.IntegrationCase,
           Mix.Tasks.JidoHarness.Integration,
-          Mix.Tasks.JidoHarness.Live
+          Mix.Tasks.JidoHarness.Live,
+          Mix.Tasks.JidoHarness.Tools
         ]
       ],
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
@@ -94,7 +95,8 @@ defmodule Jido.Harness.MixProject do
         "coveralls.github": :test,
         "coveralls.html": :test,
         "jido_harness.integration": :test,
-        "jido_harness.live": :test
+        "jido_harness.live": :test,
+        "jido_harness.tools": :test
       ]
     ]
   end

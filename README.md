@@ -193,6 +193,7 @@ end
 Integration tests are excluded by default. Run live profiles explicitly:
 
 ```console
+mix jido_harness.tools --strict
 mix jido_harness.live
 mix jido_harness.live --providers codex,kimi --install
 mix jido_harness.live --providers codex,grok --test --profile smoke
@@ -203,6 +204,17 @@ mix jido_harness.integration --providers codex,grok --profile smoke
 mix jido_harness.integration --providers codex --profile lifecycle --strict
 mix jido_harness.integration --profile soak
 ```
+
+`mix jido_harness.tools` is a non-billable local inventory check. It runs only
+version commands through the managed process runtime and records the expected
+installation source, executable path, update command, and minimum tested
+version. Use `--tools claude,codex` to select entries, `--strict` to reject
+missing/outdated tools, or `--json` for machine-readable output.
+
+The inventory includes Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI,
+Kimi Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity,
+Aider, and Goose are probe-only inventory entries: they do not have adapters
+and cannot be selected for harness contract or live provider tests.
 
 `mix jido_harness.live` is non-billable by default: it probes every registered
 CLI, reports installation, compatibility, authentication, and smoke readiness,

@@ -206,6 +206,9 @@ defmodule Mix.Tasks.JidoHarness.Live do
   defp print_live_guidance(specs) do
     providers = specs |> Enum.map(& &1.provider) |> Enum.join(",")
 
+    Mix.shell().info("\nComplete CLI inventory (including probe-only tools)")
+    Mix.shell().info("  mix jido_harness.tools --strict")
+
     Mix.shell().info("\nLive testing (may contact providers and incur usage)")
     Mix.shell().info("  Smoke:     mix jido_harness.live --providers #{providers} --test --profile smoke")
     Mix.shell().info("  Contract:  mix jido_harness.live --providers #{providers} --test --profile contract")

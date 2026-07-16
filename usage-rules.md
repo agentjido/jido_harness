@@ -32,5 +32,7 @@
 ## Testing
 
 - Keep provider integration tests opt-in.
+- Run `mix jido_harness.tools --strict` for the non-billable 11-tool CLI
+  inventory; Antigravity, Aider, and Goose are version probes, not providers.
 - Use deterministic fixture CLIs for PR tests and the 65-minute soak profile.
 - Run strict live smoke tests for all nine providers before a release.

@@ -14,6 +14,28 @@ lifecycle behavior.
 
 ## Mix task
 
+Verify the complete local CLI inventory without making provider requests:
+
+```console
+mix jido_harness.tools
+mix jido_harness.tools --tools claude,codex,antigravity
+mix jido_harness.tools --strict
+mix jido_harness.tools --json
+```
+
+The task executes only each tool's version command, using the harness process
+manager so startup, output capture, timeout handling, and cleanup are exercised.
+It reports the resolved executable path, expected installation source, update
+commands, and minimum tested version. `--strict` fails for missing, failed,
+unrecognized, or older versions; newer versions pass. It does not attempt
+authentication. Use `mix jido_harness.live` for adapter authentication and
+readiness reporting, then opt into a smoke request with `--test`.
+
+The inventory covers Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI, Kimi
+Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity, Aider, and
+Goose remain probe-only: no provider adapter is registered and no contract or
+live prompt is run for them.
+
 Start with the live operator task. With no flags it only runs non-billable
 version and readiness probes for all registered providers:
 
