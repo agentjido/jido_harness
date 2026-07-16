@@ -48,6 +48,7 @@ Environment values and full process specifications are never journaled.
 `stream_process/2` and run `stream/2` are pull-based cursor streams. A slow
 consumer polls retained events and does not receive an unbounded producer
 mailbox. `replay_process/2` and `replay/2` accept `:cursor` and `:limit`.
+Replay pages are capped at 10,000 events.
 
 Completed processes and runs remain addressable for 24 hours by default, then
 the retention worker prunes them.

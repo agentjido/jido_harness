@@ -3,6 +3,8 @@ defmodule Jido.Harness.ProcessManager do
 
   alias Jido.Harness.{CursorStream, ID, ProcessInfo, ProcessSpec, ProcessWorker}
 
+  @max_replay_limit 10_000
+
   @spec start_process(map() | keyword() | ProcessSpec.t()) :: {:ok, String.t()} | {:error, term()}
   @doc "Starts a temporary supervised worker for a structured process specification."
   def start_process(spec) do
@@ -53,7 +55,10 @@ defmodule Jido.Harness.ProcessManager do
   def replay_process(id, options \\ []) do
     cursor = Keyword.get(options, :cursor, 0)
     limit = Keyword.get(options, :limit, 100)
-    call(id, {:replay, cursor, limit})
+
+    with :ok <- validate_replay(cursor, limit) do
+      call(id, {:replay, cursor, limit})
+    end
   end
 
   @doc "Returns a pull-based process event stream starting at an optional cursor."
@@ -74,6 +79,9 @@ defmodule Jido.Harness.ProcessManager do
 
   @doc "Writes binary data to the process's standard input."
   def send_input(id, data) when is_binary(data), do: call(id, {:input, data})
+
+  def send_input(_id, _data),
+    do: {:error, Jido.Harness.Error.validation("process input must be binary data")}
 
   @doc "Closes standard input, or sends the PTY end-of-input character."
   def close_input(id), do: call(id, {:input, :eof})
@@ -125,5 +133,16 @@ defmodule Jido.Harness.ProcessManager do
       [] ->
         {:error, :not_found}
     end
+  end
+
+  defp validate_replay(cursor, limit)
+       when is_integer(cursor) and cursor >= 0 and is_integer(limit) and limit > 0 and limit <= @max_replay_limit,
+       do: :ok
+
+  defp validate_replay(cursor, limit) do
+    {:error,
+     Jido.Harness.Error.validation("invalid replay cursor or limit",
+       details: %{cursor: cursor, limit: limit, max_limit: @max_replay_limit}
+     )}
   end
 end

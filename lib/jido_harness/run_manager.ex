@@ -3,6 +3,8 @@ defmodule Jido.Harness.RunManager do
 
   alias Jido.Harness.{CursorStream, ID, Registry, RunInfo, RunWorker}
 
+  @max_replay_limit 10_000
+
   def start(provider, request) do
     with {:ok, adapter} <- Registry.lookup(provider) do
       id = ID.generate("run")
@@ -47,7 +49,10 @@ defmodule Jido.Harness.RunManager do
   def replay(id, options \\ []) do
     cursor = Keyword.get(options, :cursor, 0)
     limit = Keyword.get(options, :limit, 100)
-    call(id, {:replay, cursor, limit})
+
+    with :ok <- validate_replay(cursor, limit) do
+      call(id, {:replay, cursor, limit})
+    end
   end
 
   def stream(id, options \\ []) do
@@ -90,5 +95,16 @@ defmodule Jido.Harness.RunManager do
       [] ->
         {:error, :not_found}
     end
+  end
+
+  defp validate_replay(cursor, limit)
+       when is_integer(cursor) and cursor >= 0 and is_integer(limit) and limit > 0 and limit <= @max_replay_limit,
+       do: :ok
+
+  defp validate_replay(cursor, limit) do
+    {:error,
+     Jido.Harness.Error.validation("invalid replay cursor or limit",
+       details: %{cursor: cursor, limit: limit, max_limit: @max_replay_limit}
+     )}
   end
 end

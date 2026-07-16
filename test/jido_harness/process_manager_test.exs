@@ -64,6 +64,14 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, stream} = Jido.Harness.stream_process(id, poll_interval_ms: 1)
     streamed = Enum.to_list(stream)
     assert Enum.map(streamed, & &1.sequence) == Enum.map(all_events, & &1.sequence)
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.replay_process(id, cursor: -1, limit: 100)
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.replay_process(id, limit: 10_001)
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} = Jido.Harness.send_input(id, :not_binary)
   end
 
   test "survives the starting caller and enforces runtime and idle timeouts" do

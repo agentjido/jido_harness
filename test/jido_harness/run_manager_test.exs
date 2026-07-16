@@ -29,6 +29,12 @@ defmodule Jido.Harness.RunManagerTest do
 
     assert {:ok, stream} = Jido.Harness.stream(run_id, poll_interval_ms: 1)
     assert Enum.map(Enum.to_list(stream), & &1.sequence) == Enum.map(replayed, & &1.sequence)
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.replay(run_id, cursor: -1, limit: 100)
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.replay(run_id, limit: 10_001)
   end
 
   test "status exposes smoke readiness and lifecycle capabilities" do
