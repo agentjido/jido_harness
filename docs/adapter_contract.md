@@ -1,90 +1,71 @@
-# Adapter Contract
+# Adapter contract
 
-This checklist defines the stable surface that `jido_harness` expects from every adapter package in the current ecosystem phase.
+Every v2 adapter implements `Jido.Harness.Adapter` and returns only normalized
+Jido.Harness types at its public boundary.
 
-## Required Callbacks
+## Required callbacks
 
-Every adapter must implement:
+- `spec/0` returns `%Jido.Harness.AdapterSpec{}`.
+- `run/2` returns `{:ok, enumerable}` or `{:error, reason}`.
+- `status/1` returns installation, compatibility, authentication, resume,
+  cancellation, and readiness information.
 
-- `id/0`
-- `capabilities/0`
-- `run/2`
-- `runtime_contract/0`
+`install/2` and native `cancel/2` are optional. Adapters without native
+cancellation are cancelled by terminating their supervised run worker and
+closing the underlying SDK stream.
 
-`cancel/1` is optional, but only optional when the adapter reports `cancellation?: false`.
+## Adapter specification
 
-## `id/0`
+The spec declares:
 
-- returns the provider atom used by the harness registry
-- must match `runtime_contract().provider`
+- the provider atom and display name;
+- the expected executable and explicit installation recipe;
+- normalized capabilities;
+- normalized request fields the provider can represent;
+- any provider-specific constraints on normalized enum values;
+- accepted nested `provider_options` keys;
+- adapter request defaults.
 
-Examples:
+Declarations are enforced. A non-default normalized value that is not listed in
+`normalized_options` fails before the adapter is invoked. Unknown
+`provider_options` keys fail before execution.
 
-- `:codex`
-- `:amp`
-- `:claude`
-- `:gemini`
-- `:opencode`
+## Run callback
 
-## `capabilities/0`
+`run/2` receives a validated `%Jido.Harness.RunRequest{}` and this context:
 
-Adapters must return `%Jido.Harness.Capabilities{}` with explicit booleans for all flags.
+```elixir
+%{
+  run_id: "run_...",
+  provider: :codex,
+  config: %{},
+  telemetry_context: %{run_id: "run_...", provider: :codex},
+  process_manager: Jido.Harness.ProcessManager,
+  run_owner: #PID<...>
+}
+```
 
-Current flag meanings:
+The returned enumerable emits `%Jido.Harness.Event{}` values. Provider events
+that cannot be mapped losslessly use `:provider_event` and retain the raw value
+in memory. Raw provider values are not persisted to disk.
 
-- `streaming?`: `run/2` emits incremental events instead of only terminal output
-- `tool_calls?`: adapter emits normalized `:tool_call` events
-- `tool_results?`: adapter emits normalized `:tool_result` events
-- `thinking?`: adapter emits normalized thinking/reasoning events
-- `resume?`: adapter can resume a previous session/thread
-- `usage?`: adapter emits canonical `:usage` events
-- `file_changes?`: adapter emits normalized file-change events
-- `cancellation?`: adapter exposes `cancel/1` for active sessions
+Adapters must not emit arbitrary maps, retry a billable run, start an unmanaged
+CLI process, or create shell command strings. Direct CLI adapters use the
+harness process manager. SDK-backed adapters retain their SDK backend.
 
-These flags are declarative contract metadata. They are not marketing claims. If a capability is incomplete or conditional, keep it `false` until the emitted behavior is stable.
+## Terminal events
 
-## `run/2`
+The run manager guarantees exactly one of:
 
-- accepts `%Jido.Harness.RunRequest{}`
-- returns `{:ok, enumerable}` or `{:error, reason}`
-- emits `%Jido.Harness.Event{}` values only
-- treats `request.session_id` as the provider-neutral resume/session hint when
-  `capabilities().resume?` is true
-- uses provider-specific metadata from `request.metadata`
-- returns structured validation/config/execution errors on adapter-facing failures
+- `:session_completed`
+- `:session_failed`
+- `:session_cancelled`
 
-## `runtime_contract/0`
+If an adapter finishes without a terminal event, the manager adds one. Events
+after a terminal event are ignored.
 
-Adapters must return `%Jido.Harness.RuntimeContract{}` with:
+## Provider-specific options
 
-- provider id
-- required host env vars
-- forwarded/injected runtime env vars
-- required runtime tools
-- compatibility probes
-- install steps
-- auth bootstrap steps
-- `triage_command_template`
-- `coding_command_template`
-- `success_markers`
-
-## Command Template Semantics
-
-Templates must be non-empty and use one of the canonical placeholders:
-
-- `{{prompt}}` for inline prompt substitution
-- `{{prompt_file}}` for prompt-file substitution
-
-The harness runtime layer expands these placeholders when building commands. Adapters should not invent package-specific placeholder names.
-
-## Success Marker Semantics
-
-`success_markers` must be a non-empty list of maps with string keys.
-
-These markers define what the harness runtime should treat as terminal success when evaluating streamed or runtime-mediated execution. They should match real adapter output, not best-effort guesses.
-
-## Error Shape
-
-Adapter-facing validation/config/execution failures should be returned as structured error structs, not raw tuples, whenever the adapter is rejecting input or surfacing a known adapter/runtime failure mode.
-
-Internal SDK/library tuples may still exist below the adapter boundary, but `run/2` and related public adapter entry points should normalize them before they escape.
+Provider-specific escape hatches belong under `provider_options`. They cannot
+use the name of a normalized field. Adapters must validate their values before
+launch and must not silently ignore an advertised key.

@@ -1,33 +1,24 @@
-# Jido Harness Telemetry Contract
+# Telemetry
 
-`Jido.Harness.Observe` is the only supported telemetry emission boundary for harness runtime flows.
+Jido.Harness emits telemetry directly through `:telemetry`. There is no Jido
+Action or Signal wrapper.
 
-## Canonical Namespaces
+## Events
 
-| Namespace | Use |
-| --- | --- |
-| `[:jido, :harness, :workspace, ...]` | Workspace/session lifecycle events |
-| `[:jido, :harness, :runtime, ...]` | Shared runtime validation/bootstrapping |
-| `[:jido, :harness, :provider, ...]` | Provider-specific runtime and stream events |
+| Event | Measurements | Important metadata |
+| --- | --- | --- |
+| `[:jido, :harness, :process, event_type]` | `count` | `process_id` |
+| `[:jido, :harness, :run, :start]` | `system_time` | `run_id`, `provider` |
+| `[:jido, :harness, :run, :event]` | `count` | `run_id`, `provider`, `type` |
+| `[:jido, :harness, :run, :stop]` | `count` | `run_id`, `provider`, `status` |
+| `[:jido, :harness, :adapter, :start]` | `system_time` | `run_id`, `provider`, `adapter` |
+| `[:jido, :harness, :adapter, :stop]` | native `duration` | `run_id`, `provider`, `adapter`, `status` |
+| `[:jido, :harness, :journal, :error]` | `count` | `owner_id` or failure reason |
+| `[:jido, :harness, :journal, :overflow]` | removed bytes | journal directory, next cursor |
 
-## Required Metadata
+Process event types include `:started`, `:stdout`, `:stderr`, `:exited`,
+`:failed`, `:cancelled`, and `:timed_out`.
 
-Every emitted event must contain these keys (set to `nil` when unavailable):
-
-- `:request_id`
-- `:run_id`
-- `:provider`
-- `:owner`
-- `:repo`
-- `:issue_number`
-- `:session_id`
-
-## Sensitive Data Redaction
-
-`Jido.Harness.Observe.sanitize_sensitive/1` recursively redacts key/value pairs for common secret names:
-
-- exact keys like `token`, `api_key`, `client_secret`, `password`
-- keys containing `secret_`
-- keys ending with `_token`, `_key`, `_secret`, `_password`
-
-Redacted values are always replaced with `"[REDACTED]"`.
+Telemetry metadata never includes environment values, credentials, prompts, or
+complete argv. Consumers should apply the same rule to metadata they attach to
+requests.

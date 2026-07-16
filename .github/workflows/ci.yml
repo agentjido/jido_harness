@@ -22,6 +22,6 @@ jobs:
     secrets: inherit
     with:
       credo_command: mix credo --min-priority higher
-      validate_hex_package: false
+      validate_hex_package: true
       docs_command: mix docs -f html
       test_command: mix test

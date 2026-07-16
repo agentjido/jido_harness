@@ -1,54 +1,34 @@
-# Jido Ecosystem Dependency Policy
+# Dependency policy
 
-This policy governs `jido_harness` and sibling provider/runtime packages during consolidation.
+Jido.Harness v2 owns its supervision, process management, event journal, and
+provider adapters. It deliberately has no dependency on `jido`, `jido_shell`,
+Sprites, or Splode.
 
-## Current Phase
+## Runtime dependencies
 
-For the current adapter-alignment phase:
+- `erlexec` supplies monitored subprocesses, stdin, PTY support, and process
+  groups.
+- `telemetry` is the direct observation boundary.
+- `zoi` validates normalized public data.
+- `jason` encodes journals and decodes CLI JSONL.
+- Amp, Claude, Codex, and Gemini retain their existing SDK backends.
 
-- use GitHub dependencies for the Jido harness packages
-- keep the same branch-based dependency policy across the adapter repos
-- do not treat Hex packaging as an active delivery target yet
+Gemini CLI SDK was retired before moving to `cli_subprocess_core` 0.2. The v2
+package therefore pins the mutually compatible SDK generation on
+`cli_subprocess_core` 0.1 so all four SDK-backed providers can coexist. Upgrade
+these pins only as one reviewed set after recorded adapter fixtures, long-run
+timeouts, cancellation, and subprocess cleanup all pass.
 
-This policy should remain in place until the adapter contract and CI baselines are aligned across the repo set.
+## Overrides and revisions
 
-## Baseline Versions
+An override or source revision is acceptable only when it is needed for the six
+provider set to compile together or for a verified lifecycle fix. Each change
+must preserve the provider SDK backend and pass:
 
-- Elixir: `~> 1.18`
-- Jido core line: `~> 2.0.0-rc.5`
-- Zoi: `~> 0.17`
-- Splode: `~> 0.3.0`
+1. fake-CLI long-runtime and cleanup contracts;
+2. deterministic unit and fixture tests;
+3. strict live smoke tests for all affected providers;
+4. `mix hex.build`, docs, static analysis, and the full unit suite.
 
-## Git/Branch Dependencies
-
-Use a git/branch dependency only when one of the following is true:
-
-- a required upstream fix is not yet published to Hex
-- coordinated multi-repo migration requires same-day, unreleased changes
-- temporary lockstep development is required for release-train validation
-
-When using git/branch dependencies:
-
-- document why in the PR/commit message
-- prefer the narrowest affected package set
-- remove as soon as a compatible Hex release exists
-
-## `override: true` Usage
-
-`override: true` is allowed only for conflict resolution when:
-
-- multiple transitive versions break compile/runtime contracts, or
-- local path/git lockstep is required during migration.
-
-For each override, keep a removal condition:
-
-- specific package/version to upgrade to, and
-- verification target (`mix deps.tree`, compile, test, quality).
-
-## Removal Criteria
-
-A temporary git/branch/override dependency should be removed once:
-
-1. A compatible Hex release is available.
-2. All dependent repos compile and test against the released version.
-3. No contract regressions are observed in adapter contract tests and bot E2E smoke tests.
+Do not replace an SDK-backed provider with a direct CLI implementation to avoid
+an SDK compatibility issue.
