@@ -67,6 +67,10 @@ defmodule Jido.Harness.SessionManagerTest do
     assert {:ok, turn_id} = Jido.Harness.send_message(session_id, "wait")
     assert {:error, :timeout} = Jido.Harness.await_turn(session_id, turn_id, 10)
     assert {:ok, %{state: :running}} = Jido.Harness.info_session(session_id)
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.SessionRegistry, session_id)
+    assert eventually(fn -> :sys.get_state(worker).waiters == %{} end)
+
     assert :ok = Jido.Harness.interrupt_turn(session_id)
     assert {:ok, %{status: :interrupted}} = Jido.Harness.await_turn(session_id, turn_id, 5_000)
     assert {:ok, %{state: :idle}} = Jido.Harness.info_session(session_id)

@@ -1,7 +1,7 @@
 defmodule Jido.Harness.RunManager do
   @moduledoc false
 
-  alias Jido.Harness.{CursorStream, ID, Registry, RunInfo, RunWorker}
+  alias Jido.Harness.{Await, CursorStream, ID, Registry, RunInfo, RunWorker}
 
   @max_replay_limit 10_000
 
@@ -64,30 +64,17 @@ defmodule Jido.Harness.RunManager do
 
   def await(id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
-      await_result(id, timeout, System.monotonic_time(:millisecond))
+      case call(id, :result) do
+        {:ok, result} -> {:ok, result}
+        {:pending, _info} when timeout == 0 -> {:error, :timeout}
+        {:pending, _info} -> Await.call(Jido.Harness.RunRegistry, id, &{:await, &1}, timeout)
+        error -> error
+      end
     end
   end
 
   def cancel(id), do: call(id, :cancel)
   def prune(id), do: call(id, :prune)
-
-  defp await_result(id, timeout, started) do
-    case call(id, :result) do
-      {:ok, result} ->
-        {:ok, result}
-
-      {:pending, _info} ->
-        if timeout != :infinity and System.monotonic_time(:millisecond) - started >= timeout do
-          {:error, :timeout}
-        else
-          Process.sleep(25)
-          await_result(id, timeout, started)
-        end
-
-      error ->
-        error
-    end
-  end
 
   defp call(id, message) do
     case Elixir.Registry.lookup(Jido.Harness.RunRegistry, id) do

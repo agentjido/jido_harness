@@ -74,6 +74,24 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:error, %Jido.Harness.Error{category: :validation}} = Jido.Harness.send_input(id, :not_binary)
   end
 
+  test "await timeout is non-destructive and releases its waiter" do
+    assert {:ok, id} =
+             Jido.Harness.start_process(%{
+               executable: "/bin/sh",
+               argv: ["-c", "sleep 0.1"],
+               stdin: false
+             })
+
+    assert {:error, :timeout} = Jido.Harness.await_process(id, 10)
+    assert {:ok, %{state: state}} = Jido.Harness.info_process(id)
+    assert state in [:starting, :running]
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.ProcessRegistry, id)
+    assert eventually(fn -> :sys.get_state(worker).waiters == %{} end)
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.await_process(id, 5_000)
+  end
+
   test "survives the starting caller and enforces runtime and idle timeouts" do
     parent = self()
 

@@ -2,7 +2,7 @@ defmodule Jido.Harness.ProcessWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo, Redaction}
+  alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo, Redaction, Waiters}
 
   @default_grace_ms 5_000
   @terminal_statuses [:exited, :failed, :cancelled, :timed_out]
@@ -39,6 +39,7 @@ defmodule Jido.Harness.ProcessWorker do
       idle_token: nil,
       stop_reason: nil,
       escalation_timer: nil,
+      waiters: %{},
       cancel_grace_ms: Map.get(manager_config, :cancel_grace_ms, @default_grace_ms),
       term_grace_ms: Map.get(manager_config, :term_grace_ms, @default_grace_ms)
     }
@@ -59,12 +60,19 @@ defmodule Jido.Harness.ProcessWorker do
 
       {:error, reason} ->
         state = %{state | status: :failed, error: reason, finished_at: timestamp()}
-        {:noreply, append(state, :failed, nil, %{"error" => inspect(reason)})}
+        state = state |> append(:failed, nil, %{"error" => inspect(reason)}) |> notify_waiters()
+        {:noreply, state}
     end
   end
 
   @impl true
   def handle_call(:info, _from, state), do: {:reply, {:ok, info(state)}, state}
+
+  def handle_call({:await, _request_ref}, _from, %{status: status} = state) when status in @terminal_statuses,
+    do: {:reply, {:ok, info(state)}, state}
+
+  def handle_call({:await, request_ref}, from, state),
+    do: {:noreply, %{state | waiters: Waiters.add(state.waiters, request_ref, from)}}
 
   def handle_call({:replay, cursor, limit}, _from, state) do
     {records, state} = replay_records(state, cursor, limit)
@@ -100,6 +108,10 @@ defmodule Jido.Harness.ProcessWorker do
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
 
   @impl true
+  def handle_cast({:cancel_await, request_ref}, state),
+    do: {:noreply, %{state | waiters: Waiters.cancel(state.waiters, request_ref)}}
+
+  @impl true
   def handle_info({:stdout, os_pid, data}, %{os_pid: os_pid, status: status} = state)
       when status not in @terminal_statuses do
     {:noreply, state |> append(:stdout, :stdout, data) |> schedule_idle()}
@@ -128,6 +140,10 @@ defmodule Jido.Harness.ProcessWorker do
 
   def handle_info({:DOWN, monitor, :process, _owner, _reason}, %{owner_monitor: monitor} = state) do
     {:noreply, begin_stop(state, :cancelled)}
+  end
+
+  def handle_info({:DOWN, monitor, :process, _pid, _reason}, state) do
+    {:noreply, %{state | waiters: Waiters.drop_monitor(state.waiters, monitor)}}
   end
 
   def handle_info({:escalate, :sigterm}, %{status: :stopping} = state) do
@@ -257,7 +273,9 @@ defmodule Jido.Harness.ProcessWorker do
         error: error_reason(status, exit_status, reason)
     }
 
-    append(state, event_type, nil, %{"exit_status" => exit_status, "reason" => inspect(reason)})
+    state
+    |> append(event_type, nil, %{"exit_status" => exit_status, "reason" => inspect(reason)})
+    |> notify_waiters()
   end
 
   defp schedule_runtime(%{spec: %{runtime_timeout_ms: :infinity}} = state), do: state
@@ -295,6 +313,10 @@ defmodule Jido.Harness.ProcessWorker do
       output_cursor: state.sequence,
       metadata: state.spec.metadata
     }
+  end
+
+  defp notify_waiters(state) do
+    %{state | waiters: Waiters.reply_all(state.waiters, {:ok, info(state)})}
   end
 
   defp exit_status(:normal), do: 0

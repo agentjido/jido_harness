@@ -1,7 +1,7 @@
 defmodule Jido.Harness.SessionManager do
   @moduledoc false
 
-  alias Jido.Harness.{CursorStream, Error, ID, Registry, SessionInfo, SessionRequest, SessionWorker}
+  alias Jido.Harness.{Await, CursorStream, Error, ID, Registry, SessionInfo, SessionRequest, SessionWorker}
 
   @max_replay_limit 10_000
 
@@ -81,25 +81,12 @@ defmodule Jido.Harness.SessionManager do
 
   def await_turn(id, turn_id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
-      await_result(id, turn_id, timeout, System.monotonic_time(:millisecond))
-    end
-  end
-
-  defp await_result(id, turn_id, timeout, started) do
-    case call(id, {:turn_result, turn_id}) do
-      {:ok, result} ->
-        {:ok, result}
-
-      {:pending, _info} ->
-        if timeout != :infinity and System.monotonic_time(:millisecond) - started >= timeout do
-          {:error, :timeout}
-        else
-          Process.sleep(25)
-          await_result(id, turn_id, timeout, started)
-        end
-
-      error ->
-        error
+      case call(id, {:turn_result, turn_id}) do
+        {:ok, result} -> {:ok, result}
+        {:pending, _info} when timeout == 0 -> {:error, :timeout}
+        {:pending, _info} -> Await.call(Jido.Harness.SessionRegistry, id, &{:await_turn, &1, turn_id}, timeout)
+        error -> error
+      end
     end
   end
 

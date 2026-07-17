@@ -1,7 +1,7 @@
 defmodule Jido.Harness.ProcessManager do
   @moduledoc "Caller-independent supervision and control of local CLI processes."
 
-  alias Jido.Harness.{CursorStream, ID, ProcessInfo, ProcessSpec, ProcessWorker}
+  alias Jido.Harness.{Await, CursorStream, ID, ProcessInfo, ProcessSpec, ProcessWorker}
 
   @max_replay_limit 10_000
 
@@ -78,7 +78,20 @@ defmodule Jido.Harness.ProcessManager do
   @doc "Waits for termination without cancelling the process when the wait times out."
   def await_process(id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
-      await(id, timeout, System.monotonic_time(:millisecond))
+      case info_process(id) do
+        {:ok, info} when timeout == 0 ->
+          if ProcessInfo.terminal?(info), do: {:ok, info}, else: {:error, :timeout}
+
+        {:ok, info} ->
+          if ProcessInfo.terminal?(info) do
+            {:ok, info}
+          else
+            Await.call(Jido.Harness.ProcessRegistry, id, &{:await, &1}, timeout)
+          end
+
+        error ->
+          error
+      end
     end
   end
 
@@ -105,26 +118,6 @@ defmodule Jido.Harness.ProcessManager do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options) do
       shell = System.find_executable("sh") || "/bin/sh"
       options |> Map.new() |> Map.merge(%{executable: shell, argv: ["-c", command]}) |> ProcessSpec.new()
-    end
-  end
-
-  defp await(id, timeout, started) do
-    case info_process(id) do
-      {:ok, info} ->
-        cond do
-          ProcessInfo.terminal?(info) ->
-            {:ok, info}
-
-          timeout != :infinity and System.monotonic_time(:millisecond) - started >= timeout ->
-            {:error, :timeout}
-
-          true ->
-            Process.sleep(25)
-            await(id, timeout, started)
-        end
-
-      error ->
-        error
     end
   end
 

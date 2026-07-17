@@ -118,6 +118,10 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "slow"})
     assert {:error, :timeout} = Jido.Harness.await(run_id, 10)
     assert {:ok, %{state: :running}} = Jido.Harness.info(run_id)
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.RunRegistry, run_id)
+    assert eventually(fn -> :sys.get_state(worker).waiters == %{} end)
+
     assert {:ok, %{status: :completed}} = Jido.Harness.await(run_id, 5_000)
   end
 

@@ -2,7 +2,7 @@ defmodule Jido.Harness.RunWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, Error, Event, EventLog, RunInfo, RunResult, TextTail}
+  alias Jido.Harness.{Buffer, Error, Event, EventLog, RunInfo, RunResult, TextTail, Waiters}
 
   def start_link({id, provider, request, adapter, config}) do
     GenServer.start_link(
@@ -52,7 +52,8 @@ defmodule Jido.Harness.RunWorker do
       final_text_tail: nil,
       usage: %{},
       error: nil,
-      result: nil
+      result: nil,
+      waiters: %{}
     }
 
     {:ok, state, {:continue, :start}}
@@ -91,6 +92,12 @@ defmodule Jido.Harness.RunWorker do
   def handle_call(:result, _from, %{result: %RunResult{} = result} = state), do: {:reply, {:ok, result}, state}
   def handle_call(:result, _from, state), do: {:reply, {:pending, info(state)}, state}
 
+  def handle_call({:await, _request_ref}, _from, %{result: %RunResult{} = result} = state),
+    do: {:reply, {:ok, result}, state}
+
+  def handle_call({:await, request_ref}, from, state),
+    do: {:noreply, %{state | waiters: Waiters.add(state.waiters, request_ref, from)}}
+
   def handle_call({:replay, cursor, limit}, _from, state) do
     {records, state} = replay_records(state, cursor, limit)
     {:reply, {:ok, Enum.map(records, &record_to_event(state, &1))}, state}
@@ -121,6 +128,10 @@ defmodule Jido.Harness.RunWorker do
   end
 
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
+
+  @impl true
+  def handle_cast({:cancel_await, request_ref}, state),
+    do: {:noreply, %{state | waiters: Waiters.cancel(state.waiters, request_ref)}}
 
   @impl true
   def handle_info({:adapter_event, %Event{} = event}, %{terminal_event: nil} = state) do
@@ -157,6 +168,10 @@ defmodule Jido.Harness.RunWorker do
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{task: %{ref: ref}} = state) do
     {:noreply, state |> Map.put(:task, nil) |> finish_error(reason)}
+  end
+
+  def handle_info({:DOWN, monitor, :process, _pid, _reason}, state) do
+    {:noreply, %{state | waiters: Waiters.drop_monitor(state.waiters, monitor)}}
   end
 
   def handle_info({:run_timeout, :runtime, token}, %{runtime_token: token, status: status} = state)
@@ -308,6 +323,8 @@ defmodule Jido.Harness.RunWorker do
       status: status
     })
 
+    waiters = Waiters.reply_all(state.waiters, {:ok, result})
+
     %{
       state
       | status: status,
@@ -316,7 +333,8 @@ defmodule Jido.Harness.RunWorker do
         result: result,
         adapter_started_at: nil,
         runtime_timer: nil,
-        idle_timer: nil
+        idle_timer: nil,
+        waiters: waiters
     }
   end
 
