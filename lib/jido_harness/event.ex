@@ -1,5 +1,16 @@
 defmodule Jido.Harness.Event do
-  @moduledoc "A sequenced provider-neutral event emitted by a harness run."
+  @moduledoc """
+  Sequenced provider-neutral activity from a run or interactive session.
+
+  The envelope has stable identity, ordering, event type, timestamp, and a
+  string-keyed payload. Capability-dependent provider data is normalized when
+  it can be mapped faithfully. Records without a safe canonical mapping use
+  `:provider_event`; their optional `raw` value remains in memory and is not
+  persisted to journals.
+
+  See the [normalization guide](normalization_and_data_model.html) and
+  [canonical event reference](event_reference.html).
+  """
 
   @types [
     :run_started,

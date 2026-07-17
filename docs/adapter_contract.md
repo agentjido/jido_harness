@@ -1,76 +1,70 @@
-# Adapter contract
+# Adapter contract reference
 
-Every v2 adapter implements `Jido.Harness.Adapter` and returns only normalized
-Jido.Harness types at its public boundary.
+Every finite-run provider implements `Jido.Harness.Adapter`. Public adapter
+boundaries use normalized Jido.Harness types rather than provider SDK structs or
+arbitrary maps.
 
 ## Required callbacks
 
-- `spec/0` returns `%Jido.Harness.AdapterSpec{}`.
-- `run/2` returns `{:ok, enumerable}` or `{:error, reason}`.
-- `status/1` returns installation, compatibility, authentication, resume,
-  cancellation, and readiness information.
+| Callback | Contract |
+| --- | --- |
+| `spec/0` | returns a validated `Jido.Harness.AdapterSpec` |
+| `run/2` | returns `{:ok, enumerable}` of `Jido.Harness.Event` values or `{:error, reason}` |
+| `status/1` | returns normalized `Jido.Harness.ProviderStatus` readiness |
 
-`install/2` and native `cancel/2` are optional. Direct CLI adapters cancel their
-owned process group through the harness process manager.
-
-Interactive providers also declare one or more `SessionTransportSpec` entries.
-Each transport points to a `Jido.Harness.SessionAdapter` implementing `open/2`,
-`send/3`, `interrupt/2`, and `close/1`; steering, approval responses, and
-dynamic configuration are optional callbacks. Capability values are
-`:native`, `:managed`, `:process`, or `false`, so emulation is not presented as
-native protocol support. Each transport separately declares the normalized
-session fields, session provider options, turn fields, turn provider options,
-and dynamic configuration fields it consumes. Use `:adapter` only when the
-transport faithfully supports the finite adapter's entire declaration.
-The transport entry is the sole source of its adapter module; `AdapterSpec`
-does not carry a second session-adapter fallback.
+`install/2` and native `cancel/2` are optional. Direct CLI adapters normally
+cancel through the harness process manager.
 
 ## Adapter specification
 
-The spec declares:
+`AdapterSpec` declares:
 
-- the provider atom and display name;
-- the expected executable and explicit installation recipe;
-- normalized capabilities;
-- normalized request fields the provider can represent;
-- any provider-specific constraints on normalized enum values;
+- provider atom, display name, executable, documentation URL, and installation
+  recipe;
+- finite-run capabilities;
+- supported normalized request fields;
+- accepted values when normalized enum support is narrower;
 - accepted nested `provider_options` keys;
-- adapter request defaults.
+- adapter-level request defaults;
+- interactive transport specifications.
 
-Declarations are enforced. A non-default normalized value that is not listed in
-`normalized_options` fails before the adapter is invoked. Unknown
-`provider_options` keys fail before execution.
+Declarations are enforced before execution. A non-default normalized field
+that is not declared fails. A normalized value outside `normalized_values`
+fails. Unknown provider options fail. Provider-specific options cannot shadow a
+normalized request field.
 
-The same rule applies at the transport boundary: a session or turn option that
-the selected transport would ignore is rejected before the transport opens or
-the turn is dispatched.
+## Run callback context
 
-## Run callback
-
-`run/2` receives a validated `%Jido.Harness.RunRequest{}` and this context:
+`run/2` receives a validated `Jido.Harness.RunRequest` and context:
 
 ```elixir
 %{
   run_id: "run_...",
-  provider: :codex,
+  provider: :provider,
   config: %{},
-  telemetry_context: %{run_id: "run_...", provider: :codex},
+  telemetry_context: %{run_id: "run_...", provider: :provider},
   process_manager: Jido.Harness.ProcessManager,
-  run_owner: #PID<...>
+  run_owner: owner_pid
 }
 ```
 
-The returned enumerable emits `%Jido.Harness.Event{}` values. Provider events
-that cannot be mapped losslessly use `:provider_event` and retain the raw value
-in memory. Raw provider values are not persisted to disk. Structured sensitive
+CLI adapters must start processes through the supplied process manager and bind
+them to `run_owner`. They must not start unmanaged ports, interpolate a shell
+command, or retry billable work.
+
+## Event output
+
+The returned enumerable emits `Jido.Harness.Event` structs. Map provider records
+to canonical types only when the semantics are preserved. Unknown or
+loss-sensitive records use `:provider_event` and may retain their original
+value in `raw`.
+
+The run worker attaches stable run identity and monotonic sequence values. Raw
+provider values remain in memory and are not persisted. Structured sensitive
 fields, bearer credentials, and configured credential environment values are
 redacted from journal records.
 
-Adapters must not emit arbitrary maps, retry a billable run, start an unmanaged
-CLI process, or create shell command strings. Direct CLI adapters use the
-harness process manager and map provider JSON into normalized events.
-
-## Terminal events
+## Terminal behavior
 
 The run manager guarantees exactly one of:
 
@@ -78,33 +72,67 @@ The run manager guarantees exactly one of:
 - `:run_failed`
 - `:run_cancelled`
 
-If an adapter finishes without a terminal event, the manager adds one. Events
-after a terminal event are ignored.
+If an adapter enumerable ends without a terminal event, the run manager adds a
+terminal event. Events after the first terminal event are ignored.
 
-Session workers separately guarantee exactly one of `:session_closed`,
-`:session_failed`, or `:session_cancelled`. Each accepted turn gets exactly one
-of `:turn_completed`, `:turn_failed`, or `:turn_interrupted`.
+Adapters must not fabricate success merely because their process exited with
+status zero; they must map the provider protocol's terminal semantics where
+available.
 
-## Interactive transport matrix
+## Status behavior
 
-| Provider | Default transport | Execution model |
+`status/1` must not send an agent prompt. It should report:
+
+- executable installation;
+- version and compatibility;
+- authentication evidence or `:unknown`;
+- readiness to attempt a smoke run;
+- finite-run capabilities.
+
+Installation guidance belongs in the adapter spec. `install/2` must remain an
+explicit caller action and support preview behavior where the adapter exposes
+an installation recipe.
+
+## Interactive transports
+
+Interactive providers declare one or more `SessionTransportSpec` entries. Each
+entry selects a `Jido.Harness.SessionAdapter` implementing:
+
+- `open/2`
+- `send/3`
+- `interrupt/2`
+- `close/1`
+
+Steering, approval responses, and dynamic configuration are optional callbacks.
+
+Each transport declares session fields, session provider options, turn fields,
+turn provider options, configuration fields, and
+`Jido.Harness.InteractionCapabilities`. Capability values distinguish
+`:native`, `:managed`, `:process`, and unsupported behavior.
+
+The transport declaration is the source of truth. A public session function may
+exist even when a particular provider transport rejects that capability.
+
+## Built-in transport matrix
+
+| Provider | Transport | Execution model |
 | --- | --- | --- |
 | Amp | `:stream_json_resume` | resumed stream-JSON process per turn |
 | Claude | `:stream_json_resume` | resumed stream-JSON process per turn |
-| Codex | `:exec_jsonl_resume` | resumed JSONL process per turn |
+| Codex | `:exec_jsonl_resume` | resumed exec-JSONL process per turn |
 | Gemini | `:stream_json_resume` | resumed stream-JSON process per turn |
 | Grok | `:streaming_json_resume` | resumed streaming-JSON process per turn |
 | Kimi | `:acp` | persistent ACP JSON-RPC process |
 | OpenCode | `:acp` | persistent ACP JSON-RPC process |
 | Pi | `:rpc` | persistent JSONL-RPC process |
-| Z.AI | `:stream_json_resume` | Claude stream-JSON with Z.AI environment mapping |
+| Z.AI | `:stream_json_resume` | Claude stream JSON with Z.AI environment mapping |
 
-Managed resume transports create one supervised process per turn. Persistent
-ACP and RPC processes wait indefinitely for input. Runtime and idle timeouts
-apply to active turns, not to an idle protocol process.
+Per-turn transports apply runtime and idle timeouts to the active process.
+Persistent protocol processes may remain idle indefinitely while waiting for
+session input, subject to the configured session idle timeout.
 
-## Provider-specific options
+## Verification
 
-Provider-specific escape hatches belong under `provider_options`. They cannot
-use the name of a normalized field. Adapters must validate their values before
-launch and must not silently ignore an advertised key.
+An adapter change should pass deterministic mapper and fake-CLI tests, lifecycle
+and cleanup contracts, affected live integration profiles, documentation
+compilation, static analysis, and package build verification.

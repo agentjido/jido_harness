@@ -1,5 +1,5 @@
 defmodule Jido.Harness.Adapters.CLIMapper do
-  @moduledoc "Maps direct CLI JSON records into provider-neutral harness events."
+  @moduledoc false
 
   alias Jido.Harness.Adapters.CLIMapper.{ClaudeStream, Codex, Gemini}
   alias Jido.Harness.Event

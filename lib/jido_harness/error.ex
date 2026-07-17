@@ -1,5 +1,12 @@
 defmodule Jido.Harness.Error do
-  @moduledoc "A provider-neutral harness error."
+  @moduledoc """
+  Provider-neutral API error with a stable category and message.
+
+  A returned error means the API operation could not produce the requested
+  value. Provider execution failure may instead be represented by an `{:ok,
+  result}` whose terminal status is `:failed`, so callers should inspect result
+  status as well as the outer tuple.
+  """
 
   @categories [:validation, :configuration, :provider, :process, :execution, :timeout, :cancelled, :internal]
   @schema Zoi.struct(

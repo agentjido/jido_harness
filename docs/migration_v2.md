@@ -1,75 +1,104 @@
 # Migrating to Jido.Harness 2.0
 
-Jido.Harness 2.0 consolidates the former Amp, Claude, Codex, Gemini, and
-OpenCode harness packages and adds Grok, Z.AI, Kimi Code, and Pi. Z.AI uses its
-officially supported Claude Code integration under the distinct `:zai`
-provider. Kimi Code and Pi use their official headless JSONL interfaces under
-`:kimi` and `:pi`. It is a clean breaking API.
+Jido.Harness 2.0 consolidates the former provider harness packages into one
+normalization and lifecycle runtime. It supports Amp, Claude Code, Codex, Gemini
+CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI through direct CLI adapters.
 
-## Removed
+This is a clean breaking API.
 
-- legacy provider namespaces such as `Jido.Amp`;
-- compatibility shims and adapter auto-discovery;
-- the legacy Exec facade, preflight shell templates, and workspace provisioning;
-- Sprite integration;
+## Removed boundaries
+
+- provider namespaces such as `Jido.Amp` and provider SDK facades;
+- adapter auto-discovery and compatibility shims;
+- the legacy Exec facade and preflight shell templates;
+- workspace provisioning and Sprite integration;
 - Jido Actions, Signals, and observation wrappers;
-- dependencies on `jido`, `jido_shell`, Sprites, and Splode.
+- dependencies on `jido`, `jido_shell`, Sprites, Splode, provider SDKs, and
+  generic subprocess wrappers.
 
-`cwd` now means an existing local directory and is validated before a run.
+`cwd` now means an existing local directory and is validated before execution.
 
-## Replace provider-package calls
+## Choose the new lifecycle API
 
-Use a built-in provider atom:
+| Previous intent | v2 API |
+| --- | --- |
+| Make one blocking provider call | `Jido.Harness.run/3` |
+| Start and control finite work | `Jido.Harness.Run` |
+| Maintain multi-turn context | `Jido.Harness.Session` |
+| Supervise a direct executable | `Jido.Harness.Process` |
 
 ```elixir
-{:ok, run_id} = Jido.Harness.start(:amp, %{prompt: prompt, cwd: cwd})
-{:ok, result} = Jido.Harness.await(run_id)
+{:ok, run_id} =
+  Jido.Harness.Run.start(:amp, %{
+    prompt: prompt,
+    cwd: cwd
+  })
+
+{:ok, %Jido.Harness.RunResult{} = result} =
+  Jido.Harness.Run.await(run_id)
 ```
 
-For a blocking call:
+For blocking use:
 
 ```elixir
-{:ok, result} = Jido.Harness.run_sync(:gemini, prompt, cwd: cwd)
+{:ok, %Jido.Harness.RunResult{} = result} =
+  Jido.Harness.run(:gemini, prompt, cwd: cwd)
 ```
 
-`run/3` now returns `{:ok, run_id, event_enumerable}`. It no longer returns a
-provider package's stream directly.
+## Replace provider response types
 
-## IDs
+Provider SDK responses and events become:
 
-- `run_id` identifies one harness-owned execution.
-- `process_id` identifies one directly managed OS process.
-- `session_id` identifies one harness-owned interactive session.
-- `provider_session_id` is a provider's resumable session or thread identifier.
-- `turn_id` identifies one turn inside a harness session.
+- `Jido.Harness.RunResult` for a terminal finite response;
+- `Jido.Harness.TurnResult` for a terminal session turn;
+- `Jido.Harness.Event` for ordered provider activity;
+- `Jido.Harness.Error` for normalized API failures;
+- `Jido.Harness.ProviderStatus` and capability structs for discovery.
 
-Do not use a provider session ID to look up or cancel a harness run or session.
-There is intentionally no compatibility alias for the former provider
-`session_id` request field.
+Code that needs unmapped provider data can handle `:provider_event` explicitly.
+See [Normalization and the data model](../guides/normalization_and_data_model.md).
 
-## Interactive conversations
+## Replace identifiers
 
-Use `open_session/3` for multi-turn work, `send_message/3` for an idle session,
-and `follow_up/3` for FIFO queuing. Session streams and replay are cursor-based,
-just like finite runs. `interrupt_turn/2` ends the active turn but preserves a
-healthy session; `close_session/1` resolves approvals as denied, stops the
-transport, and emits one terminal session event.
+| ID | Meaning |
+| --- | --- |
+| `run_id` | one finite harness execution |
+| `process_id` | one managed OS process |
+| `session_id` | one interactive harness resource |
+| `turn_id` | one accepted turn inside a session |
+| `provider_session_id` | provider-owned resume identifier |
 
-## Errors and events
+Do not use a provider session ID to look up, cancel, or prune a harness
+resource. There is no compatibility alias for the former provider `session_id`
+request field.
 
-Replace Splode error matching with `%Jido.Harness.Error{}`. Replace provider
-event structs with `%Jido.Harness.Event{}` and handle `:provider_event` for data
-without a canonical mapping.
+## Replace interactive conversations
 
-Exactly one terminal event is present in every completed result.
+```elixir
+{:ok, session_id} = Jido.Harness.Session.start(:codex, %{cwd: cwd})
+{:ok, turn_id} = Jido.Harness.Session.send_message(session_id, prompt)
+{:ok, turn} = Jido.Harness.Session.await(session_id, turn_id)
+{:ok, next_id} = Jido.Harness.Session.follow_up(session_id, follow_up)
+:ok = Jido.Harness.Session.close(session_id)
+```
 
-`RunResult` and `TurnResult` retain at most the configured in-memory text tail.
-When output exceeds that bound, `text_truncated?` is true and `text` contains
-the newest retained text; cursor replay remains the source for the complete
-journaled event sequence.
+Session streams and replay use cursors like finite runs. Unsupported steering,
+approval, attachment, or configuration behavior now fails according to the
+selected transport's declared capabilities.
 
-## Shell and workspace code
+## Replace errors and events
 
-Delete harness-specific `jido_shell` and Sprite workspace setup. If an adapter
-needs a direct CLI process, use the v2 structured process manager. `jido_shell`
-remains an unrelated package and is not part of this migration.
+Replace Splode matching with `%Jido.Harness.Error{}` and provider event structs
+with `%Jido.Harness.Event{}`. Every terminal run, turn, and session receives one
+terminal event for its scope.
+
+Result text is bounded. When `text_truncated?` is true, replay the ordered event
+journal for the complete retained sequence.
+
+## Replace shell and workspace code
+
+Delete harness-specific `jido_shell` and Sprite workspace setup. Supply an
+existing `cwd`. For direct executable ownership, use a structured
+`Jido.Harness.ProcessSpec` with executable plus argv.
+
+`jido_shell` remains a separate package and is not part of v2 execution.

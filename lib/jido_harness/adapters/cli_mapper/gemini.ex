@@ -1,5 +1,5 @@
 defmodule Jido.Harness.Adapters.CLIMapper.Gemini do
-  @moduledoc "Maps Gemini stream-json records while retaining CLI session state."
+  @moduledoc false
 
   alias Jido.Harness.Adapters.Helpers
   alias Jido.Harness.Event

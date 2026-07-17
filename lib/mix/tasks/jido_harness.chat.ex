@@ -67,14 +67,14 @@ defmodule Mix.Tasks.JidoHarness.Chat do
     timeout_ms = timeout_seconds * 1_000
     request = %{prompt: prompt, cwd: File.cwd!(), runtime_timeout_ms: timeout_ms}
 
-    case Jido.Harness.start(provider, request) do
+    case Jido.Harness.Run.start(provider, request) do
       {:ok, run_id} -> await_result(provider, run_id, timeout_ms)
       {:error, error} -> failure(provider, nil, error)
     end
   end
 
   defp await_result(provider, run_id, timeout_ms) do
-    case Jido.Harness.await(run_id, timeout_ms + 15_000) do
+    case Jido.Harness.Run.await(run_id, timeout_ms + 15_000) do
       {:ok, %RunResult{status: :completed, text: text} = result} when is_binary(text) and text != "" ->
         %{
           ok: true,
@@ -106,8 +106,8 @@ defmodule Mix.Tasks.JidoHarness.Chat do
   end
 
   defp cancel_if_running(run_id) do
-    case Jido.Harness.info(run_id) do
-      {:ok, %RunInfo{} = info} -> unless RunInfo.terminal?(info), do: Jido.Harness.cancel(run_id)
+    case Jido.Harness.Run.info(run_id) do
+      {:ok, %RunInfo{} = info} -> unless RunInfo.terminal?(info), do: Jido.Harness.Run.cancel(run_id)
       _ -> :ok
     end
   end

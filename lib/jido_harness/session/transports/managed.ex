@@ -31,7 +31,7 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
 
   def handle_call({:send, %TurnRequest{} = turn, turn_id}, _from, state) do
     with {:ok, attrs} <- run_attrs(state.request, turn),
-         {:ok, run_id} <- Jido.Harness.start(state.provider, attrs) do
+         {:ok, run_id} <- Jido.Harness.Run.start(state.provider, attrs) do
       task =
         Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
           consume_run(state.owner, state.provider, run_id, turn_id)
@@ -43,10 +43,10 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
 
   def handle_call({:interrupt, requested}, _from, %{active: %{run_id: run_id, turn_id: turn_id}} = state)
       when requested in [:active, turn_id] do
-    reply = Jido.Harness.cancel(run_id)
+    reply = Jido.Harness.Run.cancel(run_id)
 
     request =
-      case Jido.Harness.await(run_id, 15_000) do
+      case Jido.Harness.Run.await(run_id, 15_000) do
         {:ok, %{provider_session_id: id}} when is_binary(id) -> %{state.request | provider_session_id: id}
         _ -> state.request
       end
@@ -113,7 +113,7 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
   end
 
   defp consume_run(owner, provider, run_id, turn_id) do
-    with {:ok, stream} <- Jido.Harness.stream(run_id) do
+    with {:ok, stream} <- Jido.Harness.Run.stream(run_id) do
       Enum.each(stream, fn event ->
         unless event.type == :run_started or Event.run_terminal?(event) or Event.turn_terminal?(event) do
           event = %{event | run_id: nil, session_id: nil, turn_id: turn_id}
@@ -122,7 +122,7 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
       end)
     end
 
-    case Jido.Harness.await(run_id, :infinity) do
+    case Jido.Harness.Run.await(run_id, :infinity) do
       {:ok, result} ->
         type =
           case result.status do
@@ -199,7 +199,7 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
   defp stop_active(%{active: nil} = state), do: state
 
   defp stop_active(state) do
-    _ = Jido.Harness.cancel(state.active.run_id)
+    _ = Jido.Harness.Run.cancel(state.active.run_id)
     if state.task, do: Task.shutdown(state.task, 5_000)
     %{state | active: nil, task: nil}
   end

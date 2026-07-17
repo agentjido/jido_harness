@@ -1,5 +1,5 @@
 defmodule Jido.Harness.Adapters.CLIMapper.ClaudeStream do
-  @moduledoc "Maps the stream-json protocol shared by Claude and Amp."
+  @moduledoc false
 
   alias Jido.Harness.Adapters.Helpers
   alias Jido.Harness.Event

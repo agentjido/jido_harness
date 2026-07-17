@@ -2,38 +2,61 @@
 
 ## Scope
 
-- Use `jido_harness` as the single runtime for Amp, Claude, Codex, Gemini,
-  Grok, Kimi Code, OpenCode, Pi, and Z.AI.
-- Treat `jido_shell` as unrelated; do not depend on it for harness execution.
-- Keep run supervision and direct OS-process ownership inside Jido.Harness.
+- Use `jido_harness` as the normalization and lifecycle runtime for Amp,
+  Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI.
+- Treat `jido_shell` as unrelated.
+- Do not add provider SDK, Jido, Sprite, Splode, or generic subprocess-wrapper
+  dependencies without changing the documented package boundary explicitly.
 
-## Public API
+## Choose the public API
 
-- Start asynchronous work with `start/3` or `start_request/2`.
-- Reattach by `run_id` using `info/1`, `stream/2`, `replay/2`, and `await/2`.
-- Use `run_sync/3` only when blocking the caller is appropriate.
-- Keep provider resume `provider_session_id` separate from harness `run_id` and `session_id`.
-- Put escape hatches under `provider_options`; unknown keys are errors.
+- Use `Jido.Harness.run/3` for a blocking one-shot request.
+- Use `Jido.Harness.Run` for detached finite work and reattachment by `run_id`.
+- Use `Jido.Harness.Session` for harness-owned multi-turn conversations.
+- Use `Jido.Harness.Process` for direct structured executable-plus-argv
+  processes.
+- Keep `run_id`, `session_id`, `turn_id`, and `process_id` distinct from a
+  provider's `provider_session_id`.
 
-## Processes
+## Preserve normalization
 
-- Always pass `executable` and `argv`; do not interpolate shell commands.
-- Use runtime and idle timeouts deliberately. Both default to `:infinity`.
-- Use cursor replay for slow consumers instead of forwarding output to a
-  long-lived mailbox.
+- Accept and return Jido.Harness request, result, event, status, capability, and
+  error types at the public boundary.
+- Map provider records to canonical events only when semantics are preserved.
+- Use `:provider_event` and `Event.raw` for output without a lossless canonical
+  mapping.
+- Keep provider-specific input under `provider_options`.
+- Reject unsupported and unknown options; never silently ignore them.
+- Do not fabricate unavailable usage, file changes, approvals, steering, or
+  native-session behavior.
 
-## Security
+## Lifecycle
 
-- Do not put credentials in metadata, prompts, argv, telemetry, or failure
-  artifacts.
-- Pass credentials through the environment or the provider's cached login.
-- Treat journals as sensitive even though their permissions are restricted.
+- Keep public resources owned by the Jido.Harness supervision tree rather than
+  the starting or consuming caller.
+- Treat await timeouts as waiter limits, not cancellation.
+- Use cursor replay for reconnecting or slow consumers.
+- Preserve exactly one terminal event per run, accepted turn, and session.
+- Prune only terminal resources.
+
+## Processes and security
+
+- Always pass executable and argv separately; do not interpolate shell command
+  strings.
+- Bind adapter processes to their owning run or session transport.
+- Target complete process groups during cancellation and shutdown.
+- Keep credentials out of prompts, argv, metadata, telemetry, and journals.
+- Pass credentials through provider cached login or the child environment.
+- Treat journals as sensitive operational data even after redaction.
+- Validate sandbox and approval support against the selected adapter rather
+  than assuming provider equivalence.
 
 ## Testing
 
 - Keep provider integration tests opt-in.
-- Run `mix jido_harness.check --strict` for non-billable provider readiness.
-- Use `mix jido_harness.chat PROVIDER` for one live query through one provider;
-  each invocation may incur usage.
-- Use deterministic fixture CLIs for PR tests and the 65-minute soak profile.
-- Run strict live smoke tests for all nine providers before a release.
+- Use deterministic fake CLIs for mapper, lifecycle, timeout, replay, and
+  cleanup tests.
+- Run `mix jido_harness.check --strict` for non-billable readiness.
+- Use `mix jido_harness.chat PROVIDER` for one explicit live smoke request.
+- Run affected live profiles before release; they may consume provider usage.
+- Run `mix quality`, `mix test`, `mix docs`, and `mix hex.build` before release.

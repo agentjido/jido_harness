@@ -11,9 +11,9 @@ defmodule Jido.Harness.RunManagerTest do
 
   test "returns normalized results with ordered replay and one terminal event" do
     assert {:ok, run_id} =
-             Jido.Harness.start(:test, %{prompt: "ok", provider_session_id: "provider-session"})
+             Jido.Harness.Run.start(:test, %{prompt: "ok", provider_session_id: "provider-session"})
 
-    assert {:ok, result} = Jido.Harness.await(run_id, 5_000)
+    assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
 
     assert result.run_id == run_id
     assert result.provider == :test
@@ -23,24 +23,24 @@ defmodule Jido.Harness.RunManagerTest do
     assert result.usage == %{"input_tokens" => 2, "output_tokens" => 1}
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
 
-    assert {:ok, replayed} = Jido.Harness.replay(run_id, limit: 100)
+    assert {:ok, replayed} = Jido.Harness.Run.replay(run_id, limit: 100)
     assert Enum.map(replayed, & &1.sequence) == Enum.to_list(1..length(replayed))
     assert Enum.count(replayed, &Jido.Harness.Event.terminal?/1) == 1
     assert List.first(replayed).type == :run_started
     assert List.last(replayed).type == :run_completed
 
-    assert {:ok, stream} = Jido.Harness.stream(run_id, poll_interval_ms: 1)
+    assert {:ok, stream} = Jido.Harness.Run.stream(run_id, poll_interval_ms: 1)
     assert Enum.map(Enum.to_list(stream), & &1.sequence) == Enum.map(replayed, & &1.sequence)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.replay(run_id, cursor: -1, limit: 100)
+             Jido.Harness.Run.replay(run_id, cursor: -1, limit: 100)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.replay(run_id, limit: 10_001)
+             Jido.Harness.Run.replay(run_id, limit: 10_001)
   end
 
   test "provider-emitted failures produce a normalized result error" do
-    assert {:ok, result} = Jido.Harness.run_sync(:test, "terminal-fail", await_timeout: 5_000)
+    assert {:ok, result} = Jido.Harness.run(:test, "terminal-fail", await_timeout: 5_000)
     assert result.status == :failed
 
     assert %Jido.Harness.Error{
@@ -60,13 +60,13 @@ defmodule Jido.Harness.RunManagerTest do
     retention = Map.put(test_config.retention, :memory_bytes, 256)
     Application.put_env(:jido_harness, :provider_config, %{config | test: %{test_config | retention: retention}})
 
-    assert {:ok, result} = Jido.Harness.run_sync(:test, "large", await_timeout: 5_000)
+    assert {:ok, result} = Jido.Harness.run(:test, "large", await_timeout: 5_000)
     assert result.status == :completed
     assert result.text_truncated?
     assert byte_size(result.text) == 256
     assert String.ends_with?(String.duplicate("0123456789", 1_000), result.text)
 
-    assert {:ok, events} = Jido.Harness.replay(result.run_id, limit: 100)
+    assert {:ok, events} = Jido.Harness.Run.replay(result.run_id, limit: 100)
     assert Enum.any?(events, &(&1.type == :output_text_final))
   end
 
@@ -98,8 +98,8 @@ defmodule Jido.Harness.RunManagerTest do
 
     on_exit(fn -> :telemetry.detach(handler) end)
 
-    assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "secret prompt"})
-    assert {:ok, %{status: :completed}} = Jido.Harness.await(run_id, 5_000)
+    assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "secret prompt"})
+    assert {:ok, %{status: :completed}} = Jido.Harness.Run.await(run_id, 5_000)
 
     for event <- [
           [:jido, :harness, :run, :start],
@@ -115,14 +115,14 @@ defmodule Jido.Harness.RunManagerTest do
   end
 
   test "await timeout does not cancel a run" do
-    assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "slow"})
-    assert {:error, :timeout} = Jido.Harness.await(run_id, 10)
-    assert {:ok, %{state: :running}} = Jido.Harness.info(run_id)
+    assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "slow"})
+    assert {:error, :timeout} = Jido.Harness.Run.await(run_id, 10)
+    assert {:ok, %{state: :running}} = Jido.Harness.Run.info(run_id)
 
     [{worker, _value}] = Registry.lookup(Jido.Harness.RunRegistry, run_id)
     assert eventually(fn -> :sys.get_state(worker).waiters == %{} end)
 
-    assert {:ok, %{status: :completed}} = Jido.Harness.await(run_id, 5_000)
+    assert {:ok, %{status: :completed}} = Jido.Harness.Run.await(run_id, 5_000)
   end
 
   test "run survives its starting caller" do
@@ -130,16 +130,16 @@ defmodule Jido.Harness.RunManagerTest do
 
     {pid, monitor} =
       spawn_monitor(fn ->
-        send(parent, {:started, Jido.Harness.start(:test, %{prompt: "slow"})})
+        send(parent, {:started, Jido.Harness.Run.start(:test, %{prompt: "slow"})})
       end)
 
     assert_receive {:started, {:ok, run_id}}, 1_000
     assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 1_000
-    assert {:ok, %{status: :completed}} = Jido.Harness.await(run_id, 5_000)
+    assert {:ok, %{status: :completed}} = Jido.Harness.Run.await(run_id, 5_000)
   end
 
   test "an abrupt run-worker crash stops its linked adapter task without retrying" do
-    assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "wait"})
+    assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "wait"})
     [{worker, _value}] = Registry.lookup(Jido.Harness.RunRegistry, run_id)
     %{task: %{pid: adapter_task}} = :sys.get_state(worker)
     worker_monitor = Process.monitor(worker)
@@ -157,19 +157,19 @@ defmodule Jido.Harness.RunManagerTest do
     Application.put_env(:jido_harness, :providers, Map.put(providers, :owned_cli, Jido.Harness.OwnedCLITestAdapter))
     on_exit(fn -> Application.put_env(:jido_harness, :providers, providers) end)
 
-    assert {:ok, run_id} = Jido.Harness.start(:owned_cli, %{prompt: "wait"})
+    assert {:ok, run_id} = Jido.Harness.Run.start(:owned_cli, %{prompt: "wait"})
     process_id = await_owned_process(run_id)
     [{worker, _value}] = Registry.lookup(Jido.Harness.RunRegistry, run_id)
     Process.exit(worker, :kill)
 
-    assert {:ok, %{state: :cancelled}} = Jido.Harness.await_process(process_id, 5_000)
+    assert {:ok, %{state: :cancelled}} = Jido.Harness.Process.await(process_id, 5_000)
     assert eventually(fn -> Registry.lookup(Jido.Harness.RunRegistry, run_id) == [] end)
   end
 
   test "fallback cancellation stops the adapter worker and emits one terminal event" do
-    assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "wait"})
-    assert :ok = Jido.Harness.cancel(run_id)
-    assert {:ok, result} = Jido.Harness.await(run_id, 5_000)
+    assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "wait"})
+    assert :ok = Jido.Harness.Run.cancel(run_id)
+    assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
     assert result.status == :cancelled
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
     assert List.last(result.events).type == :run_cancelled
@@ -177,25 +177,25 @@ defmodule Jido.Harness.RunManagerTest do
 
   test "run-level runtime and idle timeouts cover adapter streams" do
     assert {:ok, runtime_id} =
-             Jido.Harness.start(:test, %{prompt: "wait", runtime_timeout_ms: 30})
+             Jido.Harness.Run.start(:test, %{prompt: "wait", runtime_timeout_ms: 30})
 
-    assert {:ok, runtime_result} = Jido.Harness.await(runtime_id, 5_000)
+    assert {:ok, runtime_result} = Jido.Harness.Run.await(runtime_id, 5_000)
     assert runtime_result.status == :failed
     assert %Jido.Harness.Error{category: :timeout} = runtime_result.error
     assert List.last(runtime_result.events).type == :run_failed
 
     assert {:ok, idle_id} =
-             Jido.Harness.start(:test, %{prompt: "wait", idle_timeout_ms: 30})
+             Jido.Harness.Run.start(:test, %{prompt: "wait", idle_timeout_ms: 30})
 
-    assert {:ok, idle_result} = Jido.Harness.await(idle_id, 5_000)
+    assert {:ok, idle_result} = Jido.Harness.Run.await(idle_id, 5_000)
     assert idle_result.status == :failed
     assert %Jido.Harness.Error{category: :timeout} = idle_result.error
   end
 
   test "adapter failures and crashes become normalized failed results" do
     for prompt <- ["fail", "raise"] do
-      assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: prompt})
-      assert {:ok, result} = Jido.Harness.await(run_id, 5_000)
+      assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: prompt})
+      assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
       assert result.status == :failed
       assert %Jido.Harness.Error{category: :execution, run_id: ^run_id} = result.error
       assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
@@ -204,7 +204,7 @@ defmodule Jido.Harness.RunManagerTest do
 
   test "rejects unsupported normalized and provider-specific options before execution" do
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.start(:test, %{prompt: "ok", provider_options: %{unknown: true}})
+             Jido.Harness.Run.start(:test, %{prompt: "ok", provider_options: %{unknown: true}})
 
     original = Application.get_env(:jido_harness, :providers)
 
@@ -216,40 +216,40 @@ defmodule Jido.Harness.RunManagerTest do
     on_exit(fn -> Application.put_env(:jido_harness, :providers, original) end)
 
     assert {:error, %Jido.Harness.Error{category: :validation, details: %{field: :model}}} =
-             Jido.Harness.start(:limited, %{prompt: "ok", model: "unsupported"})
+             Jido.Harness.Run.start(:limited, %{prompt: "ok", model: "unsupported"})
 
-    before_ids = Jido.Harness.list_runs() |> Enum.map(& &1.run_id) |> MapSet.new()
+    before_ids = Jido.Harness.Run.list() |> Enum.map(& &1.run_id) |> MapSet.new()
 
     assert {:error,
             %Jido.Harness.Error{
               category: :validation,
               provider: :amp,
               details: %{field: :model}
-            }} = Jido.Harness.start(:amp, %{prompt: "unsupported", model: "unsupported"})
+            }} = Jido.Harness.Run.start(:amp, %{prompt: "unsupported", model: "unsupported"})
 
     assert {:error,
             %Jido.Harness.Error{
               category: :validation,
               provider: :opencode,
               details: %{field: :approval_mode, value: :auto_edit}
-            }} = Jido.Harness.start(:opencode, %{prompt: "unsupported", approval_mode: :auto_edit})
+            }} = Jido.Harness.Run.start(:opencode, %{prompt: "unsupported", approval_mode: :auto_edit})
 
-    after_ids = Jido.Harness.list_runs() |> Enum.map(& &1.run_id) |> MapSet.new()
+    after_ids = Jido.Harness.Run.list() |> Enum.map(& &1.run_id) |> MapSet.new()
     assert after_ids == before_ids
   end
 
   test "returns validation errors for malformed option lists and await timeouts" do
     assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
-             Jido.Harness.start(:test, "ok", [:invalid])
+             Jido.Harness.Run.start(:test, "ok", [:invalid])
 
     assert {:error, %Jido.Harness.Error{message: "request must be a map or key-value list"}} =
-             Jido.Harness.start(:test, [:invalid])
+             Jido.Harness.Run.start(:test, [:invalid])
 
     assert {:error, %Jido.Harness.Error{message: "await timeout must be :infinity or a non-negative integer"}} =
-             Jido.Harness.await("missing", -1)
+             Jido.Harness.Run.await("missing", -1)
 
     assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
-             Jido.Harness.replay("missing", %{cursor: 0})
+             Jido.Harness.Run.replay("missing", %{cursor: 0})
   end
 
   defp await_owned_process(run_id, attempts \\ 100)
@@ -257,7 +257,7 @@ defmodule Jido.Harness.RunManagerTest do
   defp await_owned_process(_run_id, 0), do: flunk("owned CLI process did not start")
 
   defp await_owned_process(run_id, attempts) do
-    case Enum.find(Jido.Harness.list_processes(), &(Map.get(&1.metadata, :run_id) == run_id)) do
+    case Enum.find(Jido.Harness.Process.list(), &(Map.get(&1.metadata, :run_id) == run_id)) do
       nil ->
         Process.sleep(10)
         await_owned_process(run_id, attempts - 1)

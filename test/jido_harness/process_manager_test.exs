@@ -23,19 +23,19 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   test "executes structured argv and replays ordered stdout and stderr" do
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sh",
                argv: ["-c", "printf stdout-value; printf stderr-value >&2"],
                stdin: false,
                metadata: %{purpose: "test"}
              })
 
-    assert {:ok, info} = Jido.Harness.await_process(id, 5_000)
+    assert {:ok, info} = Jido.Harness.Process.await(id, 5_000)
     assert info.state == :exited
     assert info.exit_status == 0
     assert info.metadata == %{purpose: "test"}
 
-    assert {:ok, events} = Jido.Harness.replay_process(id, limit: 20)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
     assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
     assert Enum.any?(events, &(&1.type == :stdout and &1.data == "stdout-value"))
     assert Enum.any?(events, &(&1.type == :stderr and &1.data == "stderr-value"))
@@ -51,45 +51,45 @@ defmodule Jido.Harness.ProcessManagerTest do
   end
 
   test "supports stdin, EOF, cursor replay, and pull streaming" do
-    assert {:ok, id} = Jido.Harness.start_process(executable: "/bin/cat", stdin: true)
-    assert :ok = Jido.Harness.send_input(id, "one\ntwo\n")
-    assert :ok = Jido.Harness.close_input(id)
-    assert {:ok, %{state: :exited}} = Jido.Harness.await_process(id, 5_000)
+    assert {:ok, id} = Jido.Harness.Process.start(executable: "/bin/cat", stdin: true)
+    assert :ok = Jido.Harness.Process.send_input(id, "one\ntwo\n")
+    assert :ok = Jido.Harness.Process.close_input(id)
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
 
-    assert {:ok, all_events} = Jido.Harness.replay_process(id, limit: 20)
+    assert {:ok, all_events} = Jido.Harness.Process.replay(id, limit: 20)
     first = List.first(all_events)
-    assert {:ok, later} = Jido.Harness.replay_process(id, cursor: first.sequence, limit: 20)
+    assert {:ok, later} = Jido.Harness.Process.replay(id, cursor: first.sequence, limit: 20)
     assert Enum.all?(later, &(&1.sequence > first.sequence))
 
-    assert {:ok, stream} = Jido.Harness.stream_process(id, poll_interval_ms: 1)
+    assert {:ok, stream} = Jido.Harness.Process.stream(id, poll_interval_ms: 1)
     streamed = Enum.to_list(stream)
     assert Enum.map(streamed, & &1.sequence) == Enum.map(all_events, & &1.sequence)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.replay_process(id, cursor: -1, limit: 100)
+             Jido.Harness.Process.replay(id, cursor: -1, limit: 100)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.replay_process(id, limit: 10_001)
+             Jido.Harness.Process.replay(id, limit: 10_001)
 
-    assert {:error, %Jido.Harness.Error{category: :validation}} = Jido.Harness.send_input(id, :not_binary)
+    assert {:error, %Jido.Harness.Error{category: :validation}} = Jido.Harness.Process.send_input(id, :not_binary)
   end
 
   test "await timeout is non-destructive and releases its waiter" do
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sh",
                argv: ["-c", "sleep 0.1"],
                stdin: false
              })
 
-    assert {:error, :timeout} = Jido.Harness.await_process(id, 10)
-    assert {:ok, %{state: state}} = Jido.Harness.info_process(id)
+    assert {:error, :timeout} = Jido.Harness.Process.await(id, 10)
+    assert {:ok, %{state: state}} = Jido.Harness.Process.info(id)
     assert state in [:starting, :running]
 
     [{worker, _value}] = Registry.lookup(Jido.Harness.ProcessRegistry, id)
     assert eventually(fn -> :sys.get_state(worker).waiters == %{} end)
 
-    assert {:ok, %{state: :exited}} = Jido.Harness.await_process(id, 5_000)
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
   end
 
   test "survives the starting caller and enforces runtime and idle timeouts" do
@@ -98,7 +98,7 @@ defmodule Jido.Harness.ProcessManagerTest do
     {pid, monitor} =
       spawn_monitor(fn ->
         result =
-          Jido.Harness.start_process(%{
+          Jido.Harness.Process.start(%{
             executable: "/bin/sh",
             argv: ["-c", "sleep 0.1; printf detached"],
             stdin: false
@@ -109,61 +109,61 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     assert_receive {:started, {:ok, detached_id}}, 1_000
     assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 1_000
-    assert {:ok, %{state: :exited}} = Jido.Harness.await_process(detached_id, 5_000)
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(detached_id, 5_000)
 
     assert {:ok, timeout_id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sleep",
                argv: ["30"],
                stdin: false,
                runtime_timeout_ms: 50
              })
 
-    assert {:ok, %{state: :timed_out}} = Jido.Harness.await_process(timeout_id, 5_000)
+    assert {:ok, %{state: :timed_out}} = Jido.Harness.Process.await(timeout_id, 5_000)
 
     assert {:ok, idle_id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sleep",
                argv: ["30"],
                stdin: false,
                idle_timeout_ms: 50
              })
 
-    assert {:ok, %{state: :timed_out}} = Jido.Harness.await_process(idle_id, 5_000)
+    assert {:ok, %{state: :timed_out}} = Jido.Harness.Process.await(idle_id, 5_000)
   end
 
   test "rejects shell strings and unknown process options" do
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.start_process(%{executable: "/bin/echo", command: "unsafe"})
+             Jido.Harness.Process.start(%{executable: "/bin/echo", command: "unsafe"})
 
     assert {:ok, spec} = Jido.Harness.ProcessManager.unsafe_shell_spec("printf explicit")
     assert spec.executable =~ "sh"
     assert spec.argv == ["-c", "printf explicit"]
 
     assert {:ok, failure_id} =
-             Jido.Harness.start_process(%{executable: "/bin/sh", argv: ["-c", "exit 3"], stdin: false})
+             Jido.Harness.Process.start(%{executable: "/bin/sh", argv: ["-c", "exit 3"], stdin: false})
 
     assert {:ok, %{state: :failed, exit_status: 3, error: {:exit_status, 3}}} =
-             Jido.Harness.await_process(failure_id, 5_000)
+             Jido.Harness.Process.await(failure_id, 5_000)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
-             Jido.Harness.start_process(%{executable: "/bin/echo", pty: ["not", "keyword"]})
+             Jido.Harness.Process.start(%{executable: "/bin/echo", pty: ["not", "keyword"]})
 
     assert {:error, %Jido.Harness.Error{message: "process specification must be a map"}} =
-             Jido.Harness.start_process([:invalid])
+             Jido.Harness.Process.start([:invalid])
 
     assert {:error, %Jido.Harness.Error{message: "await timeout must be :infinity or a non-negative integer"}} =
-             Jido.Harness.await_process("missing", -1)
+             Jido.Harness.Process.await("missing", -1)
 
     assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
-             Jido.Harness.replay_process("missing", %{cursor: 0})
+             Jido.Harness.Process.replay("missing", %{cursor: 0})
   end
 
   test "runs concurrent processes and an opt-in PTY" do
     ids =
       Enum.map(1..8, fn number ->
         assert {:ok, id} =
-                 Jido.Harness.start_process(%{
+                 Jido.Harness.Process.start(%{
                    executable: "/bin/echo",
                    argv: [Integer.to_string(number)],
                    stdin: false
@@ -172,14 +172,14 @@ defmodule Jido.Harness.ProcessManagerTest do
         id
       end)
 
-    assert Enum.all?(ids, fn id -> match?({:ok, %{state: :exited}}, Jido.Harness.await_process(id, 5_000)) end)
+    assert Enum.all?(ids, fn id -> match?({:ok, %{state: :exited}}, Jido.Harness.Process.await(id, 5_000)) end)
 
     if File.exists?("/usr/bin/tty") do
       assert {:ok, pty_id} =
-               Jido.Harness.start_process(%{executable: "/usr/bin/tty", pty: true, stdin: true})
+               Jido.Harness.Process.start(%{executable: "/usr/bin/tty", pty: true, stdin: true})
 
-      assert {:ok, %{state: :exited}} = Jido.Harness.await_process(pty_id, 5_000)
-      assert {:ok, events} = Jido.Harness.replay_process(pty_id, limit: 20)
+      assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(pty_id, 5_000)
+      assert {:ok, events} = Jido.Harness.Process.replay(pty_id, limit: 20)
       assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "/dev/")))
     end
   end
@@ -194,15 +194,15 @@ defmodule Jido.Harness.ProcessManagerTest do
     )
 
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sh",
                argv: ["-c", "trap '' INT TERM; /bin/sh -c 'trap \"\" INT TERM; sleep 30' & printf \"%s\\n\" $!; wait"],
                stdin: false
              })
 
     child_pid = await_stdout_integer(id)
-    assert :ok = Jido.Harness.cancel_process(id)
-    assert {:ok, %{state: :cancelled}} = Jido.Harness.await_process(id, 5_000)
+    assert :ok = Jido.Harness.Process.cancel(id)
+    assert {:ok, %{state: :cancelled}} = Jido.Harness.Process.await(id, 5_000)
     Process.sleep(25)
     assert {_output, status} = System.cmd("/bin/kill", ["-0", Integer.to_string(child_pid)], stderr_to_stdout: true)
     assert status != 0
@@ -210,7 +210,7 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   test "an abrupt process-manager worker crash cannot orphan its process group" do
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sh",
                argv: ["-c", "/bin/sh -c 'sleep 30' & printf \"%s\\n\" $!; wait"],
                stdin: false
@@ -250,11 +250,11 @@ defmodule Jido.Harness.ProcessManagerTest do
     end)
 
     assert {:ok, id} =
-             Jido.Harness.start_process(%{executable: "/bin/echo", argv: ["memory-only"], stdin: false})
+             Jido.Harness.Process.start(%{executable: "/bin/echo", argv: ["memory-only"], stdin: false})
 
     assert_receive {:telemetry, [:jido, :harness, :journal, :error], %{count: 1}, _metadata}, 1_000
-    assert {:ok, %{state: :exited, journal_dir: nil}} = Jido.Harness.await_process(id, 5_000)
-    assert {:ok, events} = Jido.Harness.replay_process(id, limit: 20)
+    assert {:ok, %{state: :exited, journal_dir: nil}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
     assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "memory-only")))
   end
 
@@ -262,15 +262,15 @@ defmodule Jido.Harness.ProcessManagerTest do
     secret = "fixture-secret-#{System.unique_integer([:positive])}"
 
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: "/bin/sh",
                argv: ["-c", "printf %s \"$HARNESS_API_TOKEN\""],
                env: %{"HARNESS_API_TOKEN" => secret},
                stdin: false
              })
 
-    assert {:ok, %{state: :exited, journal_dir: journal_dir}} = Jido.Harness.await_process(id, 5_000)
-    assert {:ok, events} = Jido.Harness.replay_process(id, limit: 20)
+    assert {:ok, %{state: :exited, journal_dir: journal_dir}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
     assert Enum.any?(events, &(&1.type == :stdout and &1.data == "[REDACTED]"))
 
     persisted = journal_dir |> Path.join("*.jsonl") |> Path.wildcard() |> Enum.map_join(&File.read!/1)
@@ -281,7 +281,7 @@ defmodule Jido.Harness.ProcessManagerTest do
     fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 
     assert {:ok, id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: System.find_executable("elixir"),
                argv: [fixture, "100", "20"],
                stdin: false,
@@ -289,8 +289,8 @@ defmodule Jido.Harness.ProcessManagerTest do
                idle_timeout_ms: 3_000
              })
 
-    assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.await_process(id, 5_000)
-    assert {:ok, events} = Jido.Harness.replay_process(id, limit: 100)
+    assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
     assert Enum.count(events, &(&1.type == :stdout)) >= 2
   end
 
@@ -299,7 +299,7 @@ defmodule Jido.Harness.ProcessManagerTest do
   defp await_stdout_integer(_id, 0), do: flunk("managed process did not emit a child pid")
 
   defp await_stdout_integer(id, attempts) do
-    case Jido.Harness.replay_process(id, limit: 20) do
+    case Jido.Harness.Process.replay(id, limit: 20) do
       {:ok, events} ->
         case Enum.find(events, &(&1.type == :stdout)) do
           nil ->

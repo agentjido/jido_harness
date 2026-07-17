@@ -105,10 +105,10 @@ defmodule Jido.Harness.IntegrationCase do
                 assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
                 assert result.events == Enum.sort_by(result.events, & &1.sequence)
 
-                assert {:ok, replayed} = Jido.Harness.replay(result.run_id, limit: 10_000)
+                assert {:ok, replayed} = Jido.Harness.Run.replay(result.run_id, limit: 10_000)
                 assert Enum.map(replayed, & &1.sequence) == Enum.map(result.events, & &1.sequence)
 
-                assert {:ok, reattached} = Jido.Harness.stream(result.run_id, poll_interval_ms: 10)
+                assert {:ok, reattached} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 10)
                 assert Enum.map(Enum.to_list(reattached), & &1.sequence) == Enum.map(replayed, & &1.sequence)
               end)
           end
@@ -125,7 +125,7 @@ defmodule Jido.Harness.IntegrationCase do
 
           {pid, monitor} =
             spawn_monitor(fn ->
-              send(parent, {:started, Jido.Harness.start(provider, request)})
+              send(parent, {:started, Jido.Harness.Run.start(provider, request)})
             end)
 
           assert_receive {:started, {:ok, run_id}}, 10_000
@@ -142,12 +142,12 @@ defmodule Jido.Harness.IntegrationCase do
 
         Jido.Harness.IntegrationCase.with_ready_provider(provider, fn _spec ->
           {:ok, run_id} =
-            Jido.Harness.start(provider, %{
+            Jido.Harness.Run.start(provider, %{
               prompt: "Wait for further instructions before completing.",
               runtime_timeout_ms: 300_000
             })
 
-          assert :ok = Jido.Harness.cancel(run_id)
+          assert :ok = Jido.Harness.Run.cancel(run_id)
           result = Jido.Harness.IntegrationCase.await!(provider, run_id, 60_000)
 
           Jido.Harness.IntegrationCase.verify!(provider, result, fn ->
@@ -197,32 +197,32 @@ defmodule Jido.Harness.IntegrationCase do
 
         Jido.Harness.IntegrationCase.with_ready_provider(provider, fn _spec ->
           token = "harness-#{System.unique_integer([:positive])}"
-          {:ok, session_id} = Jido.Harness.open_session(provider, %{})
+          {:ok, session_id} = Jido.Harness.Session.start(provider, %{})
 
           try do
             assert {:ok, %{state: :idle}} =
                      Jido.Harness.IntegrationCase.await_session_ready(provider, session_id, 60_000)
 
             {:ok, first_id} =
-              Jido.Harness.send_message(
+              Jido.Harness.Session.send_message(
                 session_id,
                 "Remember the token #{token}. Reply with exactly: first-ok"
               )
 
-            assert {:ok, first} = Jido.Harness.await_turn(session_id, first_id, 600_000)
+            assert {:ok, first} = Jido.Harness.Session.await(session_id, first_id, 600_000)
             assert first.status == :completed
 
             {:ok, second_id} =
-              Jido.Harness.send_message(
+              Jido.Harness.Session.send_message(
                 session_id,
                 "Reply with only the token I asked you to remember."
               )
 
-            assert {:ok, second} = Jido.Harness.await_turn(session_id, second_id, 600_000)
+            assert {:ok, second} = Jido.Harness.Session.await(session_id, second_id, 600_000)
             assert second.status == :completed
             assert second.text =~ token
           after
-            Jido.Harness.close_session(session_id)
+            Jido.Harness.Session.close(session_id)
           end
         end)
       end
@@ -295,7 +295,7 @@ defmodule Jido.Harness.IntegrationCase do
 
   @doc false
   def run!(provider, request, options) do
-    case Jido.Harness.run_sync(provider, request, options) do
+    case Jido.Harness.run(provider, request, options) do
       {:ok, %{status: :failed, error: error} = result} ->
         if not strict?() and auth_failure?(error) do
           unavailable!(provider, :credentials_unavailable)
@@ -320,36 +320,36 @@ defmodule Jido.Harness.IntegrationCase do
   @doc false
   def cleanup_baseline do
     %{
-      runs: Jido.Harness.list_runs() |> Enum.map(& &1.run_id) |> MapSet.new(),
-      sessions: Jido.Harness.list_sessions() |> Enum.map(& &1.session_id) |> MapSet.new(),
-      processes: Jido.Harness.list_processes() |> Enum.map(& &1.process_id) |> MapSet.new()
+      runs: Jido.Harness.Run.list() |> Enum.map(& &1.run_id) |> MapSet.new(),
+      sessions: Jido.Harness.Session.list() |> Enum.map(& &1.session_id) |> MapSet.new(),
+      processes: Jido.Harness.Process.list() |> Enum.map(& &1.process_id) |> MapSet.new()
     }
   end
 
   @doc false
   def cleanup_since(provider, baseline) do
-    Jido.Harness.list_sessions(providers: [provider])
+    Jido.Harness.Session.list(providers: [provider])
     |> Enum.reject(&MapSet.member?(baseline.sessions, &1.session_id))
     |> Enum.each(fn info ->
-      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.close_session(info.session_id)
-      _ = Jido.Harness.prune_session(info.session_id)
+      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.Session.close(info.session_id)
+      _ = Jido.Harness.Session.prune(info.session_id)
     end)
 
-    Jido.Harness.list_runs(providers: [provider])
+    Jido.Harness.Run.list(providers: [provider])
     |> Enum.reject(&MapSet.member?(baseline.runs, &1.run_id))
     |> Enum.each(fn info ->
-      unless Jido.Harness.RunInfo.terminal?(info), do: Jido.Harness.cancel(info.run_id)
-      _ = Jido.Harness.await(info.run_id, 15_000)
-      _ = Jido.Harness.prune(info.run_id)
+      unless Jido.Harness.RunInfo.terminal?(info), do: Jido.Harness.Run.cancel(info.run_id)
+      _ = Jido.Harness.Run.await(info.run_id, 15_000)
+      _ = Jido.Harness.Run.prune(info.run_id)
     end)
 
-    Jido.Harness.list_processes()
+    Jido.Harness.Process.list()
     |> Enum.reject(&MapSet.member?(baseline.processes, &1.process_id))
     |> Enum.filter(&(Map.get(&1.metadata, :provider) == provider or Map.get(&1.metadata, "provider") == provider))
     |> Enum.each(fn info ->
-      unless Jido.Harness.ProcessInfo.terminal?(info), do: Jido.Harness.cancel_process(info.process_id)
-      _ = Jido.Harness.await_process(info.process_id, 15_000)
-      _ = Jido.Harness.prune_process(info.process_id)
+      unless Jido.Harness.ProcessInfo.terminal?(info), do: Jido.Harness.Process.cancel(info.process_id)
+      _ = Jido.Harness.Process.await(info.process_id, 15_000)
+      _ = Jido.Harness.Process.prune(info.process_id)
     end)
 
     :ok
@@ -357,7 +357,7 @@ defmodule Jido.Harness.IntegrationCase do
 
   @doc false
   def await!(provider, run_id, timeout) do
-    case Jido.Harness.await(run_id, timeout) do
+    case Jido.Harness.Run.await(run_id, timeout) do
       {:ok, result} -> result
       {:error, reason} -> failure!(provider, run_id, {:await_failed, reason})
     end
@@ -442,7 +442,7 @@ defmodule Jido.Harness.IntegrationCase do
   end
 
   defp do_await_session_ready(provider, session_id, timeout, started) do
-    case Jido.Harness.info_session(session_id) do
+    case Jido.Harness.Session.info(session_id) do
       {:ok, %{state: :idle}} = result ->
         result
 
@@ -473,7 +473,7 @@ defmodule Jido.Harness.IntegrationCase do
   defp run_info(nil), do: nil
 
   defp run_info(run_id) do
-    case Jido.Harness.info(run_id) do
+    case Jido.Harness.Run.info(run_id) do
       {:ok, info} -> info
       _error -> nil
     end
@@ -502,7 +502,7 @@ defmodule Jido.Harness.IntegrationCase do
   defp replay_events(nil), do: []
 
   defp replay_events(run_id) do
-    case Jido.Harness.replay(run_id, cursor: 0, limit: 10_000) do
+    case Jido.Harness.Run.replay(run_id, cursor: 0, limit: 10_000) do
       {:ok, events} -> events
       _error -> []
     end

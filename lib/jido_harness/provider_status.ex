@@ -1,5 +1,11 @@
 defmodule Jido.Harness.ProviderStatus do
-  @moduledoc "Readiness and authentication status for a provider."
+  @moduledoc """
+  Normalized installation, compatibility, authentication, and readiness status.
+
+  Authentication may be `:unknown` when a CLI uses cached login that cannot be
+  proven without a live request. `session_transports` describes the available
+  interactive protocols and their capabilities.
+  """
 
   alias Jido.Harness.{Capabilities, SessionTransportSpec}
 

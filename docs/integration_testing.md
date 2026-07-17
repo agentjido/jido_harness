@@ -1,20 +1,9 @@
-# Integration testing
+# Integration testing reference
 
-`Jido.Harness.IntegrationCase` is public ExUnit support. Loading the package does
-not start ExUnit or run provider tests.
+Jido.Harness separates non-billable readiness, one-provider live queries,
+profiled provider contracts, and deterministic soak testing.
 
-```elixir
-use Jido.Harness.IntegrationCase, provider: :codex
-harness_contract_tests()
-```
-
-Generated tests are tagged `:integration`, use a two-hour watchdog, and verify
-status, a minimal run, event ordering, terminal uniqueness, caller-detached
-lifecycle behavior, cancellation, resume, and interactive context.
-
-## Provider readiness
-
-Check registered providers without sending a prompt:
+## Readiness task
 
 ```console
 mix jido_harness.check
@@ -22,58 +11,77 @@ mix jido_harness.check --providers codex,kimi --strict
 mix jido_harness.check --json
 ```
 
-The task reports installation, compatibility, authentication, readiness, and
-version information. Authentication can be `unknown` when a CLI uses cached
-login; a live query is definitive. Missing providers include their installation
-recipe or documentation URL.
+Options:
 
-## Minimal live queries
+| Option | Meaning |
+| --- | --- |
+| `--providers NAME,...` | select providers; omitted means all registered providers |
+| `--strict` | fail when a selected provider is not ready |
+| `--json` | emit machine-readable output |
 
-Send the default `Reply with exactly: ready` prompt through one provider:
+The task reports installation, compatibility, authentication evidence,
+readiness, version, executable, and installation guidance. It never sends an
+agent prompt.
+
+## Minimal live task
 
 ```console
 mix jido_harness.chat codex
-```
-
-Pass a custom prompt or request JSON output:
-
-```console
 mix jido_harness.chat codex "Explain this repository in one sentence."
 mix jido_harness.chat codex --timeout 120 --json
 ```
 
-Each invocation starts one finite harness run through exactly one registered
-provider. The task fails when that provider fails or returns no text. Live
-queries may consume paid API or subscription usage.
+The task requires exactly one provider. With no custom prompt it sends `Reply
+with exactly: ready`. It starts one finite harness run, fails on provider error
+or empty text, and may consume paid usage.
 
-## Full integration profiles
+## IntegrationCase
 
-The integration tests remain ordinary opt-in ExUnit tests. Select a profile and
-provider set with environment variables:
-
-```console
-JIDO_HARNESS_INTEGRATION_PROFILE=smoke \
-JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
-mix test --include integration test/integration/providers_test.exs --timeout 7200000
+```elixir
+defmodule MyProviderIntegrationTest do
+  use Jido.Harness.IntegrationCase, provider: :codex
+  harness_contract_tests()
+end
 ```
 
-Supported profiles are:
+Generated tests are tagged `:integration` and use a two-hour watchdog. They can
+verify status, a minimal run, event order, terminal uniqueness, caller-detached
+lifecycle, cancellation, resume, and interactive context.
 
-- `smoke`: status/readiness and one minimal run;
-- `contract`: canonical events, result consistency, replay, and reattachment;
-- `lifecycle`: caller death, resume where supported, cancellation, and cleanup;
-- `interactive`: live two-turn context through each provider's selected session
-  transport.
+Loading Jido.Harness does not start ExUnit or run these tests.
 
-Set `JIDO_HARNESS_INTEGRATION_STRICT=true` to reject unavailable providers.
-These profiles may consume provider usage.
+## Profiles
 
-The deterministic 65-minute soak test is separate and does not contact a
-provider:
+Select live coverage with environment variables:
+
+```console
+JIDO_HARNESS_INTEGRATION_PROFILE=lifecycle \
+JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
+JIDO_HARNESS_INTEGRATION_STRICT=true \
+mix test --include integration test/integration/providers_test.exs \
+  --timeout 7200000
+```
+
+| Profile | Contract |
+| --- | --- |
+| `smoke` | readiness and one minimal run |
+| `contract` | canonical events, result consistency, replay, reattachment |
+| `lifecycle` | caller death, resume, cancellation, cleanup |
+| `interactive` | live two-turn context through the selected transport |
+
+Unavailable providers are skipped unless strict mode is enabled.
+
+## Soak profile
 
 ```console
 mix test --include soak test/integration/soak_test.exs --timeout 7200000
 ```
 
-Pull-request CI runs the deterministic unit and short fixture suite. Live
-provider tests remain explicit.
+The deterministic soak runs for 65 minutes and does not contact a provider. It
+exercises long-lived process, run, session, journal, and cleanup behavior.
+
+## CI boundary
+
+Pull-request CI should run deterministic unit and fixture tests. Live provider
+profiles remain explicit because they require installed CLIs, credentials, and
+potentially billable usage.

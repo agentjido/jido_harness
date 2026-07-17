@@ -1,5 +1,11 @@
 defmodule Jido.Harness.TurnResult do
-  @moduledoc "Terminal result of one interactive session turn."
+  @moduledoc """
+  Normalized terminal response from one interactive session turn.
+
+  `status` is `:completed`, `:failed`, or `:interrupted`. The struct shares the
+  normalized text, usage, event, metadata, and error vocabulary of
+  `Jido.Harness.RunResult` while retaining session and turn identity.
+  """
 
   alias Jido.Harness.Event
 

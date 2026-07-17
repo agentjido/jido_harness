@@ -1,0 +1,150 @@
+# One-shot requests
+
+## What you will learn
+
+This notebook covers the smallest useful Jido.Harness workflow: inspect the
+registered providers, perform a non-billable readiness check, and make one
+blocking request.
+
+By the end you will have:
+
+- inspected normalized provider metadata and readiness;
+- made one provider request;
+- received a `Jido.Harness.RunResult` instead of provider-specific JSON;
+- inspected the canonical event types behind the final response.
+
+Read the [getting-started guide](../guides/getting_started.md) and
+[normalization guide](../guides/normalization_and_data_model.md) for the
+corresponding API contracts.
+
+> The final request invokes a real provider CLI and may consume API or
+> subscription usage. Review `provider`, `prompt`, and `cwd` before evaluating
+> that cell.
+
+## Install the local package
+
+Desktop applications often start with a smaller `PATH` than an interactive
+shell. Add the common user-level CLI locations before Jido.Harness resolves a
+provider executable. Extend `extra_cli_paths` if your CLI is installed
+elsewhere.
+
+```elixir
+extra_cli_paths = [
+  Path.join(System.user_home!(), ".local/bin"),
+  Path.join(System.user_home!(), ".local/share/mise/shims"),
+  Path.join(System.user_home!(), ".bun/bin"),
+  "/opt/homebrew/bin",
+  "/usr/local/bin"
+]
+
+path =
+  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
+  |> Enum.uniq()
+  |> Enum.join(":")
+
+System.put_env("PATH", path)
+
+Mix.install([
+  {:jido_harness, path: Path.expand("..", __DIR__)}
+])
+
+defmodule JidoHarnessLivebook do
+  def completed!({:ok, %{status: :completed} = result}), do: result
+
+  def completed!({:ok, result}) do
+    raise result.error || "provider run finished with status #{inspect(result.status)}"
+  end
+
+  def completed!({:error, %_{} = error}), do: raise(error)
+  def completed!({:error, error}), do: raise("provider run failed: #{inspect(error)}")
+end
+```
+
+## Choose a provider and request
+
+Edit these values before continuing. The timeout on `Jido.Harness.run/3` bounds
+the caller's wait; it does not kill a run if the wait expires.
+
+```elixir
+provider = :codex
+cwd = Path.expand("..", __DIR__)
+prompt = "Reply with exactly: harness-ready"
+await_timeout = 300_000
+
+%{provider: provider, cwd: cwd, prompt: prompt, await_timeout: await_timeout}
+```
+
+## Discover capabilities
+
+`providers/0` is local metadata. `status/1` checks installation, version,
+authentication readiness, normalized capabilities, and available session
+transports without sending a prompt.
+
+```elixir
+Jido.Harness.providers()
+|> Enum.map(fn spec ->
+  %{
+    provider: spec.provider,
+    executable: spec.executable,
+    normalized_options: spec.normalized_options,
+    session_transports: Enum.map(spec.session_transports, & &1.name)
+  }
+end)
+```
+
+```elixir
+{:ok, provider_status} = Jido.Harness.status(provider)
+ready? = Jido.Harness.ProviderStatus.ready?(provider_status)
+
+unless ready? do
+  raise """
+  #{provider} is not ready in this Livebook runtime.
+  executable: #{inspect(provider_status.executable)}
+  error: #{inspect(provider_status.error)}
+  PATH: #{System.get_env("PATH")}
+  """
+end
+
+%{
+  ready?: ready?,
+  installed?: provider_status.installed,
+  compatible?: provider_status.compatible,
+  authenticated?: provider_status.authenticated,
+  version: provider_status.version,
+  capabilities: provider_status.capabilities,
+  session_transports: Enum.map(provider_status.session_transports, & &1.name)
+}
+```
+
+## Run one request
+
+The result is provider-neutral. Provider-specific records that do not have a
+canonical mapping remain available as `:provider_event` events.
+
+```elixir
+result =
+  Jido.Harness.run(
+    provider,
+    %{prompt: prompt, cwd: cwd, runtime_timeout_ms: await_timeout},
+    await_timeout: await_timeout
+  )
+  |> JidoHarnessLivebook.completed!()
+
+%{
+  run_id: result.run_id,
+  provider: result.provider,
+  provider_session_id: result.provider_session_id,
+  status: result.status,
+  text: result.text,
+  text_truncated?: result.text_truncated?,
+  usage: result.usage,
+  event_types: Enum.map(result.events, & &1.type)
+}
+```
+
+Use `Jido.Harness.Run` instead when the caller must stream, cancel, or reattach
+to work by ID.
+
+```elixir
+Jido.Harness.Run.prune(result.run_id)
+```

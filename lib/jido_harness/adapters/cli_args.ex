@@ -1,5 +1,5 @@
 defmodule Jido.Harness.Adapters.CLIArgs do
-  @moduledoc "Shared argument builders for direct CLI adapters."
+  @moduledoc false
 
   @doc "Builds a flag/value pair, omitting nil values."
   @spec pair(String.t(), term()) :: [String.t()]

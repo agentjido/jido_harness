@@ -8,7 +8,7 @@ defmodule Jido.Harness.Integration.SoakTest do
     fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 
     assert {:ok, process_id} =
-             Jido.Harness.start_process(%{
+             Jido.Harness.Process.start(%{
                executable: System.find_executable("elixir"),
                argv: [fixture, "3900000", "30000"],
                stdin: false,
@@ -17,6 +17,6 @@ defmodule Jido.Harness.Integration.SoakTest do
              })
 
     assert {:ok, %{state: :exited, exit_status: 0}} =
-             Jido.Harness.await_process(process_id, 4_300_000)
+             Jido.Harness.Process.await(process_id, 4_300_000)
   end
 end

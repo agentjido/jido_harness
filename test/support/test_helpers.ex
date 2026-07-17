@@ -28,24 +28,24 @@ defmodule Jido.Harness.TestHelpers do
   end
 
   def cleanup_runs do
-    Enum.each(Jido.Harness.list_runs(), fn info ->
-      unless Jido.Harness.RunInfo.terminal?(info), do: Jido.Harness.cancel(info.run_id)
-      Jido.Harness.prune(info.run_id)
+    Enum.each(Jido.Harness.Run.list(), fn info ->
+      unless Jido.Harness.RunInfo.terminal?(info), do: Jido.Harness.Run.cancel(info.run_id)
+      Jido.Harness.Run.prune(info.run_id)
     end)
   end
 
   def cleanup_sessions do
-    Enum.each(Jido.Harness.list_sessions(), fn info ->
-      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.close_session(info.session_id)
-      Jido.Harness.prune_session(info.session_id)
+    Enum.each(Jido.Harness.Session.list(), fn info ->
+      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.Session.close(info.session_id)
+      Jido.Harness.Session.prune(info.session_id)
     end)
   end
 
   def cleanup_processes do
-    Enum.each(Jido.Harness.list_processes(), fn info ->
-      unless Jido.Harness.ProcessInfo.terminal?(info), do: Jido.Harness.kill_process(info.process_id)
-      _ = Jido.Harness.await_process(info.process_id, 2_000)
-      Jido.Harness.prune_process(info.process_id)
+    Enum.each(Jido.Harness.Process.list(), fn info ->
+      unless Jido.Harness.ProcessInfo.terminal?(info), do: Jido.Harness.Process.kill(info.process_id)
+      _ = Jido.Harness.Process.await(info.process_id, 2_000)
+      Jido.Harness.Process.prune(info.process_id)
     end)
   end
 

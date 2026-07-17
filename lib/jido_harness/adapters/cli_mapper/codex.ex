@@ -1,5 +1,5 @@
 defmodule Jido.Harness.Adapters.CLIMapper.Codex do
-  @moduledoc "Maps Codex exec-json records into provider-neutral harness events."
+  @moduledoc false
 
   alias Jido.Harness.Adapters.Helpers
   alias Jido.Harness.Event

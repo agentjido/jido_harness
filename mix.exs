@@ -19,10 +19,27 @@ defmodule Jido.Harness.MixProject do
       source_url: @source_url,
       homepage_url: @source_url,
       docs: [
-        main: "Jido.Harness",
+        main: "overview",
         source_ref: "v#{@version}",
         extras: [
           "README.md",
+          "guides/overview.md",
+          "guides/getting_started.md",
+          "guides/choosing_a_workflow.md",
+          "guides/providers.md",
+          "guides/one_shot_requests.md",
+          "guides/detached_runs.md",
+          "guides/interactive_sessions.md",
+          "guides/managed_processes.md",
+          "guides/normalization_and_data_model.md",
+          "guides/streaming_replay_and_retention.md",
+          "guides/ownership_timeouts_and_cancellation.md",
+          "guides/security.md",
+          "guides/operations.md",
+          "guides/testing.md",
+          "guides/custom_adapters.md",
+          "docs/configuration_reference.md",
+          "docs/event_reference.md",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
           "LICENSE",
@@ -31,7 +48,97 @@ defmodule Jido.Harness.MixProject do
           "docs/dependency_policy.md",
           "docs/process_management.md",
           "docs/integration_testing.md",
-          "docs/migration_v2.md"
+          "docs/migration_v2.md",
+          "livebooks/01_one_shot_requests.livemd",
+          "livebooks/02_detached_runs.livemd",
+          "livebooks/03_sessions_and_processes.livemd"
+        ],
+        groups_for_extras: [
+          "Start here": [
+            "guides/overview.md",
+            "guides/getting_started.md",
+            "guides/choosing_a_workflow.md",
+            "guides/providers.md"
+          ],
+          "Core workflows": [
+            "guides/one_shot_requests.md",
+            "guides/detached_runs.md",
+            "guides/interactive_sessions.md",
+            "guides/managed_processes.md"
+          ],
+          "Shared concepts": [
+            "guides/normalization_and_data_model.md",
+            "guides/streaming_replay_and_retention.md",
+            "guides/ownership_timeouts_and_cancellation.md",
+            "guides/security.md"
+          ],
+          "Operating and extending": [
+            "guides/operations.md",
+            "guides/testing.md",
+            "guides/custom_adapters.md"
+          ],
+          Reference: [
+            "docs/configuration_reference.md",
+            "docs/event_reference.md",
+            "docs/adapter_contract.md",
+            "docs/process_management.md",
+            "docs/integration_testing.md",
+            "docs/telemetry.md",
+            "docs/dependency_policy.md",
+            "docs/migration_v2.md"
+          ],
+          Livebooks: [
+            "livebooks/01_one_shot_requests.livemd",
+            "livebooks/02_detached_runs.livemd",
+            "livebooks/03_sessions_and_processes.livemd"
+          ]
+        ],
+        groups_for_modules: [
+          "Core API": [
+            Jido.Harness,
+            Jido.Harness.Run,
+            Jido.Harness.Session,
+            Jido.Harness.Process
+          ],
+          "Requests and results": [
+            Jido.Harness.RunRequest,
+            Jido.Harness.RunResult,
+            Jido.Harness.RunInfo,
+            Jido.Harness.SessionRequest,
+            Jido.Harness.TurnRequest,
+            Jido.Harness.TurnResult,
+            Jido.Harness.SessionInfo,
+            Jido.Harness.ApprovalResponse,
+            Jido.Harness.ProcessSpec,
+            Jido.Harness.ProcessInfo
+          ],
+          "Events and errors": [
+            Jido.Harness.Event,
+            Jido.Harness.ProcessEvent,
+            Jido.Harness.Error
+          ],
+          "Providers and extension contracts": [
+            Jido.Harness.ProviderStatus,
+            Jido.Harness.Capabilities,
+            Jido.Harness.InteractionCapabilities,
+            Jido.Harness.Adapter,
+            Jido.Harness.AdapterSpec,
+            Jido.Harness.SessionAdapter,
+            Jido.Harness.SessionTransportSpec,
+            Jido.Harness.Registry
+          ],
+          "Built-in adapters": [
+            Jido.Harness.Adapters.Amp,
+            Jido.Harness.Adapters.Claude,
+            Jido.Harness.Adapters.Codex,
+            Jido.Harness.Adapters.Gemini,
+            Jido.Harness.Adapters.Grok,
+            Jido.Harness.Adapters.Kimi,
+            Jido.Harness.Adapters.OpenCode,
+            Jido.Harness.Adapters.Pi,
+            Jido.Harness.Adapters.Zai
+          ],
+          Testing: [Jido.Harness.IntegrationCase]
         ],
         formatters: ["html"]
       ],
@@ -58,7 +165,9 @@ defmodule Jido.Harness.MixProject do
           "usage-rules.md",
           "config",
           "docs",
+          "guides",
           "lib",
+          "livebooks",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],

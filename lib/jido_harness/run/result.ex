@@ -1,5 +1,12 @@
 defmodule Jido.Harness.RunResult do
-  @moduledoc "The terminal result of a harness run."
+  @moduledoc """
+  Normalized terminal response from one finite harness run.
+
+  `status` is `:completed`, `:failed`, or `:cancelled`. `text` is a bounded
+  output tail; when `text_truncated?` is true, cursor replay is the source for
+  the complete retained event sequence. Optional usage depends on provider
+  capability.
+  """
 
   alias Jido.Harness.{Error, Event}
 

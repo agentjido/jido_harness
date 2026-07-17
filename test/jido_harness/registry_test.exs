@@ -20,7 +20,7 @@ defmodule Jido.Harness.RegistryTest do
     on_exit(fn -> if original, do: Application.put_env(:jido_harness, :default_provider, original) end)
 
     assert {:error, %Error{category: :configuration}} =
-             Jido.Harness.start_request(%{prompt: "hello"})
+             Jido.Harness.Run.start(%{prompt: "hello"})
   end
 
   test "request precedence is adapter defaults, application defaults, then explicit values" do

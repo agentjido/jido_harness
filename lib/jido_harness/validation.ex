@@ -20,4 +20,20 @@ defmodule Jido.Harness.Validation do
   end
 
   def keyword_options(_options), do: {:error, Error.validation("options must be a keyword list")}
+
+  @spec options_map(term()) :: {:ok, map()} | {:error, Error.t()}
+  def options_map(options) do
+    with {:ok, options} <- keyword_options(options), do: {:ok, Map.new(options)}
+  end
+
+  @spec attributes_map(term(), String.t()) :: {:ok, map()} | {:error, Error.t()}
+  def attributes_map(attributes, _name) when is_map(attributes), do: {:ok, attributes}
+
+  def attributes_map(attributes, name) when is_list(attributes) do
+    if Enum.all?(attributes, &match?({_, _}, &1)),
+      do: {:ok, Map.new(attributes)},
+      else: {:error, Error.validation("#{name} must be a map or key-value list")}
+  end
+
+  def attributes_map(_attributes, name), do: {:error, Error.validation("#{name} must be a map or key-value list")}
 end

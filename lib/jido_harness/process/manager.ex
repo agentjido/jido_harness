@@ -1,5 +1,5 @@
 defmodule Jido.Harness.ProcessManager do
-  @moduledoc "Caller-independent supervision and control of local CLI processes."
+  @moduledoc false
 
   alias Jido.Harness.{Await, CursorStream, ID, ProcessInfo, ProcessSpec, ProcessWorker}
 
