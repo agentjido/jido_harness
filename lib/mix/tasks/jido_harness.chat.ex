@@ -1,311 +1,129 @@
 defmodule Mix.Tasks.JidoHarness.Chat do
   @moduledoc """
-  Opens an interactive Jido.Harness session without driving a provider TUI.
+  Sends one live prompt through one registered provider.
 
       mix jido_harness.chat codex
-      mix jido_harness.chat codex --transport app_server --format jsonl
+      mix jido_harness.chat codex "Explain this repository in one sentence."
+      mix jido_harness.chat codex --timeout 120 --json
 
-  Enter text directly or use `/send`. Available commands are `/follow-up`,
-  `/steer`, `/interrupt`, `/approve`, `/deny`, `/status`, and `/close`.
-  Provider requests may consume paid API or subscription usage.
+  With no prompt, the task asks for exactly `ready`. Each invocation starts one
+  finite harness run and may consume paid API or subscription usage.
   """
   use Mix.Task
 
-  alias Jido.Harness.{Event, SessionInfo}
+  alias Jido.Harness.{RunInfo, RunResult}
 
-  @shortdoc "Open an interactive harness session"
+  @shortdoc "Send one live prompt through a registered provider"
+  @default_prompt "Reply with exactly: ready"
+  @default_timeout_seconds 300
 
   @impl true
   def run(args) do
-    {options, provider} = parse_args(args)
+    {options, provider_name, prompt} = parse_args(args)
     Mix.Task.run("app.start")
 
-    provider = provider_atom!(provider)
-    request = session_request(options)
+    provider = select_provider(provider_name, Jido.Harness.providers())
+    outcome = query(provider, prompt, options[:timeout])
 
-    case Jido.Harness.open_session(provider, request) do
-      {:ok, session_id} ->
-        Mix.shell().info("[#{provider}] session_id=#{session_id} transport=#{options[:transport] || "default"}")
-        Mix.shell().info("Type a message, /status, or /close. Use /help for all commands.")
-        printer = start_printer(session_id, options[:format])
+    if options[:json], do: print_json(outcome), else: print_outcome(outcome)
 
-        try do
-          command_loop(session_id)
-        after
-          close_if_open(session_id)
-          await_printer(printer)
-        end
-
-      {:error, error} ->
-        Mix.raise("could not open #{provider} session: #{format_error(error)}")
-    end
+    unless outcome.ok, do: Mix.raise("chat failed: #{outcome.provider}")
+    :ok
   end
 
   @doc false
   def parse_args(args) do
     {options, positional, invalid} =
-      OptionParser.parse(args,
-        strict: [
-          cwd: :string,
-          model: :string,
-          provider_session_id: :string,
-          transport: :string,
-          format: :string,
-          approval: :string,
-          sandbox: :string,
-          env_file: :string
-        ]
-      )
+      OptionParser.parse(args, strict: [timeout: :integer, json: :boolean])
 
     if invalid != [], do: Mix.raise("invalid chat options: #{inspect(invalid)}")
 
-    provider =
+    {selector, prompt_parts} =
       case positional do
-        [provider] -> provider
-        _ -> Mix.raise("usage: mix jido_harness.chat PROVIDER [--transport NAME] [--format pretty|jsonl]")
+        [selector | prompt_parts] -> {selector, prompt_parts}
+        _ -> Mix.raise("usage: mix jido_harness.chat PROVIDER [\"PROMPT\"] [--timeout SECONDS] [--json]")
       end
 
-    format = Keyword.get(options, :format, "pretty")
-    unless format in ["pretty", "jsonl"], do: Mix.raise("--format must be pretty or jsonl")
+    timeout = Keyword.get(options, :timeout, @default_timeout_seconds)
+    unless is_integer(timeout) and timeout > 0, do: Mix.raise("--timeout must be a positive integer")
 
-    if path = options[:env_file], do: Mix.Tasks.JidoHarness.Integration.load_env_file(path)
-
-    options =
-      options
-      |> Keyword.put(:format, format)
-      |> parse_enum(:approval, [:default, :prompt, :auto_edit, :auto_approve])
-      |> parse_enum(:sandbox, [:default, :read_only, :workspace_write, :unrestricted])
-      |> parse_transport()
-
-    {options, provider}
-  end
-
-  defp command_loop(session_id) do
-    case IO.gets("harness> ") do
-      :eof ->
-        :ok
-
-      {:error, reason} ->
-        Mix.shell().error("input failed: #{inspect(reason)}")
-
-      input ->
-        input = String.trim(input)
-
-        case dispatch(session_id, input) do
-          :close -> :ok
-          _ -> command_loop(session_id)
-        end
-    end
+    prompt = if prompt_parts == [], do: @default_prompt, else: Enum.join(prompt_parts, " ")
+    {Keyword.put(options, :timeout, timeout), selector, prompt}
   end
 
   @doc false
-  def dispatch(_session_id, ""), do: :ok
-
-  def dispatch(_session_id, "/help") do
-    Mix.shell().info("""
-    /send TEXT                 send now (session must be idle)
-    /follow-up TEXT            queue after the active turn
-    /steer TEXT                steer the active turn when supported
-    /interrupt                 interrupt the active turn
-    /approve REQUEST [session] approve once or for this session
-    /deny REQUEST              deny an approval request
-    /status                    show session state and capabilities
-    /close                     gracefully close the session
-    """)
-
-    :ok
-  end
-
-  def dispatch(session_id, "/status") do
-    with {:ok, %SessionInfo{} = info} <- Jido.Harness.info_session(session_id) do
-      Mix.shell().info(
-        "state=#{info.state} transport=#{info.transport} active_turn=#{info.active_turn_id || "none"} " <>
-          "queued=#{info.queued_turns} approvals=#{info.pending_approvals} provider_session_id=#{info.provider_session_id || "none"}"
-      )
-    else
-      error -> print_error(error)
-    end
-
-    :ok
-  end
-
-  def dispatch(session_id, "/interrupt") do
-    print_reply(Jido.Harness.interrupt_turn(session_id))
-    :ok
-  end
-
-  def dispatch(session_id, "/close") do
-    print_reply(Jido.Harness.close_session(session_id))
-    :close
-  end
-
-  def dispatch(session_id, "/approve " <> arguments) do
-    case String.split(arguments, ~r/\s+/, trim: true) do
-      [request_id] ->
-        print_reply(Jido.Harness.respond_approval(session_id, request_id, :approve))
-
-      [request_id, "session"] ->
-        print_reply(Jido.Harness.respond_approval(session_id, request_id, %{decision: :approve, scope: :session}))
-
-      _ ->
-        Mix.shell().error("usage: /approve REQUEST_ID [session]")
-    end
-
-    :ok
-  end
-
-  def dispatch(session_id, "/deny " <> request_id) do
-    request_id = String.trim(request_id)
-
-    if request_id == "",
-      do: Mix.shell().error("usage: /deny REQUEST_ID"),
-      else: print_reply(Jido.Harness.respond_approval(session_id, request_id, :deny))
-
-    :ok
-  end
-
-  def dispatch(session_id, "/send " <> text), do: send_input(session_id, :send, text)
-  def dispatch(session_id, "/follow-up " <> text), do: send_input(session_id, :follow_up, text)
-  def dispatch(session_id, "/steer " <> text), do: send_input(session_id, :steer, text)
-
-  def dispatch(_session_id, "/" <> command) do
-    Mix.shell().error("unknown or incomplete command: /#{command}")
-    :ok
-  end
-
-  def dispatch(session_id, text), do: send_input(session_id, :send, text)
-
-  defp send_input(session_id, operation, text) do
-    text = String.trim(text)
-
-    result =
-      case operation do
-        :send -> Jido.Harness.send_message(session_id, text)
-        :follow_up -> Jido.Harness.follow_up(session_id, text)
-        :steer -> Jido.Harness.steer(session_id, text)
-      end
-
-    case result do
-      {:ok, id} -> Mix.shell().info("#{operation}=#{id}")
-      other -> print_reply(other)
-    end
-
-    :ok
-  end
-
-  defp start_printer(session_id, format) do
-    Task.async(fn ->
-      case Jido.Harness.stream_session(session_id, poll_interval_ms: 25) do
-        {:ok, stream} -> Enum.each(stream, &print_event(&1, format))
-        {:error, reason} -> Mix.shell().error("session stream failed: #{format_error(reason)}")
-      end
-    end)
-  end
-
-  defp print_event(%Event{} = event, "jsonl") do
-    event = event |> Map.from_struct() |> Map.put(:raw, nil)
-    Mix.shell().info(Jason.encode!(event))
-  end
-
-  defp print_event(%Event{type: :output_text_delta, payload: %{"text" => text}}, "pretty"), do: IO.write(text)
-
-  defp print_event(%Event{type: :thinking_delta, payload: %{"text" => text}}, "pretty"),
-    do: IO.write("[thinking] #{text}")
-
-  defp print_event(%Event{type: type} = event, "pretty")
-       when type in [
-              :turn_started,
-              :turn_completed,
-              :turn_failed,
-              :turn_interrupted,
-              :approval_requested,
-              :session_failed
-            ] do
-    suffix =
-      [event.turn_id, event.request_id]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-
-    details = if map_size(event.payload) == 0, do: "", else: " #{inspect(event.payload, limit: 20)}"
-    Mix.shell().info("\n[#{type}] #{suffix}#{details}" |> String.trim_trailing())
-  end
-
-  defp print_event(_event, "pretty"), do: :ok
-
-  defp await_printer(task) do
-    Task.await(task, 5_000)
-  catch
-    :exit, _reason -> Task.shutdown(task, :brutal_kill)
-  end
-
-  defp close_if_open(session_id) do
-    case Jido.Harness.info_session(session_id) do
-      {:ok, %SessionInfo{} = info} ->
-        if SessionInfo.terminal?(info), do: :ok, else: Jido.Harness.close_session(session_id)
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp session_request(options) do
-    %{
-      cwd: Path.expand(Keyword.get(options, :cwd, File.cwd!())),
-      metadata: %{"source" => "mix jido_harness.chat"}
-    }
-    |> put_optional(:model, options[:model])
-    |> put_optional(:provider_session_id, options[:provider_session_id])
-    |> put_optional(:transport, options[:transport])
-    |> put_optional(:approval_mode, options[:approval])
-    |> put_optional(:sandbox_mode, options[:sandbox])
-  end
-
-  defp provider_atom!(name) do
-    case Enum.find(Jido.Harness.providers(), &(Atom.to_string(&1.provider) == name)) do
+  def select_provider(name, specs) when is_binary(name) do
+    case Enum.find(specs, &(Atom.to_string(&1.provider) == name)) do
       nil ->
-        Mix.raise("unknown provider #{name}; available: #{Enum.map_join(Jido.Harness.providers(), ",", & &1.provider)}")
+        choices = specs |> Enum.map(& &1.provider) |> Enum.sort() |> Enum.join(",")
+        Mix.raise("unknown provider: #{name}; available: #{choices}")
 
       spec ->
         spec.provider
     end
   end
 
-  defp parse_transport(options) do
-    case options[:transport] do
-      nil ->
-        options
+  defp query(provider, prompt, timeout_seconds) do
+    timeout_ms = timeout_seconds * 1_000
+    request = %{prompt: prompt, cwd: File.cwd!(), runtime_timeout_ms: timeout_ms}
 
-      value ->
-        try do
-          Keyword.put(options, :transport, String.to_existing_atom(value))
-        rescue
-          ArgumentError -> Mix.raise("unknown session transport: #{value}")
-        end
+    case Jido.Harness.start(provider, request) do
+      {:ok, run_id} -> await_result(provider, run_id, timeout_ms)
+      {:error, error} -> failure(provider, nil, error)
     end
   end
 
-  defp parse_enum(options, key, allowed) do
-    case options[key] do
-      nil ->
-        options
+  defp await_result(provider, run_id, timeout_ms) do
+    case Jido.Harness.await(run_id, timeout_ms + 15_000) do
+      {:ok, %RunResult{status: :completed, text: text} = result} when is_binary(text) and text != "" ->
+        %{
+          ok: true,
+          provider: Atom.to_string(provider),
+          run_id: run_id,
+          status: Atom.to_string(result.status),
+          text: text,
+          error: nil
+        }
 
-      value ->
-        atom = Enum.find(allowed, &(Atom.to_string(&1) == value))
+      {:ok, %RunResult{} = result} ->
+        failure(provider, run_id, result.error || "provider completed without text", result.status)
 
-        if atom,
-          do: Keyword.put(options, key, atom),
-          else: Mix.raise("--#{key} must be one of #{Enum.join(allowed, ", ")}")
+      {:error, error} ->
+        cancel_if_running(run_id)
+        failure(provider, run_id, error)
     end
   end
 
-  defp put_optional(map, _key, nil), do: map
-  defp put_optional(map, key, value), do: Map.put(map, key, value)
-  defp print_reply(:ok), do: :ok
-  defp print_reply({:ok, value}), do: Mix.shell().info(inspect(value))
-  defp print_reply({:error, reason}), do: print_error(reason)
-  defp print_reply(other), do: Mix.shell().info(inspect(other))
-  defp print_error({:error, reason}), do: print_error(reason)
-  defp print_error(reason), do: Mix.shell().error(format_error(reason))
+  defp failure(provider, run_id, error, status \\ :failed) do
+    %{
+      ok: false,
+      provider: Atom.to_string(provider),
+      run_id: run_id,
+      status: Atom.to_string(status),
+      text: "",
+      error: format_error(error)
+    }
+  end
+
+  defp cancel_if_running(run_id) do
+    case Jido.Harness.info(run_id) do
+      {:ok, %RunInfo{} = info} -> unless RunInfo.terminal?(info), do: Jido.Harness.cancel(run_id)
+      _ -> :ok
+    end
+  end
+
+  defp print_outcome(%{ok: true} = outcome) do
+    Mix.shell().info("[#{outcome.provider}] ok run_id=#{outcome.run_id}")
+    Mix.shell().info(outcome.text)
+  end
+
+  defp print_outcome(outcome) do
+    Mix.shell().error("[#{outcome.provider}] #{outcome.status}: #{outcome.error}")
+  end
+
+  defp print_json(outcome), do: Mix.shell().info(Jason.encode!(outcome, pretty: true))
   defp format_error(%{message: message}) when is_binary(message), do: message
-  defp format_error(reason), do: inspect(reason, limit: 30, printable_limit: 2_000)
+  defp format_error(nil), do: "provider did not report an error"
+  defp format_error(error) when is_binary(error), do: error
+  defp format_error(error), do: inspect(error, limit: 20, printable_limit: 1_000)
 end

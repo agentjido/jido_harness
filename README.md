@@ -115,16 +115,8 @@ to consume the complete journaled event sequence.
 The default transports are SDK sessions for Amp, Claude, Gemini, and Z.AI;
 resumed JSONL turns for Codex and Grok; ACP for Kimi and OpenCode; and JSONL RPC
 for Pi. Codex app-server is experimental, version-gated, and must be selected
-explicitly:
-
-```console
-mix jido_harness.chat codex
-mix jido_harness.chat codex --transport app_server --format jsonl
-```
-
-The chat task accepts ordinary messages plus `/send`, `/follow-up`, `/steer`,
-`/interrupt`, `/approve`, `/deny`, `/status`, and `/close`. It communicates with
-headless provider protocols and never automates a provider TUI.
+explicitly through `open_session/3`. Session APIs communicate with headless
+provider protocols and never automate a provider TUI.
 
 Unknown normalized and provider-specific keys are rejected. Provider escape
 hatches are nested and cannot shadow normalized fields:
@@ -235,47 +227,29 @@ defmodule MyCodexIntegrationTest do
 end
 ```
 
-Integration tests are excluded by default. Run live profiles explicitly:
+Integration tests are excluded by default. The package exposes two operator
+tasks: a non-billable readiness check and a minimal live query:
 
 ```console
 mix jido_harness.check
-mix jido_harness.check --inventory --strict
-mix jido_harness.query codex "Explain this repository in one sentence."
-mix jido_harness.query all "Reply with exactly: ready" --expect ready
-mix jido_harness.check --providers codex,kimi --install
-
-mix jido_harness.integration --providers codex,grok --profile smoke
-mix jido_harness.integration --providers codex --profile lifecycle --strict
-mix jido_harness.integration --profile interactive --provider all
-mix jido_harness.integration --profile interactive --provider all --strict
-mix jido_harness.integration --profile soak
+mix jido_harness.check --providers codex,kimi --strict
+mix jido_harness.chat codex
+mix jido_harness.chat codex "Explain this repository in one sentence."
+mix jido_harness.chat codex --timeout 120 --json
 ```
 
-`mix jido_harness.check` is the single non-billable operator check. By default
-it reports installation, compatibility, authentication, smoke readiness, and
-installation recipes for registered providers. Use `--install` to run a
-provider's explicit npm recipe. Add `--inventory` to run version commands for
-the complete local CLI inventory through the managed process runtime. Use
-`--tools claude,codex` to select inventory entries, `--strict` to reject
-unavailable providers or missing/outdated tools, or `--json` for
-machine-readable output. It never sends an agent prompt.
+`mix jido_harness.check` reports installation, compatibility, authentication,
+readiness, versions, and installation guidance for registered providers. It
+never sends an agent prompt. `--strict` rejects unavailable providers and
+`--json` emits machine-readable output.
 
-The inventory includes Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI,
-Kimi Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity,
-Aider, and Goose are probe-only inventory entries: they do not have adapters
-and cannot be selected for harness contract or live provider tests.
+`mix jido_harness.chat` starts one finite run through exactly one registered
+provider. With no prompt it asks for exactly `ready`. The task fails on a
+provider error or empty response and may consume paid API or subscription usage.
 
-`mix jido_harness.query` sends an arbitrary prompt through one adapter, a
-comma-separated selection, or every registered adapter. Multi-provider queries
-run sequentially and print a complete success/failure matrix. Use `--timeout`
-for a per-provider limit in seconds, `--cwd`, `--model`, `--provider-session-id`,
-`--max-turns`, `--expect` for an exact-response assertion, or `--json` for
-machine-readable results. Unlike inventory and readiness checks, query runs can
-consume paid API or subscription usage.
-
-`mix jido_harness.integration` owns automated live profiles; there is no second
-operator task that forwards to it. Live provider work is therefore always
-visibly a `query`, `chat`, or `integration` command and may incur usage.
+Run the reusable integration contracts directly with ExUnit. Select profiles
+and providers through `JIDO_HARNESS_INTEGRATION_PROFILE` and
+`JIDO_HARNESS_INTEGRATION_PROVIDERS`; see the integration testing guide.
 
 See [integration testing](docs/integration_testing.md) and the
 [v2 migration guide](docs/migration_v2.md).

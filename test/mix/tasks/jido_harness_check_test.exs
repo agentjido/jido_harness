@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.JidoHarness.CheckTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.{AdapterSpec, CLIInventory, Capabilities, Event, ProviderStatus}
+  alias Jido.Harness.{AdapterSpec, Capabilities, Event, ProviderStatus}
   alias Mix.Tasks.JidoHarness.Check
 
   defmodule MissingAdapter do
@@ -14,8 +14,7 @@ defmodule Mix.Tasks.JidoHarness.CheckTest do
         name: "Missing check fixture",
         executable: "missing-check-fixture",
         capabilities: %Capabilities{},
-        install: %{npm: "missing-check-fixture"},
-        docs_url: "https://example.test/missing-check-fixture"
+        install: %{npm: "missing-check-fixture"}
       }
     end
 
@@ -32,12 +31,6 @@ defmodule Mix.Tasks.JidoHarness.CheckTest do
          smoke_ready: false,
          capabilities: spec().capabilities
        }}
-    end
-
-    @impl true
-    def install(_config, _options) do
-      send(Application.fetch_env!(:jido_harness, :check_task_test_owner), :install_called)
-      {:ok, %{status: :installed}}
     end
 
     @impl true
@@ -66,21 +59,19 @@ defmodule Mix.Tasks.JidoHarness.CheckTest do
     :ok
   end
 
-  test "default operation checks readiness and prints install and testing guidance without live work" do
+  test "checks readiness and prints installation guidance without live work" do
     assert :ok = Mix.Task.run("jido_harness.check", ["--providers", "check_missing"])
 
     assert_received :status_checked
-    refute_received :install_called
     refute_received :run_called
 
     output = shell_output()
     assert output =~ "check_missing"
     assert output =~ "npm install --global missing-check-fixture"
-    assert output =~ "jido_harness.integration --providers check_missing --profile smoke"
-    assert output =~ "may contact providers and incur usage"
+    assert output =~ "jido_harness.chat"
   end
 
-  test "provider selection is bounded by registered names and preserves requested order" do
+  test "provider selection is bounded by registered names and preserves order" do
     specs = [MissingAdapter.spec(), Jido.Harness.Adapters.Codex.spec()]
 
     assert Enum.map(Check.select_providers("codex,check_missing,codex", specs), & &1.provider) == [
@@ -93,42 +84,11 @@ defmodule Mix.Tasks.JidoHarness.CheckTest do
     end
   end
 
-  test "inventory selection and strict failures are retained by the consolidated task" do
-    entries = CLIInventory.entries()
-
-    assert Enum.map(Check.select_tools("goose,claude,goose", entries), & &1.id) == [:goose, :claude]
-
-    assert_raise Mix.Error, ~r/unknown tools: invented/, fn ->
-      Check.select_tools("invented", entries)
+  test "strict mode rejects unavailable providers" do
+    assert_raise Mix.Error, ~r/harness check failed: check_missing/, fn ->
+      Mix.Task.run("jido_harness.check", ["--providers", "check_missing", "--strict"])
     end
-
-    rows = [
-      row(:current, :current),
-      row(:newer, :newer),
-      row(:self_updating, :latest),
-      row(:old, :outdated),
-      row(:missing, :missing)
-    ]
-
-    assert Enum.map(Check.strict_inventory_failures(rows), & &1.entry.id) == [:old, :missing]
   end
-
-  test "npm adapter specs produce copyable global installation commands" do
-    assert Check.install_command(Jido.Harness.Adapters.Kimi.spec()) ==
-             "npm install --global @moonshot-ai/kimi-code"
-
-    assert Check.install_command(Jido.Harness.Adapters.Pi.spec()) ==
-             "npm install --global --ignore-scripts @earendil-works/pi-coding-agent"
-
-    assert Check.install_command(%AdapterSpec{
-             provider: :manual,
-             name: "Manual",
-             executable: "manual",
-             capabilities: %Capabilities{}
-           }) == nil
-  end
-
-  defp row(id, status), do: %{entry: %{id: id}, result: %{version_status: status}}
 
   defp shell_output do
     receive_shell([])
