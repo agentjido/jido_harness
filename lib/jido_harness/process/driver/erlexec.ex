@@ -63,7 +63,7 @@ defmodule Jido.Harness.ProcessDriver.Erlexec do
   defp signal_process_group(os_pid, signal) do
     executable = System.find_executable("kill") || "/bin/kill"
 
-    case System.cmd(executable, ["-s", signal_name(signal), "-#{os_pid}"], stderr_to_stdout: true) do
+    case System.cmd(executable, ["-s", signal_name(signal), "--", "-#{os_pid}"], stderr_to_stdout: true) do
       {_output, 0} -> :ok
       {output, status} -> {:error, {:signal_failed, signal, status, String.trim(output)}}
     end
