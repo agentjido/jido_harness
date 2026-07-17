@@ -24,4 +24,5 @@ jobs:
       credo_command: mix credo --min-priority higher
       validate_hex_package: true
       docs_command: mix docs -f html
+      test_matrix: '[{"otp":"28","elixir":"1.19"},{"otp":"29","elixir":"1.20"}]'
       test_command: mix test
