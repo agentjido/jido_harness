@@ -14,17 +14,6 @@ defmodule Jido.Harness.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
-      # No compatible patched transitive releases are available yet.
-      hex: [
-        ignore_advisories: [
-          "CVE-2026-43969",
-          "CVE-2026-43966",
-          "CVE-2026-47075",
-          "CVE-2026-47076",
-          "CVE-2026-47071",
-          "CVE-2026-47069"
-        ]
-      ],
       # Documentation
       name: "Jido.Harness",
       source_url: @source_url,
@@ -115,14 +104,6 @@ defmodule Jido.Harness.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:erlexec, "~> 2.3"},
-      # Gemini SDK was retired before migrating to cli_subprocess_core 0.2.
-      # Pin the mutually compatible SDK generation so all four SDK backends
-      # can coexist in one Mix application.
-      {:cli_subprocess_core, "~> 0.1.0"},
-      {:amp_sdk, "~> 0.5.0"},
-      {:claude_agent_sdk, "~> 0.14.0"},
-      {:codex_sdk, "~> 0.10.0"},
-      {:gemini_cli_sdk, "~> 0.2.0"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

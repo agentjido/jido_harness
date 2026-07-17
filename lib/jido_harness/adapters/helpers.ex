@@ -3,7 +3,7 @@ defmodule Jido.Harness.Adapters.Helpers do
 
   alias Jido.Harness.{Capabilities, Error, Event, ProcessInfo, ProcessManager, ProviderStatus}
 
-  @sdk_infinite_timeout 2_147_483_647
+  @maximum_timeout_ms 2_147_483_647
 
   def event(provider, type, provider_session_id, payload, raw \\ nil) do
     Event.new!(%{
@@ -30,8 +30,19 @@ defmodule Jido.Harness.Adapters.Helpers do
     end)
   end
 
-  def sdk_timeout(:infinity), do: @sdk_infinite_timeout
-  def sdk_timeout(timeout) when is_integer(timeout), do: timeout
+  def finite_timeout(:infinity), do: @maximum_timeout_ms
+  def finite_timeout(timeout) when is_integer(timeout), do: timeout
+
+  def merge_env(request, config, additions \\ %{}) do
+    config
+    |> Map.get(:env, Map.get(config, "env", %{}))
+    |> normalize_env()
+    |> Map.merge(request.env)
+    |> Map.merge(additions)
+  end
+
+  defp normalize_env(env) when is_map(env) or is_list(env), do: Map.new(env)
+  defp normalize_env(_env), do: %{}
 
   def cli_path(config, default) do
     Map.get(config, :cli_path) || Map.get(config, "cli_path") || default

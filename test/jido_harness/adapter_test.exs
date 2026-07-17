@@ -1,15 +1,10 @@
 defmodule Jido.Harness.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, SDKMapper, Zai}
+  alias Jido.Harness.Adapters.{Amp, Claude, CLIMapper, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, Zai}
   alias Jido.Harness.{Error, Event, RequestResolver, RunRequest}
 
-  setup do
-    Process.put(:capture_owner, self())
-    :ok
-  end
-
-  test "Amp SDK receives normalized long-run and resume options" do
+  test "Amp builds execute-mode streaming argv with resume and MCP options" do
     request =
       RunRequest.new!(%{
         prompt: "amp",
@@ -18,16 +13,13 @@ defmodule Jido.Harness.AdapterTest do
         reasoning_effort: :high
       })
 
-    assert {:ok, stream} = Amp.run(request, %{config: %{sdk_module: Jido.Harness.AmpCaptureSDK}})
-    assert Enum.to_list(stream) == []
-    assert_receive {:amp_options, "amp", options}
-    assert options.continue_thread == "thread-1"
-    assert options.mcp_config == %{"server" => %{}}
-    assert options.thinking
-    assert options.stream_timeout_ms == 2_147_483_647
+    assert {:ok, argv} = Amp.build_argv(request, %{labels: ["test"]})
+    assert Enum.take(argv, 6) == ["threads", "continue", "thread-1", "--execute", "amp", "--stream-json-thinking"]
+    assert Jason.decode!(hd(pairs(argv, "--mcp-config"))) == %{"server" => %{}}
+    assert pairs(argv, "--label") == ["test"]
   end
 
-  test "Claude SDK receives normalized reasoning, sandbox, and resume options" do
+  test "Claude builds print-mode streaming argv with sandbox and resume" do
     request =
       RunRequest.new!(%{
         prompt: "claude",
@@ -37,15 +29,22 @@ defmodule Jido.Harness.AdapterTest do
         sandbox_mode: :workspace_write
       })
 
-    assert {:ok, stream} =
-             Claude.run(request, %{config: %{sdk_module: Jido.Harness.ClaudeCaptureSDK}})
+    assert {:ok, argv} = Claude.build_argv(request, %{})
 
-    assert Enum.to_list(stream) == []
-    assert_receive {:claude_options, {:resume, "session-1"}, "claude", options}
-    assert options.max_thinking_tokens == 4_096
-    assert options.permission_mode == :accept_edits
-    assert options.sandbox == %{enabled: true}
-    assert options.timeout_ms == 2_147_483_647
+    assert Enum.take(argv, 6) == [
+             "--print",
+             "--output-format",
+             "stream-json",
+             "--include-partial-messages",
+             "--verbose",
+             "--resume"
+           ]
+
+    assert pairs(argv, "--resume") == ["session-1"]
+    assert pairs(argv, "--effort") == ["medium"]
+    assert pairs(argv, "--permission-mode") == ["acceptEdits"]
+    assert %{"sandbox" => %{"enabled" => true}} = argv |> pairs("--settings") |> hd() |> Jason.decode!()
+    assert Enum.take(argv, -2) == ["--", "claude"]
   end
 
   test "Z.AI uses the official Claude Code endpoint without exposing its source API-key variable" do
@@ -56,30 +55,16 @@ defmodule Jido.Harness.AdapterTest do
         env: %{"ZAI_API_KEY" => "integration-test-key", "KEEP_ME" => "yes"}
       })
 
-    context = %{
-      config: %{
-        sdk_module: Jido.Harness.ZaiCaptureSDK,
-        env: %{"CONFIGURED" => "yes", "ZAI_API_KEY" => "configured-key"}
-      }
-    }
-
-    assert {:ok, stream} = Zai.run(request, context)
-
-    assert [%Event{provider: :zai, type: :run_started, provider_session_id: "zai-session"}] =
-             Enum.to_list(stream)
-
-    assert_receive {:zai_options, :query, "zai", options}
-    assert options.model == "glm-5.2"
-    assert options.env["ANTHROPIC_BASE_URL"] == "https://api.z.ai/api/anthropic"
-    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "integration-test-key"
-    assert options.env["API_TIMEOUT_MS"] == "2147483647"
-    assert options.env["CONFIGURED"] == "yes"
-    assert options.env["KEEP_ME"] == "yes"
-    refute Map.has_key?(options.env, "ZAI_API_KEY")
-
-    child_env = ClaudeAgentSDK.Process.__env_vars__(options)
-    refute Map.has_key?(child_env, "ANTHROPIC_API_KEY")
-    refute Map.has_key?(child_env, "CLAUDE_AGENT_OAUTH_TOKEN")
+    config = %{env: %{"CONFIGURED" => "yes", "ZAI_API_KEY" => "configured-key"}}
+    assert {:ok, env} = Zai.resolve_env(request, config, %{})
+    assert env["ANTHROPIC_BASE_URL"] == "https://api.z.ai/api/anthropic"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "integration-test-key"
+    assert env["API_TIMEOUT_MS"] == "2147483647"
+    assert env["CONFIGURED"] == "yes"
+    assert env["KEEP_ME"] == "yes"
+    refute Map.has_key?(env, "ZAI_API_KEY")
+    assert env["ANTHROPIC_API_KEY"] == nil
+    assert env["CLAUDE_AGENT_OAUTH_TOKEN"] == nil
   end
 
   test "Z.AI validates its endpoint and transport timeout before execution" do
@@ -92,23 +77,20 @@ defmodule Jido.Harness.AdapterTest do
              Zai.resolve_env(request, %{}, %{api_timeout_ms: 0})
   end
 
-  test "Gemini SDK receives supported normalized options and rejects read-only" do
+  test "Gemini builds headless streaming argv and maps read-only to plan mode" do
     request = RunRequest.new!(%{prompt: "gemini", approval_mode: :auto_approve, sandbox_mode: :workspace_write})
 
-    assert {:ok, stream} =
-             Gemini.run(request, %{config: %{sdk_module: Jido.Harness.GeminiCaptureSDK}})
-
-    assert Enum.to_list(stream) == []
-    assert_receive {:gemini_options, "gemini", options}
-    assert options.approval_mode == :yolo
-    assert options.sandbox
-    assert options.timeout_ms == 2_147_483_647
+    assert {:ok, argv} = Gemini.build_argv(request, %{})
+    assert Enum.take(argv, 4) == ["--prompt", "gemini", "--output-format", "stream-json"]
+    assert pairs(argv, "--approval-mode") == ["yolo"]
+    assert "--sandbox" in argv
 
     read_only = RunRequest.new!(%{prompt: "gemini", sandbox_mode: :read_only})
-    assert {:error, %Error{category: :validation}} = Gemini.run(read_only, %{config: %{}})
+    assert {:ok, read_only_argv} = Gemini.build_argv(read_only, %{})
+    assert pairs(read_only_argv, "--approval-mode") == ["plan"]
   end
 
-  test "Codex SDK receives structured thread and turn options" do
+  test "Codex builds direct exec JSONL argv with resume and normalized controls" do
     request =
       RunRequest.new!(%{
         prompt: "codex",
@@ -119,59 +101,16 @@ defmodule Jido.Harness.AdapterTest do
         env: %{"HARNESS_TEST" => "yes"}
       })
 
-    context = %{
-      config: %{
-        sdk_module: Jido.Harness.CodexCaptureSDK,
-        thread_module: Jido.Harness.CodexCaptureThread,
-        streaming_module: Jido.Harness.CodexCaptureStreaming
-      }
-    }
-
-    assert {:ok, stream} = Codex.run(request, context)
-    assert Enum.to_list(stream) == []
-    assert_receive {:codex_options, {:resume, "thread-2"}, options, thread_options}
-    assert options.model == nil
-    assert options.reasoning_effort == :low
-    assert thread_options.ask_for_approval == :on_request
-    assert thread_options.sandbox == :read_only
-    assert thread_options.shell_environment_policy == %{"set" => %{"HARNESS_TEST" => "yes"}}
-    assert_receive {:codex_turn, "codex", turn_options}
-    assert turn_options.timeout_ms == 2_147_483_647
-    assert turn_options.completion_timeout_ms == 2_147_483_647
-    assert turn_options.env == %{"HARNESS_TEST" => "yes"}
+    assert {:ok, argv} = Codex.build_argv(request, %{})
+    assert Enum.take(argv, 4) == ["exec", "--json", "--sandbox", "read-only"]
+    assert "approval_policy=\"on-request\"" in pairs(argv, "--config")
+    assert "model_reasoning_effort=\"low\"" in pairs(argv, "--config")
+    assert Enum.take(argv, -3) == ["resume", "thread-2", "codex"]
   end
 
-  test "Codex nested escape hatches cannot override explicit normalized values" do
-    request =
-      RunRequest.new!(%{
-        prompt: "codex",
-        model: "normalized-model",
-        max_turns: 2,
-        reasoning_effort: :high,
-        sandbox_mode: :workspace_write,
-        provider_options: %{
-          codex_options: %{reasoning_effort: :low},
-          thread_options: %{model: "shadow-model", sandbox: :danger_full_access},
-          turn_options: %{max_turns: 99}
-        }
-      })
-
-    context = %{
-      config: %{
-        sdk_module: Jido.Harness.CodexCaptureSDK,
-        thread_module: Jido.Harness.CodexCaptureThread,
-        streaming_module: Jido.Harness.CodexCaptureStreaming
-      }
-    }
-
-    assert {:ok, stream} = Codex.run(request, context)
-    assert Enum.to_list(stream) == []
-    assert_receive {:codex_options, :start, options, thread_options}
-    assert options.reasoning_effort == :high
-    assert thread_options.model == "normalized-model"
-    assert thread_options.sandbox == :workspace_write
-    assert_receive {:codex_turn, "codex", turn_options}
-    assert turn_options.max_turns == 2
+  test "removed Codex SDK escape hatches are rejected" do
+    assert {:error, %Error{category: :validation, details: %{key: :codex_options}}} =
+             RequestResolver.resolve(:codex, %{prompt: "codex", provider_options: %{codex_options: %{}}})
   end
 
   test "Grok builds the documented headless argv without a shell" do
@@ -501,20 +440,29 @@ defmodule Jido.Harness.AdapterTest do
              JSONMapper.map(:grok, %{"type" => "new-event"})
   end
 
-  test "Codex maps rich app-server deltas into canonical events" do
-    assert [%Event{type: :command_output_delta, payload: %{"text" => "building"}}] =
-             SDKMapper.codex(%Elixir.Codex.Events.CommandOutputDelta{
-               thread_id: "thread-1",
-               turn_id: "turn-1",
-               item_id: "item-1",
-               delta: "building"
+  test "Codex maps direct exec JSONL records into canonical events" do
+    assert [
+             %Event{type: :tool_call, payload: %{"name" => "exec_command"}},
+             %Event{type: :tool_result, payload: %{"output" => "building", "is_error" => false}}
+           ] =
+             CLIMapper.codex(%{
+               "type" => "item.completed",
+               "thread_id" => "thread-1",
+               "item" => %{
+                 "type" => "command_execution",
+                 "id" => "item-1",
+                 "command" => "build",
+                 "aggregated_output" => "building",
+                 "exit_code" => 0
+               }
              })
 
     assert [%Event{type: :file_change, payload: %{"diff" => "@@ -1 +1 @@"}}] =
-             SDKMapper.codex(%Elixir.Codex.Events.TurnDiffUpdated{
-               thread_id: "thread-1",
-               turn_id: "turn-1",
-               diff: "@@ -1 +1 @@"
+             CLIMapper.codex(%{
+               "type" => "turn.diff.updated",
+               "thread_id" => "thread-1",
+               "turn_id" => "turn-1",
+               "diff" => "@@ -1 +1 @@"
              })
 
     assert [
@@ -526,33 +474,33 @@ defmodule Jido.Harness.AdapterTest do
                }
              }
            ] =
-             SDKMapper.codex(%Elixir.Codex.Events.TurnPlanUpdated{
-               thread_id: "thread-1",
-               turn_id: "turn-1",
-               explanation: "checking",
-               plan: [%{step: "test", status: :in_progress}]
+             CLIMapper.codex(%{
+               "type" => "turn.plan.updated",
+               "thread_id" => "thread-1",
+               "turn_id" => "turn-1",
+               "explanation" => "checking",
+               "plan" => [%{"step" => "test", "status" => :in_progress}]
              })
 
     assert [%Event{type: :thinking_delta, payload: %{"text" => "reasoning"}}] =
-             SDKMapper.codex(%Elixir.Codex.Events.ReasoningSummaryDelta{
-               thread_id: "thread-1",
-               turn_id: "turn-1",
-               item_id: "item-1",
-               delta: "reasoning"
+             CLIMapper.codex(%{
+               "type" => "item.completed",
+               "thread_id" => "thread-1",
+               "item" => %{"type" => "reasoning", "text" => "reasoning"}
              })
   end
 
   test "all requested providers publish a truthful default session transport" do
     expected = %{
-      amp: :sdk,
-      claude: :sdk,
+      amp: :stream_json_resume,
+      claude: :stream_json_resume,
       codex: :exec_jsonl_resume,
-      gemini: :sdk,
+      gemini: :stream_json_resume,
       grok: :streaming_json_resume,
       kimi: :acp,
       opencode: :acp,
       pi: :rpc,
-      zai: :claude_sdk
+      zai: :stream_json_resume
     }
 
     Enum.each(expected, fn {provider, transport} ->
@@ -561,10 +509,7 @@ defmodule Jido.Harness.AdapterTest do
       assert Enum.any?(spec.session_transports, &(&1.name == transport))
     end)
 
-    app_server = Enum.find(Codex.spec().session_transports, &(&1.name == :app_server))
-    assert app_server.minimum_version == "0.144.0"
-    assert app_server.capabilities.maturity == :experimental
-    assert app_server.capabilities.steer == :native
+    refute Enum.any?(Codex.spec().session_transports, &(&1.name == :app_server))
   end
 
   defp pairs(argv, flag) do

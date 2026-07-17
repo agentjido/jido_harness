@@ -175,7 +175,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert List.last(result.events).type == :run_cancelled
   end
 
-  test "run-level runtime and idle timeouts cover SDK-backed adapters" do
+  test "run-level runtime and idle timeouts cover adapter streams" do
     assert {:ok, runtime_id} =
              Jido.Harness.start(:test, %{prompt: "wait", runtime_timeout_ms: 30})
 
@@ -223,9 +223,9 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:error,
             %Jido.Harness.Error{
               category: :validation,
-              provider: :gemini,
-              details: %{field: :sandbox_mode, value: :read_only}
-            }} = Jido.Harness.start(:gemini, %{prompt: "unsupported", sandbox_mode: :read_only})
+              provider: :amp,
+              details: %{field: :model}
+            }} = Jido.Harness.start(:amp, %{prompt: "unsupported", model: "unsupported"})
 
     assert {:error,
             %Jido.Harness.Error{

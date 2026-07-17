@@ -11,28 +11,25 @@ Sprites, or Splode.
 - `telemetry` is the direct observation boundary.
 - `zoi` validates normalized public data.
 - `jason` encodes journals and decodes CLI JSONL.
-- Amp, Claude, Codex, and Gemini retain their existing SDK backends. Z.AI
-  shares the Claude Agent SDK backend because Z.AI officially integrates GLM
-  Coding Plan through Claude Code.
-- OpenCode, Grok, Kimi Code, and Pi use their official direct CLI interfaces
-  through the harness process manager.
+- Every built-in provider uses its official CLI through the harness process
+  manager. Z.AI uses its officially supported Claude Code environment mapping.
 
-Gemini CLI SDK was retired before moving to `cli_subprocess_core` 0.2. The v2
-package therefore pins the mutually compatible SDK generation on
-`cli_subprocess_core` 0.1 so all four SDK-backed providers can coexist. Upgrade
-these pins only as one reviewed set after recorded adapter fixtures, long-run
-timeouts, cancellation, and subprocess cleanup all pass.
+Provider SDKs and generic subprocess wrappers are intentionally excluded. The
+harness already owns option validation, supervision, process groups, timeouts,
+cancellation, JSONL decoding, event normalization, and retention. Adding an SDK
+that duplicates those responsibilities requires a demonstrated capability that
+cannot be expressed through the provider CLI.
 
 ## Overrides and revisions
 
-An override or source revision is acceptable only when it is needed for the nine
-provider set to compile together or for a verified lifecycle fix. Each change
-must preserve the provider SDK backend and pass:
+An override or source revision is acceptable only for a verified lifecycle or
+protocol compatibility fix. Each provider change must pass:
 
 1. fake-CLI long-runtime and cleanup contracts;
 2. deterministic unit and fixture tests;
-3. strict live smoke tests for all affected providers;
+3. opt-in live smoke tests for affected providers;
 4. `mix hex.build`, docs, static analysis, and the full unit suite.
 
-Do not replace an SDK-backed provider with a direct CLI implementation to avoid
-an SDK compatibility issue.
+Provider-specific JSONL mappers preserve unknown records as normalized
+`provider_event` values. CLI arguments remain structured executable-plus-argv
+data and are never interpolated into a shell command.

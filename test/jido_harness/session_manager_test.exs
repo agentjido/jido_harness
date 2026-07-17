@@ -175,19 +175,18 @@ defmodule Jido.Harness.SessionManagerTest do
     assert List.last(events).type == :session_failed
   end
 
-  test "rejects environment overrides when an experimental transport cannot apply them" do
+  test "rejects removed experimental transports" do
     Application.put_env(:jido_harness, :providers, %{codex: Jido.Harness.Adapters.Codex})
     Application.put_env(:jido_harness, :provider_config, %{codex: %{}})
 
     assert {:error,
             %Jido.Harness.Error{
               provider: :codex,
-              message: "session transport does not support environment overrides",
-              details: %{transport: :app_server, field: :env}
+              message: "unknown session transport",
+              details: %{transport: :app_server}
             }} =
              Jido.Harness.open_session(:codex, %{
-               transport: :app_server,
-               env: %{"OPENAI_API_KEY" => "must-not-be-ignored"}
+               transport: :app_server
              })
   end
 

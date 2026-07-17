@@ -15,8 +15,6 @@ defmodule Jido.Harness.Adapters.Zai do
   @base_url "https://api.z.ai/api/anthropic"
   @provider_options [
     :cli_path,
-    :verbose,
-    :preferred_transport,
     :fallback_model,
     :max_budget_usd,
     :fork_session,
@@ -41,38 +39,8 @@ defmodule Jido.Harness.Adapters.Zai do
         resume?: true,
         usage?: true
       },
-      default_session_transport: :claude_sdk,
-      session_transports: [
-        %Jido.Harness.SessionTransportSpec{
-          name: :claude_sdk,
-          adapter: Jido.Harness.SessionAdapters.ClaudeClient,
-          capabilities: %Jido.Harness.InteractionCapabilities{
-            transport: :claude_sdk,
-            process: :persistent,
-            multi_turn: :native,
-            follow_up: :managed,
-            interrupt: :native,
-            approvals: :native,
-            dynamic_model: :native,
-            dynamic_configuration: :native
-          },
-          session_options: [
-            :model,
-            :provider_session_id,
-            :system_prompt,
-            :allowed_tools,
-            :disallowed_tools,
-            :add_dirs,
-            :mcp_config,
-            :approval_mode,
-            :sandbox_mode,
-            :reasoning_effort,
-            :env
-          ],
-          session_provider_options: :adapter,
-          configuration_options: [:model, :approval_mode]
-        }
-      ],
+      default_session_transport: :stream_json_resume,
+      session_transports: [Jido.Harness.SessionTransportSpec.managed(:stream_json_resume)],
       normalized_options: [
         :model,
         :provider_session_id,
@@ -176,7 +144,7 @@ defmodule Jido.Harness.Adapters.Zai do
   defp validate_base_url(_value),
     do: {:error, Error.validation("Z.AI base_url must be a non-empty string", provider: :zai)}
 
-  defp normalize_timeout(:infinity), do: {:ok, Helpers.sdk_timeout(:infinity)}
+  defp normalize_timeout(:infinity), do: {:ok, Helpers.finite_timeout(:infinity)}
   defp normalize_timeout(value) when is_integer(value) and value > 0, do: {:ok, value}
 
   defp normalize_timeout(value) when is_binary(value) do

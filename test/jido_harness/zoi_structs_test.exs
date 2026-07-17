@@ -51,6 +51,7 @@ defmodule Jido.Harness.ZoiStructsTest do
 
   test "every package struct is backed by an exported Zoi struct schema" do
     Enum.each(@struct_modules, fn module ->
+      assert Code.ensure_loaded?(module), "#{inspect(module)} is not loadable"
       assert function_exported?(module, :schema, 0), "#{inspect(module)} does not export schema/0"
       assert module.schema().__struct__ == Zoi.Types.Struct
     end)

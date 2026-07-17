@@ -112,11 +112,9 @@ Run and turn results expose `text_truncated?`. The result text is bounded by the
 configured in-memory retention limit; use cursor replay when that flag is true
 to consume the complete journaled event sequence.
 
-The default transports are SDK sessions for Amp, Claude, Gemini, and Z.AI;
-resumed JSONL turns for Codex and Grok; ACP for Kimi and OpenCode; and JSONL RPC
-for Pi. Codex app-server is experimental, version-gated, and must be selected
-explicitly through `open_session/3`. Session APIs communicate with headless
-provider protocols and never automate a provider TUI.
+The default transports use resumed JSONL turns for Amp, Claude, Codex, Gemini,
+Grok, and Z.AI; ACP for Kimi and OpenCode; and JSONL RPC for Pi. Session APIs
+communicate with headless provider protocols and never automate a provider TUI.
 
 Unknown normalized and provider-specific keys are rejected. Provider escape
 hatches are nested and cannot shadow normalized fields:

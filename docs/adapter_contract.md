@@ -10,9 +10,8 @@ Jido.Harness types at its public boundary.
 - `status/1` returns installation, compatibility, authentication, resume,
   cancellation, and readiness information.
 
-`install/2` and native `cancel/2` are optional. Adapters without native
-cancellation are cancelled by terminating their supervised run worker and
-closing the underlying SDK stream.
+`install/2` and native `cancel/2` are optional. Direct CLI adapters cancel their
+owned process group through the harness process manager.
 
 Interactive providers also declare one or more `SessionTransportSpec` entries.
 Each transport points to a `Jido.Harness.SessionAdapter` implementing `open/2`,
@@ -69,7 +68,7 @@ redacted from journal records.
 
 Adapters must not emit arbitrary maps, retry a billable run, start an unmanaged
 CLI process, or create shell command strings. Direct CLI adapters use the
-harness process manager. SDK-backed adapters retain their SDK backend.
+harness process manager and map provider JSON into normalized events.
 
 ## Terminal events
 
@@ -90,19 +89,19 @@ of `:turn_completed`, `:turn_failed`, or `:turn_interrupted`.
 
 | Provider | Default transport | Execution model |
 | --- | --- | --- |
-| Amp | `:sdk` | persistent SDK streaming-input process |
-| Claude | `:sdk` | persistent Claude control client |
+| Amp | `:stream_json_resume` | resumed stream-JSON process per turn |
+| Claude | `:stream_json_resume` | resumed stream-JSON process per turn |
 | Codex | `:exec_jsonl_resume` | resumed JSONL process per turn |
-| Codex opt-in | `:app_server` | experimental persistent app-server |
-| Gemini | `:sdk` | persistent SDK session |
+| Gemini | `:stream_json_resume` | resumed stream-JSON process per turn |
 | Grok | `:streaming_json_resume` | resumed streaming-JSON process per turn |
 | Kimi | `:acp` | persistent ACP JSON-RPC process |
 | OpenCode | `:acp` | persistent ACP JSON-RPC process |
 | Pi | `:rpc` | persistent JSONL-RPC process |
-| Z.AI | `:claude_sdk` | Claude control client with Z.AI environment mapping |
+| Z.AI | `:stream_json_resume` | Claude stream-JSON with Z.AI environment mapping |
 
-Persistent protocol processes wait indefinitely for input. Runtime and idle
-timeouts apply to active turns, not to an idle protocol process.
+Managed resume transports create one supervised process per turn. Persistent
+ACP and RPC processes wait indefinitely for input. Runtime and idle timeouts
+apply to active turns, not to an idle protocol process.
 
 ## Provider-specific options
 
