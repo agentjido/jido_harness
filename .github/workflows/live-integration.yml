@@ -1,0 +1,68 @@
+name: Live provider integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Integration profile
+        required: true
+        type: choice
+        default: smoke
+        options:
+          - smoke
+          - contract
+          - lifecycle
+
+permissions:
+  contents: read
+
+jobs:
+  provider:
+    name: ${{ matrix.provider }} / ${{ inputs.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: amp
+            package: "@sourcegraph/amp"
+          - provider: claude
+            package: "@anthropic-ai/claude-code"
+          - provider: codex
+            package: "@openai/codex"
+          - provider: gemini
+            package: "@google/gemini-cli"
+          - provider: kimi
+            package: "@moonshot-ai/kimi-code"
+          - provider: opencode
+            package: "opencode-ai"
+          - provider: grok
+            package: "@xai-official/grok"
+          - provider: zai
+            package: "@anthropic-ai/claude-code"
+    env:
+      AMP_API_KEY: ${{ secrets.AMP_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KIMI_MODEL_NAME: "k3"
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --global "${{ matrix.package }}"
+      - run: mix deps.get
+      - run: >-
+          mix jido_harness.integration
+          --providers "${{ matrix.provider }}"
+          --profile "${{ inputs.profile }}"
+          --strict

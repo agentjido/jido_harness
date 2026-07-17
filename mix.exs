@@ -1,45 +1,144 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "2.0.0"
   @source_url "https://github.com/agentjido/jido_harness"
-  @description "Normalized Elixir protocol for CLI AI coding agents"
+  @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
   def project do
     [
       app: :jido_harness,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
-      # No compatible patched transitive releases are available yet.
-      hex: [
-        ignore_advisories: [
-          "CVE-2026-43969",
-          "CVE-2026-43966",
-          "CVE-2026-47075",
-          "CVE-2026-47076",
-          "CVE-2026-47071",
-          "CVE-2026-47069"
-        ]
-      ],
       # Documentation
       name: "Jido.Harness",
       source_url: @source_url,
       homepage_url: @source_url,
       docs: [
-        main: "Jido.Harness",
+        main: "overview",
         source_ref: "v#{@version}",
         extras: [
           "README.md",
+          "guides/overview.md",
+          "guides/getting_started.md",
+          "guides/choosing_a_workflow.md",
+          "guides/providers.md",
+          "guides/one_shot_requests.md",
+          "guides/detached_runs.md",
+          "guides/interactive_sessions.md",
+          "guides/managed_processes.md",
+          "guides/normalization_and_data_model.md",
+          "guides/streaming_replay_and_retention.md",
+          "guides/ownership_timeouts_and_cancellation.md",
+          "guides/security.md",
+          "guides/operations.md",
+          "guides/testing.md",
+          "guides/custom_adapters.md",
+          "docs/configuration_reference.md",
+          "docs/event_reference.md",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
           "LICENSE",
           "docs/adapter_contract.md",
           "docs/telemetry.md",
-          "docs/dependency_policy.md"
+          "docs/dependency_policy.md",
+          "docs/process_management.md",
+          "docs/integration_testing.md",
+          "docs/migration_v2.md",
+          "livebooks/01_one_shot_requests.livemd",
+          "livebooks/02_detached_runs.livemd",
+          "livebooks/03_sessions_and_processes.livemd"
+        ],
+        groups_for_extras: [
+          "Start here": [
+            "guides/overview.md",
+            "guides/getting_started.md",
+            "guides/choosing_a_workflow.md",
+            "guides/providers.md"
+          ],
+          "Core workflows": [
+            "guides/one_shot_requests.md",
+            "guides/detached_runs.md",
+            "guides/interactive_sessions.md",
+            "guides/managed_processes.md"
+          ],
+          "Shared concepts": [
+            "guides/normalization_and_data_model.md",
+            "guides/streaming_replay_and_retention.md",
+            "guides/ownership_timeouts_and_cancellation.md",
+            "guides/security.md"
+          ],
+          "Operating and extending": [
+            "guides/operations.md",
+            "guides/testing.md",
+            "guides/custom_adapters.md"
+          ],
+          Reference: [
+            "docs/configuration_reference.md",
+            "docs/event_reference.md",
+            "docs/adapter_contract.md",
+            "docs/process_management.md",
+            "docs/integration_testing.md",
+            "docs/telemetry.md",
+            "docs/dependency_policy.md",
+            "docs/migration_v2.md"
+          ],
+          Livebooks: [
+            "livebooks/01_one_shot_requests.livemd",
+            "livebooks/02_detached_runs.livemd",
+            "livebooks/03_sessions_and_processes.livemd"
+          ]
+        ],
+        groups_for_modules: [
+          "Core API": [
+            Jido.Harness,
+            Jido.Harness.Run,
+            Jido.Harness.Session,
+            Jido.Harness.Process
+          ],
+          "Requests and results": [
+            Jido.Harness.RunRequest,
+            Jido.Harness.RunResult,
+            Jido.Harness.RunInfo,
+            Jido.Harness.SessionRequest,
+            Jido.Harness.TurnRequest,
+            Jido.Harness.TurnResult,
+            Jido.Harness.SessionInfo,
+            Jido.Harness.ApprovalResponse,
+            Jido.Harness.ProcessSpec,
+            Jido.Harness.ProcessInfo
+          ],
+          "Events and errors": [
+            Jido.Harness.Event,
+            Jido.Harness.ProcessEvent,
+            Jido.Harness.Error
+          ],
+          "Providers and extension contracts": [
+            Jido.Harness.ProviderStatus,
+            Jido.Harness.Capabilities,
+            Jido.Harness.InteractionCapabilities,
+            Jido.Harness.Adapter,
+            Jido.Harness.AdapterSpec,
+            Jido.Harness.SessionAdapter,
+            Jido.Harness.SessionTransportSpec,
+            Jido.Harness.Registry
+          ],
+          "Built-in adapters": [
+            Jido.Harness.Adapters.Amp,
+            Jido.Harness.Adapters.Claude,
+            Jido.Harness.Adapters.Codex,
+            Jido.Harness.Adapters.Gemini,
+            Jido.Harness.Adapters.Grok,
+            Jido.Harness.Adapters.Kimi,
+            Jido.Harness.Adapters.OpenCode,
+            Jido.Harness.Adapters.Pi,
+            Jido.Harness.Adapters.Zai
+          ],
+          Testing: [Jido.Harness.IntegrationCase]
         ],
         formatters: ["html"]
       ],
@@ -48,21 +147,11 @@ defmodule Jido.Harness.MixProject do
         summary: [threshold: 90],
         export: "cov",
         ignore_modules: [
-          Jido.Harness.Error.Invalid,
-          Jido.Harness.Error.Execution,
-          Jido.Harness.Error.Config,
-          Jido.Harness.Error.Internal,
-          Jido.Harness.Error.Internal.UnknownError,
-          Jido.Harness.Test.AdapterStub,
-          Jido.Harness.Test.PromptRunnerStub,
-          Jido.Harness.Test.StreamRunnerStub,
-          Jido.Harness.Test.RunRequestRunnerStub,
-          Jido.Harness.Test.ExecuteRunnerStub,
-          Jido.Harness.Test.NoCancelStub,
-          Jido.Harness.Test.AtomMapStreamRunnerStub,
-          Jido.Harness.Test.UnsupportedRunnerStub
+          Jido.Harness.IntegrationCase,
+          Mix.Tasks.JidoHarness.Chat
         ]
       ],
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
       # Hex packaging
       package: [
         name: :jido_harness,
@@ -76,7 +165,9 @@ defmodule Jido.Harness.MixProject do
           "usage-rules.md",
           "config",
           "docs",
+          "guides",
           "lib",
+          "livebooks",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],
@@ -97,14 +188,17 @@ defmodule Jido.Harness.MixProject do
       preferred_envs: [
         coveralls: :test,
         "coveralls.github": :test,
-        "coveralls.html": :test
+        "coveralls.html": :test,
+        "jido_harness.check": :test,
+        "jido_harness.chat": :test
       ]
     ]
   end
 
   def application do
     [
-      extra_applications: [:logger]
+      mod: {Jido.Harness.Application, []},
+      extra_applications: [:logger, :erlexec]
     ]
   end
 
@@ -114,12 +208,10 @@ defmodule Jido.Harness.MixProject do
   defp deps do
     [
       # Runtime
-      {:zoi, "~> 0.17"},
-      {:splode, "~> 0.3.0"},
+      {:zoi, "~> 0.18"},
       {:jason, "~> 1.4"},
-      {:jido, "~> 2.2"},
-      {:jido_shell, github: "agentjido/jido_shell", branch: "main", override: true},
-      {:sprites, git: "https://github.com/mikehostetler/sprites-ex.git", override: true},
+      {:telemetry, "~> 1.3"},
+      {:erlexec, "~> 2.3"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

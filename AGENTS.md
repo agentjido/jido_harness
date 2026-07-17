@@ -2,22 +2,26 @@
 
 ## Overview
 
-Jido.Harness is the core normalization layer for CLI AI coding agents. It defines behaviours, schemas, and error types that provider adapter packages implement.
+Jido.Harness is the unified normalization and lifecycle layer for CLI AI coding agents. It owns provider adapters, supervised runs, and direct CLI process management.
 
 ## Key Modules
 
-- `Jido.Harness` — Public facade (`run/3`)
+- `Jido.Harness` — Public run and process-management facade
 - `Jido.Harness.Adapter` — Behaviour for provider adapters
 - `Jido.Harness.RunRequest` — Zoi schema for run inputs
 - `Jido.Harness.Event` — Zoi schema for normalized output events
 - `Jido.Harness.Registry` — Provider lookup from app config
-- `Jido.Harness.Error` — Splode error types
+- `Jido.Harness.ProcessManager` — Harness-local OS process lifecycle management
+- `Jido.Harness.RunManager` — Caller-independent provider run lifecycle management
+- `Jido.Harness.Error` — Plain normalized exception struct
 
 ## Conventions
 
 - Structs use the Zoi schema pattern (`@schema`, `new/1`, `new!/1`)
-- Errors use Splode (`Jido.Harness.Error`)
-- Elixir `~> 1.18`
+- Errors use the plain `%Jido.Harness.Error{}` struct
+- Built-in adapters reject unsupported normalized and provider-specific options
+- Process execution uses executable-plus-argv specifications, never interpolated shell commands
+- Elixir `~> 1.19`
 - Run `mix quality` before committing
 - Use conventional commit format
 - Do not modify `CHANGELOG.md`; release notes are generated from Git history during release, so keep changes focused on proper Conventional Commits.
@@ -26,3 +30,5 @@ Jido.Harness is the core normalization layer for CLI AI coding agents. It define
 
 - `mix test` — Run tests
 - `mix quality` — Full quality check (compile, format, credo, dialyzer, doctor)
+- `mix jido_harness.check --strict` — Run non-billable provider readiness checks
+- `mix jido_harness.chat codex` — Send one live prompt through one provider

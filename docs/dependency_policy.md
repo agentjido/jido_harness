@@ -1,54 +1,53 @@
-# Jido Ecosystem Dependency Policy
+# Dependency and scope policy
 
-This policy governs `jido_harness` and sibling provider/runtime packages during consolidation.
+Jido.Harness owns normalization, supervision, process management, event
+journaling, retention, and provider adapters. Runtime dependencies must support
+one of those boundaries without duplicating the package's core responsibility.
 
-## Current Phase
+## Runtime dependencies
 
-For the current adapter-alignment phase:
+| Dependency | Purpose |
+| --- | --- |
+| `erlexec` | monitored subprocesses, stdin, PTY, process groups, and signals |
+| `telemetry` | direct runtime observation boundary |
+| `zoi` | validation and construction of normalized public structs |
+| `jason` | provider JSON/JSONL decoding and journal encoding |
 
-- use GitHub dependencies for the Jido harness packages
-- keep the same branch-based dependency policy across the adapter repos
-- do not treat Hex packaging as an active delivery target yet
+Every built-in provider uses its official CLI through the Jido.Harness process
+manager. Z.AI uses its officially supported Claude Code environment mapping.
 
-This policy should remain in place until the adapter contract and CI baselines are aligned across the repo set.
+## Explicit exclusions
 
-## Baseline Versions
+The runtime does not depend on:
 
-- Elixir: `~> 1.18`
-- Jido core line: `~> 2.0.0-rc.5`
-- Zoi: `~> 0.17`
-- Splode: `~> 0.3.0`
+- provider SDKs;
+- generic subprocess wrappers;
+- `jido` or `jido_shell`;
+- Sprites or Splode.
 
-## Git/Branch Dependencies
+Provider SDKs and subprocess wrappers would duplicate responsibilities already
+owned here: option validation, supervision, process groups, timeouts,
+cancellation, JSONL mapping, normalized events, and retention. Adding one
+requires a demonstrated capability that the provider's official headless CLI
+cannot express.
 
-Use a git/branch dependency only when one of the following is true:
+## Product boundary
 
-- a required upstream fix is not yet published to Hex
-- coordinated multi-repo migration requires same-day, unreleased changes
-- temporary lockstep development is required for release-train validation
+Jido.Harness is not a provider router, durable job system, workspace
+provisioner, retry engine, TUI automation system, or general shell library.
+Those concerns belong outside the package and should integrate through stable
+harness IDs and normalized results.
 
-When using git/branch dependencies:
+## Overrides and revisions
 
-- document why in the PR/commit message
-- prefer the narrowest affected package set
-- remove as soon as a compatible Hex release exists
+An override or source revision is acceptable only for a verified lifecycle or
+protocol compatibility fix. Each provider-related dependency change must pass:
 
-## `override: true` Usage
+1. fake-CLI long-runtime and cleanup contracts;
+2. deterministic mapper and fixture tests;
+3. opt-in live tests for affected providers;
+4. documentation, package build, static analysis, and the full unit suite.
 
-`override: true` is allowed only for conflict resolution when:
-
-- multiple transitive versions break compile/runtime contracts, or
-- local path/git lockstep is required during migration.
-
-For each override, keep a removal condition:
-
-- specific package/version to upgrade to, and
-- verification target (`mix deps.tree`, compile, test, quality).
-
-## Removal Criteria
-
-A temporary git/branch/override dependency should be removed once:
-
-1. A compatible Hex release is available.
-2. All dependent repos compile and test against the released version.
-3. No contract regressions are observed in adapter contract tests and bot E2E smoke tests.
+Provider-specific records without a canonical mapping remain
+`:provider_event` values. CLI arguments remain structured executable-plus-argv
+data and are never interpolated into a shell command.

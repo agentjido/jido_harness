@@ -1,90 +1,138 @@
-# Adapter Contract
+# Adapter contract reference
 
-This checklist defines the stable surface that `jido_harness` expects from every adapter package in the current ecosystem phase.
+Every finite-run provider implements `Jido.Harness.Adapter`. Public adapter
+boundaries use normalized Jido.Harness types rather than provider SDK structs or
+arbitrary maps.
 
-## Required Callbacks
+## Required callbacks
 
-Every adapter must implement:
+| Callback | Contract |
+| --- | --- |
+| `spec/0` | returns a validated `Jido.Harness.AdapterSpec` |
+| `run/2` | returns `{:ok, enumerable}` of `Jido.Harness.Event` values or `{:error, reason}` |
+| `status/1` | returns normalized `Jido.Harness.ProviderStatus` readiness |
 
-- `id/0`
-- `capabilities/0`
-- `run/2`
-- `runtime_contract/0`
+`install/2` and native `cancel/2` are optional. Direct CLI adapters normally
+cancel through the harness process manager.
 
-`cancel/1` is optional, but only optional when the adapter reports `cancellation?: false`.
+## Adapter specification
 
-## `id/0`
+`AdapterSpec` declares:
 
-- returns the provider atom used by the harness registry
-- must match `runtime_contract().provider`
+- provider atom, display name, executable, documentation URL, and installation
+  recipe;
+- finite-run capabilities;
+- supported normalized request fields;
+- accepted values when normalized enum support is narrower;
+- accepted nested `provider_options` keys;
+- adapter-level request defaults;
+- interactive transport specifications.
 
-Examples:
+Declarations are enforced before execution. A non-default normalized field
+that is not declared fails. A normalized value outside `normalized_values`
+fails. Unknown provider options fail. Provider-specific options cannot shadow a
+normalized request field.
 
-- `:codex`
-- `:amp`
-- `:claude`
-- `:gemini`
-- `:opencode`
+## Run callback context
 
-## `capabilities/0`
+`run/2` receives a validated `Jido.Harness.RunRequest` and context:
 
-Adapters must return `%Jido.Harness.Capabilities{}` with explicit booleans for all flags.
+```elixir
+%{
+  run_id: "run_...",
+  provider: :provider,
+  config: %{},
+  telemetry_context: %{run_id: "run_...", provider: :provider},
+  process_manager: Jido.Harness.ProcessManager,
+  run_owner: owner_pid
+}
+```
 
-Current flag meanings:
+CLI adapters must start processes through the supplied process manager and bind
+them to `run_owner`. They must not start unmanaged ports, interpolate a shell
+command, or retry billable work.
 
-- `streaming?`: `run/2` emits incremental events instead of only terminal output
-- `tool_calls?`: adapter emits normalized `:tool_call` events
-- `tool_results?`: adapter emits normalized `:tool_result` events
-- `thinking?`: adapter emits normalized thinking/reasoning events
-- `resume?`: adapter can resume a previous session/thread
-- `usage?`: adapter emits canonical `:usage` events
-- `file_changes?`: adapter emits normalized file-change events
-- `cancellation?`: adapter exposes `cancel/1` for active sessions
+## Event output
 
-These flags are declarative contract metadata. They are not marketing claims. If a capability is incomplete or conditional, keep it `false` until the emitted behavior is stable.
+The returned enumerable emits `Jido.Harness.Event` structs. Map provider records
+to canonical types only when the semantics are preserved. Unknown or
+loss-sensitive records use `:provider_event` and may retain their original
+value in `raw`.
 
-## `run/2`
+The run worker attaches stable run identity and monotonic sequence values. Raw
+provider values remain in memory and are not persisted. Structured sensitive
+fields, bearer credentials, and configured credential environment values are
+redacted from journal records.
 
-- accepts `%Jido.Harness.RunRequest{}`
-- returns `{:ok, enumerable}` or `{:error, reason}`
-- emits `%Jido.Harness.Event{}` values only
-- treats `request.session_id` as the provider-neutral resume/session hint when
-  `capabilities().resume?` is true
-- uses provider-specific metadata from `request.metadata`
-- returns structured validation/config/execution errors on adapter-facing failures
+## Terminal behavior
 
-## `runtime_contract/0`
+The run manager guarantees exactly one of:
 
-Adapters must return `%Jido.Harness.RuntimeContract{}` with:
+- `:run_completed`
+- `:run_failed`
+- `:run_cancelled`
 
-- provider id
-- required host env vars
-- forwarded/injected runtime env vars
-- required runtime tools
-- compatibility probes
-- install steps
-- auth bootstrap steps
-- `triage_command_template`
-- `coding_command_template`
-- `success_markers`
+If an adapter enumerable ends without a terminal event, the run manager adds a
+terminal event. Events after the first terminal event are ignored.
 
-## Command Template Semantics
+Adapters must not fabricate success merely because their process exited with
+status zero; they must map the provider protocol's terminal semantics where
+available.
 
-Templates must be non-empty and use one of the canonical placeholders:
+## Status behavior
 
-- `{{prompt}}` for inline prompt substitution
-- `{{prompt_file}}` for prompt-file substitution
+`status/1` must not send an agent prompt. It should report:
 
-The harness runtime layer expands these placeholders when building commands. Adapters should not invent package-specific placeholder names.
+- executable installation;
+- version and compatibility;
+- authentication evidence or `:unknown`;
+- readiness to attempt a smoke run;
+- finite-run capabilities.
 
-## Success Marker Semantics
+Installation guidance belongs in the adapter spec. `install/2` must remain an
+explicit caller action and support preview behavior where the adapter exposes
+an installation recipe.
 
-`success_markers` must be a non-empty list of maps with string keys.
+## Interactive transports
 
-These markers define what the harness runtime should treat as terminal success when evaluating streamed or runtime-mediated execution. They should match real adapter output, not best-effort guesses.
+Interactive providers declare one or more `SessionTransportSpec` entries. Each
+entry selects a `Jido.Harness.SessionAdapter` implementing:
 
-## Error Shape
+- `open/2`
+- `send/3`
+- `interrupt/2`
+- `close/1`
 
-Adapter-facing validation/config/execution failures should be returned as structured error structs, not raw tuples, whenever the adapter is rejecting input or surfacing a known adapter/runtime failure mode.
+Steering, approval responses, and dynamic configuration are optional callbacks.
 
-Internal SDK/library tuples may still exist below the adapter boundary, but `run/2` and related public adapter entry points should normalize them before they escape.
+Each transport declares session fields, session provider options, turn fields,
+turn provider options, configuration fields, and
+`Jido.Harness.InteractionCapabilities`. Capability values distinguish
+`:native`, `:managed`, `:process`, and unsupported behavior.
+
+The transport declaration is the source of truth. A public session function may
+exist even when a particular provider transport rejects that capability.
+
+## Built-in transport matrix
+
+| Provider | Transport | Execution model |
+| --- | --- | --- |
+| Amp | `:stream_json_resume` | resumed stream-JSON process per turn |
+| Claude | `:stream_json_resume` | resumed stream-JSON process per turn |
+| Codex | `:exec_jsonl_resume` | resumed exec-JSONL process per turn |
+| Gemini | `:stream_json_resume` | resumed stream-JSON process per turn |
+| Grok | `:streaming_json_resume` | resumed streaming-JSON process per turn |
+| Kimi | `:acp` | persistent ACP JSON-RPC process |
+| OpenCode | `:acp` | persistent ACP JSON-RPC process |
+| Pi | `:rpc` | persistent JSONL-RPC process |
+| Z.AI | `:stream_json_resume` | Claude stream JSON with Z.AI environment mapping |
+
+Per-turn transports apply runtime and idle timeouts to the active process.
+Persistent protocol processes may remain idle indefinitely while waiting for
+session input, subject to the configured session idle timeout.
+
+## Verification
+
+An adapter change should pass deterministic mapper and fake-CLI tests, lifecycle
+and cleanup contracts, affected live integration profiles, documentation
+compilation, static analysis, and package build verification.

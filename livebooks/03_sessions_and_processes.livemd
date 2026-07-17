@@ -1,0 +1,190 @@
+# Interactive sessions and managed processes
+
+## What you will learn
+
+This notebook covers the two stateful lifecycle APIs: multi-turn provider
+sessions and direct local processes. Sessions use official provider headless
+protocols; managed processes use a structured executable plus argv without
+shell interpolation.
+
+By the end you will have:
+
+- opened a harness-owned provider session;
+- completed and queued normalized turns;
+- replayed the session lifecycle;
+- started a local process without a shell command;
+- consumed normalized stdout, stderr, and exit events.
+
+Read the [interactive-session guide](../guides/interactive_sessions.md) and
+[managed-process guide](../guides/managed_processes.md) for the corresponding
+API contracts.
+
+> The session section invokes a real provider and may consume API or
+> subscription usage. The managed-process section is entirely local.
+
+## Install the local package
+
+Livebook Desktop may not inherit the `PATH` from your interactive shell. Add
+the common CLI installation directories before resolving a provider. Extend
+`extra_cli_paths` when needed.
+
+```elixir
+extra_cli_paths = [
+  Path.join(System.user_home!(), ".local/bin"),
+  Path.join(System.user_home!(), ".local/share/mise/shims"),
+  Path.join(System.user_home!(), ".bun/bin"),
+  "/opt/homebrew/bin",
+  "/usr/local/bin"
+]
+
+path =
+  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
+  |> Enum.uniq()
+  |> Enum.join(":")
+
+System.put_env("PATH", path)
+
+Mix.install([
+  {:jido_harness, path: Path.expand("..", __DIR__)}
+])
+
+defmodule JidoHarnessLivebook do
+  def completed!({:ok, %{status: :completed} = result}), do: result
+
+  def completed!({:ok, result}) do
+    raise result.error || "provider turn finished with status #{inspect(result.status)}"
+  end
+
+  def completed!({:error, %_{} = error}), do: raise(error)
+  def completed!({:error, error}), do: raise("provider turn failed: #{inspect(error)}")
+end
+```
+
+## Start a multi-turn session
+
+Choose a provider whose status reports at least one session transport.
+
+```elixir
+provider = :codex
+cwd = Path.expand("..", __DIR__)
+
+{:ok, status} = Jido.Harness.status(provider)
+ready? = Jido.Harness.ProviderStatus.ready?(status)
+
+unless ready? do
+  raise """
+  #{provider} is not ready in this Livebook runtime.
+  executable: #{inspect(status.executable)}
+  error: #{inspect(status.error)}
+  PATH: #{System.get_env("PATH")}
+  """
+end
+
+%{
+  provider: provider,
+  ready?: ready?,
+  session_transports: Enum.map(status.session_transports, &{&1.name, &1.capabilities})
+}
+```
+
+```elixir
+{:ok, session_id} =
+  Jido.Harness.Session.start(provider, %{
+    cwd: cwd,
+    turn_runtime_timeout_ms: 300_000,
+    session_idle_timeout_ms: 600_000,
+    metadata: %{source: "sessions-livebook"}
+  })
+
+{:ok, session_info} = Jido.Harness.Session.info(session_id)
+session_info
+```
+
+## Send and queue turns
+
+`send_message/3` requires an idle session. `follow_up/3` queues a turn in FIFO
+order, so it is safe to submit the second request before awaiting the first.
+
+```elixir
+{:ok, first_turn_id} =
+  Jido.Harness.Session.send_message(
+    session_id,
+    "Reply with exactly: first-turn-ready"
+  )
+
+{:ok, second_turn_id} =
+  Jido.Harness.Session.follow_up(
+    session_id,
+    "Reply with exactly: second-turn-ready"
+  )
+
+%{first_turn_id: first_turn_id, queued_turn_id: second_turn_id}
+```
+
+```elixir
+first_turn =
+  session_id
+  |> Jido.Harness.Session.await(first_turn_id, 300_000)
+  |> JidoHarnessLivebook.completed!()
+
+second_turn =
+  session_id
+  |> Jido.Harness.Session.await(second_turn_id, 300_000)
+  |> JidoHarnessLivebook.completed!()
+
+%{
+  first: %{status: first_turn.status, text: first_turn.text},
+  second: %{status: second_turn.status, text: second_turn.text},
+  provider_session_id: second_turn.provider_session_id
+}
+```
+
+Session events include both lifecycle and turn boundaries. Closing is graceful;
+`kill/1` is available for forced cancellation.
+
+```elixir
+:ok = Jido.Harness.Session.close(session_id)
+{:ok, session_events} = Jido.Harness.Session.replay(session_id, cursor: 0, limit: 100)
+
+%{
+  event_types: Enum.map(session_events, & &1.type),
+  final_info: Jido.Harness.Session.info(session_id)
+}
+```
+
+## Run a local structured process
+
+This example starts the current Elixir executable directly. The code string is
+one argv value; no shell parses or interpolates it.
+
+```elixir
+elixir = System.find_executable("elixir") || raise "elixir executable not found"
+
+{:ok, process_id} =
+  Jido.Harness.Process.start(%{
+    executable: elixir,
+    argv: ["-e", ~S|IO.puts("stdout from a managed process"); IO.puts(:stderr, "stderr too")|],
+    cwd: cwd,
+    stdin: false,
+    runtime_timeout_ms: 30_000,
+    metadata: %{source: "processes-livebook"}
+  })
+
+{:ok, process_info} = Jido.Harness.Process.await(process_id, 30_000)
+{:ok, process_events} = Jido.Harness.Process.replay(process_id, cursor: 0, limit: 100)
+
+%{
+  process_id: process_id,
+  state: process_info.state,
+  exit_status: process_info.exit_status,
+  events: Enum.map(process_events, &%{sequence: &1.sequence, type: &1.type, data: &1.data})
+}
+```
+
+```elixir
+Jido.Harness.Process.prune(process_id)
+```
+
+```elixir
+Jido.Harness.Session.prune(session_id)
+```

@@ -1,0 +1,180 @@
+# Detached runs, streams, and replay
+
+## What you will learn
+
+This notebook demonstrates the supervised run lifecycle. A detached run is
+owned by Jido.Harness rather than this Livebook cell, so later cells can inspect
+or reattach to it by `run_id`.
+
+By the end you will have:
+
+- started and inspected one detached run;
+- consumed its pull-based cursor stream;
+- replayed bounded event pages;
+- awaited its normalized terminal result;
+- seen how cancellation and pruning fit the lifecycle.
+
+Read the [detached-runs guide](../guides/detached_runs.md) and
+[retention guide](../guides/streaming_replay_and_retention.md) for the
+corresponding API contracts.
+
+> Provider run cells may consume API or subscription usage.
+
+## Install the local package
+
+Livebook Desktop may not inherit the `PATH` from your interactive shell. Add
+the common CLI installation directories before resolving a provider. Extend
+`extra_cli_paths` when needed.
+
+```elixir
+extra_cli_paths = [
+  Path.join(System.user_home!(), ".local/bin"),
+  Path.join(System.user_home!(), ".local/share/mise/shims"),
+  Path.join(System.user_home!(), ".bun/bin"),
+  "/opt/homebrew/bin",
+  "/usr/local/bin"
+]
+
+path =
+  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
+  |> Enum.uniq()
+  |> Enum.join(":")
+
+System.put_env("PATH", path)
+
+Mix.install([
+  {:jido_harness, path: Path.expand("..", __DIR__)}
+])
+
+defmodule JidoHarnessLivebook do
+  def completed!({:ok, %{status: :completed} = result}), do: result
+
+  def completed!({:ok, result}) do
+    raise result.error || "provider run finished with status #{inspect(result.status)}"
+  end
+
+  def completed!({:error, %_{} = error}), do: raise(error)
+  def completed!({:error, error}), do: raise("provider run failed: #{inspect(error)}")
+end
+```
+
+## Start a detached run
+
+```elixir
+provider = :codex
+cwd = Path.expand("..", __DIR__)
+
+{:ok, provider_status} = Jido.Harness.status(provider)
+
+unless Jido.Harness.ProviderStatus.ready?(provider_status) do
+  raise """
+  #{provider} is not ready in this Livebook runtime.
+  executable: #{inspect(provider_status.executable)}
+  error: #{inspect(provider_status.error)}
+  PATH: #{System.get_env("PATH")}
+  """
+end
+
+{:ok, run_id} =
+  Jido.Harness.Run.start(provider, %{
+    prompt: "Reply with exactly: detached-run-ready",
+    cwd: cwd,
+    runtime_timeout_ms: 300_000,
+    metadata: %{source: "detached-runs-livebook"}
+  })
+
+run_id
+```
+
+The snapshot is redacted and safe to use for lifecycle decisions. Its output
+cursor tells consumers how many sequenced events have been retained so far.
+
+```elixir
+Jido.Harness.Run.info(run_id)
+```
+
+## Attach to the event stream
+
+The stream polls cursor-addressed retention rather than receiving an unbounded
+producer mailbox. Evaluating the next cell waits until the run reaches a
+terminal state.
+
+```elixir
+{:ok, event_stream} = Jido.Harness.Run.stream(run_id, poll_interval_ms: 25)
+events = Enum.to_list(event_stream)
+
+Enum.map(events, fn event ->
+  %{
+    sequence: event.sequence,
+    type: event.type,
+    turn_id: event.turn_id,
+    text: event.payload["text"]
+  }
+end)
+```
+
+## Await and replay
+
+Awaiting a finished run returns immediately. Replay can start at any cursor and
+is the durable source of truth when a result's bounded text tail is truncated.
+
+```elixir
+result =
+  run_id
+  |> Jido.Harness.Run.await(300_000)
+  |> JidoHarnessLivebook.completed!()
+
+%{
+  status: result.status,
+  text: result.text,
+  text_truncated?: result.text_truncated?,
+  usage: result.usage
+}
+```
+
+```elixir
+{:ok, first_page} = Jido.Harness.Run.replay(run_id, cursor: 0, limit: 5)
+next_cursor = case List.last(first_page) do
+  nil -> 0
+  event -> event.sequence
+end
+
+{:ok, second_page} = Jido.Harness.Run.replay(run_id, cursor: next_cursor, limit: 5)
+
+%{
+  first_page: Enum.map(first_page, &{&1.sequence, &1.type}),
+  second_page: Enum.map(second_page, &{&1.sequence, &1.type}),
+  next_cursor: next_cursor
+}
+```
+
+## Cancellation and pruning
+
+The following cell is intentionally disabled. Set `exercise_cancellation?` to
+`true` to start a second live request and request cancellation. Cancellation is
+cooperative at the provider boundary and always produces one normalized
+terminal result.
+
+```elixir
+exercise_cancellation? = false
+
+if exercise_cancellation? do
+  {:ok, cancellable_id} =
+    Jido.Harness.Run.start(provider, %{
+      prompt: "Wait briefly, then reply with exactly: cancellation-missed",
+      cwd: cwd
+    })
+
+  :ok = Jido.Harness.Run.cancel(cancellable_id)
+  Jido.Harness.Run.await(cancellable_id, 30_000)
+else
+  :skipped
+end
+```
+
+Terminal runs remain available for the configured retention period. Pruning is
+explicit when the caller no longer needs the journal.
+
+```elixir
+Jido.Harness.Run.prune(run_id)
+```
