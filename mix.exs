@@ -59,7 +59,6 @@ defmodule Jido.Harness.MixProject do
           "config",
           "docs",
           "lib",
-          "priv",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],

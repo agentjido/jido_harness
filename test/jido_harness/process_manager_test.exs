@@ -278,7 +278,7 @@ defmodule Jido.Harness.ProcessManagerTest do
   end
 
   test "runs the deterministic long-session fixture in a short PR-safe mode" do
-    fixture = Path.expand("../../priv/fixtures/long_running_cli.exs", __DIR__)
+    fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 
     assert {:ok, id} =
              Jido.Harness.start_process(%{

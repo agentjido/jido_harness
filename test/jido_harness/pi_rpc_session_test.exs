@@ -4,7 +4,7 @@ defmodule Jido.Harness.PiRPCSessionTest do
   setup do
     providers = Application.get_env(:jido_harness, :providers)
     config = Application.get_env(:jido_harness, :provider_config)
-    fixture = Path.expand("../../priv/fixtures/fake_pi_rpc.py", __DIR__)
+    fixture = Jido.Harness.TestHelpers.fixture_path("fake_pi_rpc.py")
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-pi-#{System.unique_integer([:positive])}")
 
     Application.put_env(:jido_harness, :providers, %{pi: Jido.Harness.Adapters.Pi})

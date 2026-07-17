@@ -1,6 +1,10 @@
 defmodule Jido.Harness.TestHelpers do
   @moduledoc false
 
+  @fixtures_dir Path.expand("fixtures", __DIR__)
+
+  def fixture_path(name), do: Path.join(@fixtures_dir, name)
+
   def configure_test_provider(context) do
     providers = Application.get_env(:jido_harness, :providers)
     config = Application.get_env(:jido_harness, :provider_config)

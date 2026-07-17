@@ -1,10 +1,10 @@
 defmodule Jido.Harness.ACPSessionTest do
   use ExUnit.Case, async: false
 
-  setup context do
+  setup do
     providers = Application.get_env(:jido_harness, :providers)
     config = Application.get_env(:jido_harness, :provider_config)
-    fixture = Path.expand("../../priv/fixtures/fake_acp_cli.py", __DIR__)
+    fixture = Jido.Harness.TestHelpers.fixture_path("fake_acp_cli.py")
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-acp-#{System.unique_integer([:positive])}")
 
     Application.put_env(:jido_harness, :providers, %{kimi: Jido.Harness.Adapters.Kimi})
@@ -21,7 +21,7 @@ defmodule Jido.Harness.ACPSessionTest do
       File.rm_rf!(journal_dir)
     end)
 
-    {:ok, Map.put(context, :fixture, fixture)}
+    :ok
   end
 
   test "ACP correlates fragmented JSONL responses and preserves context identity" do

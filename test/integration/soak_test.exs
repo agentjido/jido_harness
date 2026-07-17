@@ -5,7 +5,7 @@ defmodule Jido.Harness.Integration.SoakTest do
   @moduletag timeout: 7_200_000
 
   test "manages the deterministic fixture for 65 minutes" do
-    fixture = Path.expand("../../priv/fixtures/long_running_cli.exs", __DIR__)
+    fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 
     assert {:ok, process_id} =
              Jido.Harness.start_process(%{

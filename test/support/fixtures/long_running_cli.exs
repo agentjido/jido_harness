@@ -1,4 +1,11 @@
-duration = System.argv() |> List.first() |> case do nil -> 3_900_000; value -> String.to_integer(value) end
+duration =
+  System.argv()
+  |> List.first()
+  |> case do
+    nil -> 3_900_000
+    value -> String.to_integer(value)
+  end
+
 interval = System.argv() |> Enum.at(1, "1000") |> String.to_integer()
 started = System.monotonic_time(:millisecond)
 
