@@ -13,7 +13,7 @@ defmodule Jido.Harness.TestAdapter do
       capabilities: %Capabilities{streaming?: true, resume?: true},
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :max_turns,
         :system_prompt,
         :allowed_tools,
@@ -50,7 +50,7 @@ defmodule Jido.Harness.TestAdapter do
         {:error, :fixture_failure}
 
       "terminal-fail" ->
-        {:ok, [Event.new!(provider: :test, type: :session_failed, payload: %{"error" => "fixture terminal failure"})]}
+        {:ok, [Event.new!(provider: :test, type: :run_failed, payload: %{"error" => "fixture terminal failure"})]}
 
       "raise" ->
         raise "fixture raised"
@@ -60,6 +60,9 @@ defmodule Jido.Harness.TestAdapter do
 
       "slow" ->
         {:ok, slow_stream(request)}
+
+      "large" ->
+        {:ok, large_stream(request)}
 
       _ ->
         {:ok, successful_stream(request)}
@@ -91,8 +94,22 @@ defmodule Jido.Harness.TestAdapter do
     end)
   end
 
+  defp large_stream(request) do
+    text = String.duplicate("0123456789", 1_000)
+
+    [
+      event(:output_text_final, request, %{"text" => text}),
+      event(:turn_completed, request, %{})
+    ]
+  end
+
   defp event(type, request, payload) do
-    Event.new!(provider: :test, type: type, session_id: request.session_id, payload: payload)
+    Event.new!(
+      provider: :test,
+      type: type,
+      provider_session_id: request.provider_session_id || "fixture-session",
+      payload: payload
+    )
   end
 end
 

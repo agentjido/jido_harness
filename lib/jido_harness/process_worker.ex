@@ -2,9 +2,10 @@ defmodule Jido.Harness.ProcessWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo}
+  alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo, Redaction}
 
   @default_grace_ms 5_000
+  @terminal_statuses [:exited, :failed, :cancelled, :timed_out]
 
   def start_link({id, spec}) do
     GenServer.start_link(__MODULE__, {id, spec}, name: {:via, Registry, {Jido.Harness.ProcessRegistry, id}})
@@ -99,11 +100,13 @@ defmodule Jido.Harness.ProcessWorker do
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
 
   @impl true
-  def handle_info({:stdout, os_pid, data}, %{os_pid: os_pid} = state) do
+  def handle_info({:stdout, os_pid, data}, %{os_pid: os_pid, status: status} = state)
+      when status not in @terminal_statuses do
     {:noreply, state |> append(:stdout, :stdout, data) |> schedule_idle()}
   end
 
-  def handle_info({:stderr, os_pid, data}, %{os_pid: os_pid} = state) do
+  def handle_info({:stderr, os_pid, data}, %{os_pid: os_pid, status: status} = state)
+      when status not in @terminal_statuses do
     {:noreply, state |> append(:stderr, :stderr, data) |> schedule_idle()}
   end
 
@@ -159,15 +162,15 @@ defmodule Jido.Harness.ProcessWorker do
       metadata: %{}
     }
 
-    journal = append_journal(state.journal, event)
+    journal = append_journal(state.journal, event, Redaction.secrets_from_env(state.spec.env))
     :telemetry.execute([:jido, :harness, :process, type], %{count: 1}, %{process_id: state.id})
     %{state | sequence: sequence, buffer: Buffer.append(state.buffer, event), journal: journal}
   end
 
-  defp append_journal(nil, _event), do: nil
+  defp append_journal(nil, _event, _secrets), do: nil
 
-  defp append_journal(journal, event) do
-    case Journal.append(journal, Map.from_struct(event)) do
+  defp append_journal(journal, event, secrets) do
+    case Journal.append(journal, event |> Map.from_struct() |> Redaction.redact(secrets)) do
       {:ok, updated} -> updated
       {:error, _reason, updated} -> updated
     end
@@ -229,6 +232,8 @@ defmodule Jido.Harness.ProcessWorker do
   end
 
   defp begin_stop(state, _reason), do: state
+
+  defp finish(%{status: status} = state, _reason) when status in @terminal_statuses, do: state
 
   defp finish(state, reason) do
     cancel_timer(state.runtime_timer)

@@ -16,56 +16,51 @@ defmodule Jido.Harness.ProcessSpec do
     :retention
   ]
 
-  @enforce_keys [:executable]
-  defstruct executable: nil,
-            argv: [],
-            cwd: nil,
-            env: %{},
-            env_mode: :overlay,
-            stdin: true,
-            pty: false,
-            startup_timeout_ms: 15_000,
-            runtime_timeout_ms: :infinity,
-            idle_timeout_ms: :infinity,
-            metadata: %{},
-            retention: %{},
-            lifecycle_owner: nil
+  @timeout Zoi.union([Zoi.integer(), Zoi.literal(:infinity)])
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              executable: Zoi.string(),
+              argv: Zoi.array(Zoi.string()) |> Zoi.default([]),
+              cwd: Zoi.string() |> Zoi.nullish(),
+              env: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{}),
+              env_mode: Zoi.enum([:overlay, :replace]) |> Zoi.default(:overlay),
+              stdin: Zoi.boolean() |> Zoi.default(true),
+              pty: Zoi.any() |> Zoi.default(false),
+              startup_timeout_ms: Zoi.integer() |> Zoi.default(15_000),
+              runtime_timeout_ms: @timeout |> Zoi.default(:infinity),
+              idle_timeout_ms: @timeout |> Zoi.default(:infinity),
+              metadata: Zoi.map() |> Zoi.default(%{}),
+              retention: Zoi.map() |> Zoi.default(%{}),
+              lifecycle_owner: Zoi.pid() |> Zoi.nullish()
+            },
+            coerce: true
+          )
 
-  @type t :: %__MODULE__{
-          executable: String.t(),
-          argv: [String.t()],
-          cwd: String.t(),
-          env: %{optional(String.t()) => String.t() | false | nil},
-          env_mode: :overlay | :replace,
-          stdin: boolean(),
-          pty: boolean() | keyword(),
-          startup_timeout_ms: pos_integer(),
-          runtime_timeout_ms: pos_integer() | :infinity,
-          idle_timeout_ms: pos_integer() | :infinity,
-          metadata: map(),
-          retention: map(),
-          lifecycle_owner: pid() | nil
-        }
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  @doc "Returns the validation schema for shell-free process specifications."
+  @spec schema() :: Zoi.schema()
+  def schema, do: @schema
 
   @spec new(map() | keyword() | t()) :: {:ok, t()} | {:error, Jido.Harness.Error.t()}
   @doc "Validates and constructs a shell-free process specification."
   def new(%__MODULE__{} = spec), do: validate(spec)
 
-  def new(attrs) when is_map(attrs) or is_list(attrs) do
-    attrs = Map.new(attrs)
-
+  def new(attrs) when is_map(attrs) do
     case Enum.find(Map.keys(attrs), &(&1 not in @keys)) do
       nil ->
         attrs = Map.put_new(attrs, :cwd, File.cwd!())
 
-        try do
-          attrs |> then(&struct!(__MODULE__, &1)) |> validate()
-        rescue
-          error in [ArgumentError, KeyError] ->
+        case Zoi.parse(@schema, attrs) do
+          {:ok, spec} ->
+            validate(spec)
+
+          {:error, reason} ->
             {:error,
-             Jido.Harness.Error.validation("invalid process specification",
-               details: %{reason: Exception.message(error)}
-             )}
+             Jido.Harness.Error.validation("invalid process specification", details: %{reason: inspect(reason)})}
         end
 
       key ->
@@ -73,9 +68,24 @@ defmodule Jido.Harness.ProcessSpec do
     end
   end
 
+  def new(attrs) when is_list(attrs) do
+    if Enum.all?(attrs, &match?({_, _}, &1)),
+      do: new(Map.new(attrs)),
+      else: {:error, Jido.Harness.Error.validation("process specification must be a map")}
+  end
+
   def new(other),
     do:
       {:error, Jido.Harness.Error.validation("process specification must be a map", details: %{value: inspect(other)})}
+
+  @spec new!(map() | keyword() | t()) :: t()
+  @doc "Validates and constructs a process specification, raising on invalid input."
+  def new!(attrs) do
+    case new(attrs) do
+      {:ok, spec} -> spec
+      {:error, error} -> raise error
+    end
+  end
 
   @spec resolve_executable(String.t()) :: {:ok, String.t()} | {:error, Jido.Harness.Error.t()}
   @doc "Resolves an executable path without invoking a shell."
@@ -130,7 +140,10 @@ defmodule Jido.Harness.ProcessSpec do
         invalid("metadata and retention must be maps")
 
       true ->
-        {:ok, spec}
+        case Jido.Harness.RetentionOptions.normalize(spec.retention) do
+          {:ok, retention} -> {:ok, %{spec | retention: retention}}
+          {:error, _reason} = error -> error
+        end
     end
   end
 

@@ -39,7 +39,24 @@ defmodule Jido.Harness.Adapters.Amp do
         resume?: true,
         usage?: true
       },
-      normalized_options: [:model, :session_id, :mcp_config, :reasoning_effort],
+      default_session_transport: :sdk,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :sdk,
+          adapter: Jido.Harness.SessionAdapters.SDKRuntime,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :sdk,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            steer: :native,
+            interrupt: :native
+          },
+          session_options: [:model, :provider_session_id, :mcp_config, :reasoning_effort, :env],
+          session_provider_options: :adapter
+        }
+      ],
+      normalized_options: [:model, :provider_session_id, :mcp_config, :reasoning_effort],
       provider_options: @provider_options,
       install: %{npm: "@sourcegraph/amp"}
     }
@@ -53,7 +70,7 @@ defmodule Jido.Harness.Adapters.Amp do
       provider
       |> Map.put(:cwd, request.cwd)
       |> Map.put(:env, Map.merge(Map.get(context.config, :env, %{}), request.env))
-      |> Map.put(:continue_thread, request.session_id)
+      |> Map.put(:continue_thread, request.provider_session_id)
       |> Map.put(:mcp_config, request.mcp_config)
       |> Map.put(:model_payload, request.model)
       |> put_reasoning(request.reasoning_effort)

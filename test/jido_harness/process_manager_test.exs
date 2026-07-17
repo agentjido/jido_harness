@@ -130,6 +130,15 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
              Jido.Harness.start_process(%{executable: "/bin/echo", pty: ["not", "keyword"]})
+
+    assert {:error, %Jido.Harness.Error{message: "process specification must be a map"}} =
+             Jido.Harness.start_process([:invalid])
+
+    assert {:error, %Jido.Harness.Error{message: "await timeout must be :infinity or a non-negative integer"}} =
+             Jido.Harness.await_process("missing", -1)
+
+    assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
+             Jido.Harness.replay_process("missing", %{cursor: 0})
   end
 
   test "runs concurrent processes and an opt-in PTY" do
@@ -229,6 +238,25 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, %{state: :exited, journal_dir: nil}} = Jido.Harness.await_process(id, 5_000)
     assert {:ok, events} = Jido.Harness.replay_process(id, limit: 20)
     assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "memory-only")))
+  end
+
+  test "redacts request environment credentials from persisted process output" do
+    secret = "fixture-secret-#{System.unique_integer([:positive])}"
+
+    assert {:ok, id} =
+             Jido.Harness.start_process(%{
+               executable: "/bin/sh",
+               argv: ["-c", "printf %s \"$HARNESS_API_TOKEN\""],
+               env: %{"HARNESS_API_TOKEN" => secret},
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited, journal_dir: journal_dir}} = Jido.Harness.await_process(id, 5_000)
+    assert {:ok, events} = Jido.Harness.replay_process(id, limit: 20)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "[REDACTED]"))
+
+    persisted = journal_dir |> Path.join("*.jsonl") |> Path.wildcard() |> Enum.map_join(&File.read!/1)
+    refute persisted =~ secret
   end
 
   test "runs the deterministic long-session fixture in a short PR-safe mode" do

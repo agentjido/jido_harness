@@ -10,7 +10,7 @@ defmodule Jido.Harness.Adapters.JSONMapper do
 
     cond do
       type in ["init", "session_started", "session.start", "session.started"] ->
-        Helpers.event(provider, :session_started, session_id, raw, raw)
+        Helpers.event(provider, :run_started, session_id, raw, raw)
 
       type in ["turn_started", "turn.start", "turn.started"] ->
         Helpers.event(provider, :turn_started, session_id, raw, raw)
@@ -44,17 +44,29 @@ defmodule Jido.Harness.Adapters.JSONMapper do
       type in ["usage", "token_usage"] ->
         Helpers.event(provider, :usage, session_id, value(raw, [:usage, :stats], raw), raw)
 
+      type in ["thinking", "reasoning", "thinking_delta", "reasoning_delta"] and is_binary(text) ->
+        Helpers.event(provider, :thinking_delta, session_id, %{"text" => text}, raw)
+
+      type in ["command_output", "command_output_delta", "command.delta"] and is_binary(text) ->
+        Helpers.event(provider, :command_output_delta, session_id, %{"text" => text}, raw)
+
+      type in ["file_change", "file.changed", "file_change_delta"] ->
+        Helpers.event(provider, :file_change, session_id, raw, raw)
+
+      type in ["plan", "plan_updated", "plan.updated"] ->
+        Helpers.event(provider, :plan_updated, session_id, raw, raw)
+
       failure?(type, raw) ->
         Helpers.event(
           provider,
-          :session_failed,
+          :run_failed,
           session_id,
           %{"error" => value(raw, [:error, :message], inspect(raw))},
           raw
         )
 
       cancelled?(type, raw) ->
-        Helpers.event(provider, :session_cancelled, session_id, %{"reason" => value(raw, [:reason], "cancelled")}, raw)
+        Helpers.event(provider, :run_cancelled, session_id, %{"reason" => value(raw, [:reason], "cancelled")}, raw)
 
       completed?(type, raw) ->
         events =
@@ -66,7 +78,7 @@ defmodule Jido.Harness.Adapters.JSONMapper do
           [
             Helpers.event(
               provider,
-              :session_completed,
+              :run_completed,
               session_id,
               %{"status" => value(raw, [:status], "success")},
               raw

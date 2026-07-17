@@ -41,9 +41,41 @@ defmodule Jido.Harness.Adapters.Zai do
         resume?: true,
         usage?: true
       },
+      default_session_transport: :claude_sdk,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :claude_sdk,
+          adapter: Jido.Harness.SessionAdapters.ClaudeClient,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :claude_sdk,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            interrupt: :native,
+            approvals: :native,
+            dynamic_model: :native,
+            dynamic_configuration: :native
+          },
+          session_options: [
+            :model,
+            :provider_session_id,
+            :system_prompt,
+            :allowed_tools,
+            :disallowed_tools,
+            :add_dirs,
+            :mcp_config,
+            :approval_mode,
+            :sandbox_mode,
+            :reasoning_effort,
+            :env
+          ],
+          session_provider_options: :adapter,
+          configuration_options: [:model, :approval_mode]
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :max_turns,
         :system_prompt,
         :allowed_tools,
@@ -97,7 +129,7 @@ defmodule Jido.Harness.Adapters.Zai do
   def install(_config, options), do: Helpers.install_npm(:zai, "@anthropic-ai/claude-code", options)
 
   @doc false
-  def resolve_env(%RunRequest{} = request, config, options) do
+  def resolve_env(request, config, options) when is_struct(request) do
     config_env = config |> config_value(:env, %{}) |> stringify_env()
     request_env = stringify_env(request.env)
 
@@ -107,7 +139,8 @@ defmodule Jido.Harness.Adapters.Zai do
 
     timeout =
       request_env["API_TIMEOUT_MS"] || options[:api_timeout_ms] || config_value(config, :api_timeout_ms) ||
-        config_env["API_TIMEOUT_MS"] || request.runtime_timeout_ms
+        config_env["API_TIMEOUT_MS"] ||
+        Map.get(request, :runtime_timeout_ms, Map.get(request, :turn_runtime_timeout_ms, :infinity))
 
     token =
       request_env["ANTHROPIC_AUTH_TOKEN"] || request_env["ZAI_API_KEY"] || config_value(config, :api_key) ||

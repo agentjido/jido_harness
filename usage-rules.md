@@ -12,7 +12,7 @@
 - Start asynchronous work with `start/3` or `start_request/2`.
 - Reattach by `run_id` using `info/1`, `stream/2`, `replay/2`, and `await/2`.
 - Use `run_sync/3` only when blocking the caller is appropriate.
-- Keep provider resume `session_id` separate from harness `run_id`.
+- Keep provider resume `provider_session_id` separate from harness `run_id` and `session_id`.
 - Put escape hatches under `provider_options`; unknown keys are errors.
 
 ## Processes
@@ -32,8 +32,9 @@
 ## Testing
 
 - Keep provider integration tests opt-in.
-- Run `mix jido_harness.tools --strict` for the non-billable 11-tool CLI
-  inventory; Antigravity, Aider, and Goose are version probes, not providers.
+- Run `mix jido_harness.check --inventory --strict` for the non-billable
+  11-tool CLI inventory; Antigravity, Aider, and Goose are version probes, not
+  providers.
 - Use `mix jido_harness.query PROVIDER "PROMPT"` for explicit live ad hoc
   checks; `all` runs registered providers sequentially and may incur usage.
 - Use deterministic fixture CLIs for PR tests and the 65-minute soak profile.

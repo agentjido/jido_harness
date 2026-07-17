@@ -1,28 +1,37 @@
 defmodule Jido.Harness.Error do
   @moduledoc "A provider-neutral harness error."
 
-  @type category :: :validation | :configuration | :provider | :process | :execution | :timeout | :cancelled | :internal
-  @type t :: %__MODULE__{
-          category: category(),
-          provider: atom() | nil,
-          run_id: String.t() | nil,
-          message: String.t(),
-          details: map(),
-          cause: term()
-        }
+  @categories [:validation, :configuration, :provider, :process, :execution, :timeout, :cancelled, :internal]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              category: Zoi.enum(@categories) |> Zoi.default(:internal),
+              provider: Zoi.atom() |> Zoi.nullish(),
+              run_id: Zoi.string() |> Zoi.nullish(),
+              message: Zoi.string() |> Zoi.default("harness error"),
+              details: Zoi.map() |> Zoi.default(%{}),
+              cause: Zoi.any() |> Zoi.nullish()
+            },
+            coerce: true
+          )
 
-  defexception category: :internal,
-               provider: nil,
-               run_id: nil,
-               message: "harness error",
-               details: %{},
-               cause: nil
+  @type category :: unquote(Enum.reduce(@categories, &{:|, [], [&1, &2]}))
+  @type t :: unquote(Zoi.type_spec(@schema))
+  defexception Zoi.Struct.struct_fields(@schema)
+
+  @doc "Returns the validation schema for normalized harness exceptions."
+  @spec schema() :: Zoi.schema()
+  def schema, do: @schema
 
   @spec new(category(), String.t(), keyword() | map()) :: t()
   @doc "Builds a normalized harness error."
   def new(category, message, attrs \\ %{}) when is_atom(category) and is_binary(message) do
     attrs = Map.new(attrs)
-    struct!(__MODULE__, Map.merge(attrs, %{category: category, message: message}))
+
+    case Zoi.parse(@schema, Map.merge(attrs, %{category: category, message: message})) do
+      {:ok, error} -> error
+      {:error, reason} -> raise ArgumentError, "invalid harness error: #{inspect(reason)}"
+    end
   end
 
   @spec validation(String.t(), keyword() | map()) :: t()

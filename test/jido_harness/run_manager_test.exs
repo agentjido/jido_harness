@@ -10,12 +10,14 @@ defmodule Jido.Harness.RunManagerTest do
   end
 
   test "returns normalized results with ordered replay and one terminal event" do
-    assert {:ok, run_id} = Jido.Harness.start(:test, %{prompt: "ok", session_id: "provider-session"})
+    assert {:ok, run_id} =
+             Jido.Harness.start(:test, %{prompt: "ok", provider_session_id: "provider-session"})
+
     assert {:ok, result} = Jido.Harness.await(run_id, 5_000)
 
     assert result.run_id == run_id
     assert result.provider == :test
-    assert result.session_id == "provider-session"
+    assert result.provider_session_id == "provider-session"
     assert result.status == :completed
     assert result.text == "fixture-ok"
     assert result.usage == %{"input_tokens" => 2, "output_tokens" => 1}
@@ -24,8 +26,8 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, replayed} = Jido.Harness.replay(run_id, limit: 100)
     assert Enum.map(replayed, & &1.sequence) == Enum.to_list(1..length(replayed))
     assert Enum.count(replayed, &Jido.Harness.Event.terminal?/1) == 1
-    assert List.first(replayed).type == :session_started
-    assert List.last(replayed).type == :session_completed
+    assert List.first(replayed).type == :run_started
+    assert List.last(replayed).type == :run_completed
 
     assert {:ok, stream} = Jido.Harness.stream(run_id, poll_interval_ms: 1)
     assert Enum.map(Enum.to_list(stream), & &1.sequence) == Enum.map(replayed, & &1.sequence)
@@ -50,6 +52,22 @@ defmodule Jido.Harness.RunManagerTest do
 
     assert run_id == result.run_id
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+  end
+
+  test "retains a bounded text tail for large results and marks truncation" do
+    config = Application.fetch_env!(:jido_harness, :provider_config)
+    test_config = config.test
+    retention = Map.put(test_config.retention, :memory_bytes, 256)
+    Application.put_env(:jido_harness, :provider_config, %{config | test: %{test_config | retention: retention}})
+
+    assert {:ok, result} = Jido.Harness.run_sync(:test, "large", await_timeout: 5_000)
+    assert result.status == :completed
+    assert result.text_truncated?
+    assert byte_size(result.text) == 256
+    assert String.ends_with?(String.duplicate("0123456789", 1_000), result.text)
+
+    assert {:ok, events} = Jido.Harness.replay(result.run_id, limit: 100)
+    assert Enum.any?(events, &(&1.type == :output_text_final))
   end
 
   test "status exposes smoke readiness and lifecycle capabilities" do
@@ -150,7 +168,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, result} = Jido.Harness.await(run_id, 5_000)
     assert result.status == :cancelled
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
-    assert List.last(result.events).type == :session_cancelled
+    assert List.last(result.events).type == :run_cancelled
   end
 
   test "run-level runtime and idle timeouts cover SDK-backed adapters" do
@@ -160,7 +178,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, runtime_result} = Jido.Harness.await(runtime_id, 5_000)
     assert runtime_result.status == :failed
     assert %Jido.Harness.Error{category: :timeout} = runtime_result.error
-    assert List.last(runtime_result.events).type == :session_failed
+    assert List.last(runtime_result.events).type == :run_failed
 
     assert {:ok, idle_id} =
              Jido.Harness.start(:test, %{prompt: "wait", idle_timeout_ms: 30})
@@ -214,6 +232,20 @@ defmodule Jido.Harness.RunManagerTest do
 
     after_ids = Jido.Harness.list_runs() |> Enum.map(& &1.run_id) |> MapSet.new()
     assert after_ids == before_ids
+  end
+
+  test "returns validation errors for malformed option lists and await timeouts" do
+    assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
+             Jido.Harness.start(:test, "ok", [:invalid])
+
+    assert {:error, %Jido.Harness.Error{message: "request must be a map or key-value list"}} =
+             Jido.Harness.start(:test, [:invalid])
+
+    assert {:error, %Jido.Harness.Error{message: "await timeout must be :infinity or a non-negative integer"}} =
+             Jido.Harness.await("missing", -1)
+
+    assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
+             Jido.Harness.replay("missing", %{cursor: 0})
   end
 
   defp await_owned_process(run_id, attempts \\ 100)

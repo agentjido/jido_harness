@@ -27,6 +27,10 @@ defmodule Jido.Harness.Retention do
     |> Enum.filter(&expired?(&1.finished_at, now, ttl))
     |> Enum.each(&Jido.Harness.RunManager.prune(&1.run_id))
 
+    Jido.Harness.SessionManager.list()
+    |> Enum.filter(&expired?(&1.finished_at, now, ttl))
+    |> Enum.each(&Jido.Harness.SessionManager.prune(&1.session_id))
+
     schedule(Map.get(config, :retention_sweep_ms, @default_interval_ms))
     {:noreply, state}
   end

@@ -14,10 +14,41 @@ defmodule Jido.Harness.Adapters.Gemini do
       name: "Gemini CLI",
       executable: "gemini",
       docs_url: "https://github.com/google-gemini/gemini-cli",
-      capabilities: %Capabilities{streaming?: true, tool_calls?: true, tool_results?: true, resume?: true, usage?: true},
+      capabilities: %Capabilities{
+        streaming?: true,
+        tool_calls?: true,
+        tool_results?: true,
+        resume?: true,
+        usage?: true
+      },
+      default_session_transport: :sdk,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :sdk,
+          adapter: Jido.Harness.SessionAdapters.SDKRuntime,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :sdk,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            interrupt: :native
+          },
+          session_options: [
+            :model,
+            :provider_session_id,
+            :system_prompt,
+            :allowed_tools,
+            :add_dirs,
+            :approval_mode,
+            :sandbox_mode,
+            :env
+          ],
+          session_provider_options: :adapter
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :system_prompt,
         :allowed_tools,
         :add_dirs,
@@ -61,9 +92,9 @@ defmodule Jido.Harness.Adapters.Gemini do
     sdk = Map.get(context.config, :sdk_module, GeminiCliSdk)
 
     source =
-      if request.session_id do
+      if request.provider_session_id do
         session_module = Map.get(context.config, :session_module, GeminiCliSdk.Session)
-        session_module.resume(request.session_id, options, request.prompt)
+        session_module.resume(request.provider_session_id, options, request.prompt)
       else
         sdk.execute(request.prompt, options)
       end

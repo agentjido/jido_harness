@@ -12,24 +12,33 @@ Generated tests are tagged `:integration`, use a two-hour watchdog, and verify
 status, a minimal run, event ordering, terminal uniqueness, and caller-detached
 lifecycle behavior.
 
-## Mix task
+## Readiness and inventory
 
-Verify the complete local CLI inventory without making provider requests:
+Check registered provider readiness without making provider requests:
 
 ```console
-mix jido_harness.tools
-mix jido_harness.tools --tools claude,codex,antigravity
-mix jido_harness.tools --strict
-mix jido_harness.tools --json
+mix jido_harness.check
+mix jido_harness.check --providers codex,kimi
+mix jido_harness.check --providers codex,kimi --install
 ```
 
-The task executes only each tool's version command, using the harness process
-manager so startup, output capture, timeout handling, and cleanup are exercised.
-It reports the resolved executable path, expected installation source, update
-commands, and minimum tested version. `--strict` fails for missing, failed,
-unrecognized, or older versions; newer versions pass. It does not attempt
-authentication. Use `mix jido_harness.live` for adapter authentication and
-readiness reporting, then opt into a smoke request with `--test`.
+The command reports installation, compatibility, authentication, smoke
+readiness, and copyable installation recipes. Authentication can be `unknown`
+when a CLI uses cached login; a smoke test is the definitive check.
+
+Add the complete version inventory when needed:
+
+```console
+mix jido_harness.check --inventory
+mix jido_harness.check --tools claude,codex,antigravity
+mix jido_harness.check --inventory --strict
+mix jido_harness.check --inventory --json
+```
+
+Inventory probes execute only each tool's version command through the harness
+process manager. They report the resolved executable path, expected source,
+update commands, and minimum tested version. Strict mode rejects missing,
+failed, unrecognized, or older versions; newer versions pass.
 
 The inventory covers Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI, Kimi
 Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity, Aider, and
@@ -54,27 +63,14 @@ mix jido_harness.query all "Reply with exactly: ready" --expect ready --timeout 
 
 The task attempts every selected provider and reports the complete matrix before
 failing if any run failed, returned empty text, or missed `--expect`. Additional
-options include `--cwd`, `--model`, `--session-id`, `--max-turns`,
+options include `--cwd`, `--model`, `--provider-session-id`, `--max-turns`,
 `--idle-timeout`, `--env-file`, and `--json`. Timeout values are seconds. Query
 runs are live provider work and may consume paid API or subscription usage.
-
-Start with the live operator task. With no flags it only runs non-billable
-version and readiness probes for all registered providers:
-
-```console
-mix jido_harness.live
-mix jido_harness.live --providers codex,kimi
-```
-
-It reports whether each CLI is installed and compatible, whether an API-key
-environment variable proves authentication, and whether the adapter is ready
-for a smoke request. Authentication can be `unknown` when a CLI uses cached
-login; a smoke test is the definitive check.
 
 Missing CLIs are printed with their exact recipe. Installation is opt-in:
 
 ```console
-mix jido_harness.live --providers codex,kimi --install
+mix jido_harness.check --providers codex,kimi --install
 ```
 
 The built-in recipes are:
@@ -95,22 +91,25 @@ Z.AI uses the officially supported Claude Code integration, so Claude and Z.AI
 share one CLI installation. Follow the provider documentation link printed by
 the task for cached login or API-key setup.
 
-Live requests require `--test` and may incur provider usage:
+Automated live requests are explicit integration profiles and may incur
+provider usage:
 
 ```console
-mix jido_harness.live --providers codex --test --profile smoke
-mix jido_harness.live --providers amp,claude --test --profile contract
-mix jido_harness.live --test --profile lifecycle --strict
-mix jido_harness.live --providers kimi --test --profile smoke \
+mix jido_harness.integration --providers codex --profile smoke
+mix jido_harness.integration --providers amp,claude --profile contract
+mix jido_harness.integration --profile lifecycle --strict
+mix jido_harness.integration --providers kimi --profile smoke \
   --env-file /absolute/path/to/provider.env
 ```
 
-The live task delegates execution to the lower-level integration runner:
+Additional profiles include:
 
 ```console
 mix jido_harness.integration --providers amp,claude --profile smoke
 mix jido_harness.integration --profile contract
 mix jido_harness.integration --profile lifecycle --strict
+mix jido_harness.integration --profile interactive --provider all
+mix jido_harness.integration --profile interactive --provider all --strict
 mix jido_harness.integration --profile soak
 ```
 
@@ -119,7 +118,23 @@ Profiles are:
 - `smoke`: status/readiness and one minimal run;
 - `contract`: canonical events, result consistency, replay, and reattachment;
 - `lifecycle`: caller death, resume where supported, cancellation, and cleanup;
+- `interactive`: live two-turn context, interruption, session replay, and
+  graceful close through each provider's selected session transport;
 - `soak`: the deterministic local fixture for 65 minutes without provider cost.
+
+## Interactive operator task
+
+Open a headless interactive session for manual testing:
+
+```console
+mix jido_harness.chat codex
+mix jido_harness.chat codex --transport app_server --format jsonl
+mix jido_harness.chat kimi
+```
+
+The command set is `/send`, `/follow-up`, `/steer`, `/interrupt`, `/approve`,
+`/deny`, `/status`, and `/close`. Unsupported commands return capability errors;
+the task never falls back to screen-scraping or controlling a provider TUI.
 
 Unavailable providers are non-fatal unless `--strict` is supplied. `--env-file`
 loads simple `KEY=value` lines and never replaces an already-set variable. Keep

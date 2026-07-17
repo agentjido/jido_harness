@@ -77,9 +77,54 @@ harness run ID:
 ```elixir
 Jido.Harness.start(:grok, %{
   prompt: "Continue the refactor",
-  session_id: provider_session_id
+  provider_session_id: provider_session_id
 })
 ```
+
+## Interactive sessions
+
+Sessions are harness-owned, caller-independent conversations. The harness
+`session_id` is used for lookup and lifecycle control; the distinct
+`provider_session_id` is the provider's resume token.
+
+```elixir
+{:ok, session_id} =
+  Jido.Harness.open_session(:codex, %{
+    cwd: File.cwd!(),
+    sandbox_mode: :workspace_write
+  })
+
+{:ok, turn_id} = Jido.Harness.send_message(session_id, "Explain this repository")
+{:ok, %Jido.Harness.TurnResult{} = turn} =
+  Jido.Harness.await_turn(session_id, turn_id, 600_000)
+
+{:ok, queued_id} = Jido.Harness.follow_up(session_id, "Now identify the main risks")
+{:ok, _queued} = Jido.Harness.await_turn(session_id, queued_id, 600_000)
+:ok = Jido.Harness.close_session(session_id)
+```
+
+`send_message/3` requires an idle session. `follow_up/3` queues FIFO. An
+`await_turn/3` timeout does not interrupt the turn. Unsupported steering,
+approvals, structured input, or dynamic configuration return a normalized
+capability error before provider dispatch.
+
+Run and turn results expose `text_truncated?`. The result text is bounded by the
+configured in-memory retention limit; use cursor replay when that flag is true
+to consume the complete journaled event sequence.
+
+The default transports are SDK sessions for Amp, Claude, Gemini, and Z.AI;
+resumed JSONL turns for Codex and Grok; ACP for Kimi and OpenCode; and JSONL RPC
+for Pi. Codex app-server is experimental, version-gated, and must be selected
+explicitly:
+
+```console
+mix jido_harness.chat codex
+mix jido_harness.chat codex --transport app_server --format jsonl
+```
+
+The chat task accepts ordinary messages plus `/send`, `/follow-up`, `/steer`,
+`/interrupt`, `/approve`, `/deny`, `/status`, and `/close`. It communicates with
+headless provider protocols and never automates a provider TUI.
 
 Unknown normalized and provider-specific keys are rejected. Provider escape
 hatches are nested and cannot shadow normalized fields:
@@ -193,25 +238,27 @@ end
 Integration tests are excluded by default. Run live profiles explicitly:
 
 ```console
-mix jido_harness.tools --strict
-mix jido_harness.live
+mix jido_harness.check
+mix jido_harness.check --inventory --strict
 mix jido_harness.query codex "Explain this repository in one sentence."
 mix jido_harness.query all "Reply with exactly: ready" --expect ready
-mix jido_harness.live --providers codex,kimi --install
-mix jido_harness.live --providers codex,grok --test --profile smoke
-mix jido_harness.live --test --profile smoke --strict
+mix jido_harness.check --providers codex,kimi --install
 
-# Lower-level integration runner
 mix jido_harness.integration --providers codex,grok --profile smoke
 mix jido_harness.integration --providers codex --profile lifecycle --strict
+mix jido_harness.integration --profile interactive --provider all
+mix jido_harness.integration --profile interactive --provider all --strict
 mix jido_harness.integration --profile soak
 ```
 
-`mix jido_harness.tools` is a non-billable local inventory check. It runs only
-version commands through the managed process runtime and records the expected
-installation source, executable path, update command, and minimum tested
-version. Use `--tools claude,codex` to select entries, `--strict` to reject
-missing/outdated tools, or `--json` for machine-readable output.
+`mix jido_harness.check` is the single non-billable operator check. By default
+it reports installation, compatibility, authentication, smoke readiness, and
+installation recipes for registered providers. Use `--install` to run a
+provider's explicit npm recipe. Add `--inventory` to run version commands for
+the complete local CLI inventory through the managed process runtime. Use
+`--tools claude,codex` to select inventory entries, `--strict` to reject
+unavailable providers or missing/outdated tools, or `--json` for
+machine-readable output. It never sends an agent prompt.
 
 The inventory includes Claude Code, Codex, Amp, Gemini CLI, Antigravity CLI,
 Kimi Code, Grok, pi-coding-agent, Aider, Goose, and OpenCode. Antigravity,
@@ -221,16 +268,14 @@ and cannot be selected for harness contract or live provider tests.
 `mix jido_harness.query` sends an arbitrary prompt through one adapter, a
 comma-separated selection, or every registered adapter. Multi-provider queries
 run sequentially and print a complete success/failure matrix. Use `--timeout`
-for a per-provider limit in seconds, `--cwd`, `--model`, `--session-id`,
+for a per-provider limit in seconds, `--cwd`, `--model`, `--provider-session-id`,
 `--max-turns`, `--expect` for an exact-response assertion, or `--json` for
 machine-readable results. Unlike inventory and readiness checks, query runs can
 consume paid API or subscription usage.
 
-`mix jido_harness.live` is non-billable by default: it probes every registered
-CLI, reports installation, compatibility, authentication, and smoke readiness,
-then prints installation recipes for anything unavailable. `--install` runs the
-reported npm recipes through the managed process runtime. `--test` is the
-explicit switch that starts provider requests and may incur usage.
+`mix jido_harness.integration` owns automated live profiles; there is no second
+operator task that forwards to it. Live provider work is therefore always
+visibly a `query`, `chat`, or `integration` command and may incur usage.
 
 See [integration testing](docs/integration_testing.md) and the
 [v2 migration guide](docs/migration_v2.md).

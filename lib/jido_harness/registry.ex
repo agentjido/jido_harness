@@ -41,7 +41,8 @@ defmodule Jido.Harness.Registry do
   @spec spec(atom()) :: {:ok, AdapterSpec.t()} | {:error, term()}
   def spec(provider) do
     with {:ok, adapter} <- lookup(provider),
-         %AdapterSpec{} = spec <- adapter.spec(),
+         %AdapterSpec{} = raw_spec <- adapter.spec(),
+         {:ok, spec} <- AdapterSpec.new(Map.from_struct(raw_spec)),
          true <- spec.provider == provider do
       {:ok, spec}
     else

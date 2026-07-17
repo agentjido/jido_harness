@@ -47,21 +47,27 @@ defmodule Jido.Harness.RunManager do
   end
 
   def replay(id, options \\ []) do
-    cursor = Keyword.get(options, :cursor, 0)
-    limit = Keyword.get(options, :limit, 100)
-
-    with :ok <- validate_replay(cursor, limit) do
+    with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
+         cursor = Keyword.get(options, :cursor, 0),
+         limit = Keyword.get(options, :limit, 100),
+         :ok <- validate_replay(cursor, limit) do
       call(id, {:replay, cursor, limit})
     end
   end
 
   def stream(id, options \\ []) do
-    with {:ok, _info} <- info(id) do
+    with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
+         {:ok, _info} <- info(id) do
       {:ok, CursorStream.build(&replay(id, cursor: &1, limit: &2), fn -> info(id) end, &RunInfo.terminal?/1, options)}
     end
   end
 
-  def await(id, timeout \\ :infinity), do: await_result(id, timeout, System.monotonic_time(:millisecond))
+  def await(id, timeout \\ :infinity) do
+    with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
+      await_result(id, timeout, System.monotonic_time(:millisecond))
+    end
+  end
+
   def cancel(id), do: call(id, :cancel)
   def prune(id), do: call(id, :prune)
 

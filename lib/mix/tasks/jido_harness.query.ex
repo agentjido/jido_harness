@@ -59,7 +59,7 @@ defmodule Mix.Tasks.JidoHarness.Query do
         strict: [
           cwd: :string,
           model: :string,
-          session_id: :string,
+          provider_session_id: :string,
           timeout: :integer,
           idle_timeout: :integer,
           max_turns: :integer,
@@ -129,7 +129,7 @@ defmodule Mix.Tasks.JidoHarness.Query do
     }
     |> put_optional(:idle_timeout_ms, seconds_to_ms(options[:idle_timeout]))
     |> put_optional(:model, options[:model])
-    |> put_optional(:session_id, options[:session_id])
+    |> put_optional(:provider_session_id, options[:provider_session_id])
     |> put_optional(:max_turns, options[:max_turns])
   end
 
@@ -154,9 +154,10 @@ defmodule Mix.Tasks.JidoHarness.Query do
       ok: is_nil(error),
       provider: Atom.to_string(result.provider),
       run_id: result.run_id,
-      session_id: result.session_id,
+      provider_session_id: result.provider_session_id,
       status: Atom.to_string(result.status),
       text: text,
+      text_truncated: result.text_truncated? || false,
       usage: result.usage || %{},
       duration_ms: elapsed(started_at),
       error: error
@@ -179,9 +180,10 @@ defmodule Mix.Tasks.JidoHarness.Query do
       ok: false,
       provider: Atom.to_string(provider),
       run_id: run_id,
-      session_id: nil,
+      provider_session_id: nil,
       status: "failed",
       text: "",
+      text_truncated: false,
       usage: %{},
       duration_ms: elapsed(started_at),
       error: error
@@ -192,6 +194,7 @@ defmodule Mix.Tasks.JidoHarness.Query do
     Mix.shell().info("[#{outcome.provider}] run_id=#{outcome.run_id || "not-started"} status=#{outcome.status}")
 
     if outcome.text != "", do: Mix.shell().info(outcome.text)
+    if outcome.text_truncated, do: Mix.shell().error("[#{outcome.provider}] response shows only the retained text tail")
     if outcome.error, do: Mix.shell().error("[#{outcome.provider}] #{outcome.error}")
   end
 

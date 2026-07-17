@@ -53,17 +53,18 @@ defmodule Jido.Harness.ProcessManager do
 
   @doc "Returns up to `limit` retained events after the supplied cursor."
   def replay_process(id, options \\ []) do
-    cursor = Keyword.get(options, :cursor, 0)
-    limit = Keyword.get(options, :limit, 100)
-
-    with :ok <- validate_replay(cursor, limit) do
+    with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
+         cursor = Keyword.get(options, :cursor, 0),
+         limit = Keyword.get(options, :limit, 100),
+         :ok <- validate_replay(cursor, limit) do
       call(id, {:replay, cursor, limit})
     end
   end
 
   @doc "Returns a pull-based process event stream starting at an optional cursor."
   def stream_process(id, options \\ []) do
-    with {:ok, _info} <- info_process(id) do
+    with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
+         {:ok, _info} <- info_process(id) do
       {:ok,
        CursorStream.build(
          &replay_process(id, cursor: &1, limit: &2),
@@ -75,7 +76,11 @@ defmodule Jido.Harness.ProcessManager do
   end
 
   @doc "Waits for termination without cancelling the process when the wait times out."
-  def await_process(id, timeout \\ :infinity), do: await(id, timeout, System.monotonic_time(:millisecond))
+  def await_process(id, timeout \\ :infinity) do
+    with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
+      await(id, timeout, System.monotonic_time(:millisecond))
+    end
+  end
 
   @doc "Writes binary data to the process's standard input."
   def send_input(id, data) when is_binary(data), do: call(id, {:input, data})
@@ -97,8 +102,10 @@ defmodule Jido.Harness.ProcessManager do
 
   @doc "Builds an explicitly unsafe shell-backed specification. Built-in adapters never call this."
   def unsafe_shell_spec(command, options \\ []) when is_binary(command) do
-    shell = System.find_executable("sh") || "/bin/sh"
-    options |> Map.new() |> Map.merge(%{executable: shell, argv: ["-c", command]}) |> ProcessSpec.new()
+    with {:ok, options} <- Jido.Harness.Validation.keyword_options(options) do
+      shell = System.find_executable("sh") || "/bin/sh"
+      options |> Map.new() |> Map.merge(%{executable: shell, argv: ["-c", command]}) |> ProcessSpec.new()
+    end
   end
 
   defp await(id, timeout, started) do

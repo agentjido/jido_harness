@@ -36,7 +36,26 @@ defmodule Jido.Harness.Adapters.OpenCode do
       executable: "opencode",
       docs_url: "https://opencode.ai/docs",
       capabilities: %Capabilities{streaming?: true, native_cancel?: true},
-      normalized_options: [:model, :session_id, :approval_mode, :attachments, :reasoning_effort],
+      default_session_transport: :acp,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :acp,
+          adapter: Jido.Harness.SessionAdapters.ACP,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :acp,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            interrupt: :native,
+            approvals: :native,
+            multimodal: :native
+          },
+          session_options: [:provider_session_id, :mcp_config, :env],
+          session_provider_options: [:cli_path],
+          turn_options: [:attachments, :content]
+        }
+      ],
+      normalized_options: [:model, :provider_session_id, :approval_mode, :attachments, :reasoning_effort],
       normalized_values: %{approval_mode: [:default, :prompt, :auto_approve]},
       provider_options: @provider_options,
       install: %{npm: "opencode-ai"}
@@ -73,7 +92,7 @@ defmodule Jido.Harness.Adapters.OpenCode do
       argv =
         ["run"] ++
           pair("--model", request.model) ++
-          pair("--session", request.session_id) ++
+          pair("--session", request.provider_session_id) ++
           pair("--variant", request.reasoning_effort) ++
           repeat("--file", request.attachments) ++
           pair("--agent", options[:agent]) ++
@@ -97,8 +116,10 @@ defmodule Jido.Harness.Adapters.OpenCode do
          details: %{field: :approval_mode}
        )}
 
-  defp validate_options(%{session_id: session_id}, %{continue: true}) when is_binary(session_id),
-    do: {:error, Error.validation("OpenCode session_id and provider continue cannot be combined", provider: :opencode)}
+  defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
+    do:
+      {:error,
+       Error.validation("OpenCode provider_session_id and provider continue cannot be combined", provider: :opencode)}
 
   defp validate_options(_request, _options), do: :ok
 

@@ -2,30 +2,51 @@ defmodule Jido.Harness.Event do
   @moduledoc "A sequenced provider-neutral event emitted by a harness run."
 
   @types [
+    :run_started,
+    :run_completed,
+    :run_failed,
+    :run_cancelled,
     :session_started,
+    :session_ready,
+    :session_idle,
+    :session_closed,
+    :session_failed,
+    :session_cancelled,
+    :input_accepted,
+    :turn_queued,
     :turn_started,
     :output_text_delta,
     :output_text_final,
     :thinking_delta,
+    :command_output_delta,
     :tool_call,
     :tool_result,
     :file_change,
+    :plan_updated,
     :usage,
     :turn_completed,
-    :session_completed,
-    :session_failed,
-    :session_cancelled,
+    :turn_failed,
+    :turn_interrupted,
+    :approval_requested,
+    :approval_resolved,
+    :queue_changed,
     :provider_event
   ]
-  @terminal_types [:session_completed, :session_failed, :session_cancelled]
+  @run_terminal_types [:run_completed, :run_failed, :run_cancelled]
+  @session_terminal_types [:session_closed, :session_failed, :session_cancelled]
+  @turn_terminal_types [:turn_completed, :turn_failed, :turn_interrupted]
+  @terminal_types @run_terminal_types ++ @session_terminal_types
 
   @schema Zoi.struct(
             __MODULE__,
             %{
               type: Zoi.enum(@types),
               run_id: Zoi.string() |> Zoi.nullish(),
-              provider: Zoi.atom(),
               session_id: Zoi.string() |> Zoi.nullish(),
+              provider: Zoi.atom(),
+              provider_session_id: Zoi.string() |> Zoi.nullish(),
+              turn_id: Zoi.string() |> Zoi.nullish(),
+              request_id: Zoi.string() |> Zoi.nullish(),
               sequence: Zoi.integer() |> Zoi.default(0),
               timestamp: Zoi.string(),
               payload: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{}),
@@ -47,6 +68,18 @@ defmodule Jido.Harness.Event do
   @doc "Returns whether an event or event type terminates a run."
   def terminal?(%__MODULE__{type: type}), do: terminal?(type)
   def terminal?(type), do: type in @terminal_types
+
+  @doc "Returns whether an event terminates a finite run."
+  def run_terminal?(%__MODULE__{type: type}), do: run_terminal?(type)
+  def run_terminal?(type), do: type in @run_terminal_types
+
+  @doc "Returns whether an event terminates an interactive session."
+  def session_terminal?(%__MODULE__{type: type}), do: session_terminal?(type)
+  def session_terminal?(type), do: type in @session_terminal_types
+
+  @doc "Returns whether an event terminates a turn while leaving its session available."
+  def turn_terminal?(%__MODULE__{type: type}), do: turn_terminal?(type)
+  def turn_terminal?(type), do: type in @turn_terminal_types
 
   @spec schema() :: Zoi.schema()
   @doc "Returns the Zoi schema used to validate canonical events."
@@ -82,7 +115,13 @@ defmodule Jido.Harness.Event do
   @spec attach(t(), String.t(), atom(), pos_integer()) :: t()
   @doc "Attaches stable run identity and sequence information to an adapter event."
   def attach(%__MODULE__{} = event, run_id, provider, sequence) do
-    %{event | run_id: run_id, provider: provider, sequence: sequence}
+    %{event | run_id: run_id, session_id: nil, provider: provider, sequence: sequence}
+  end
+
+  @spec attach_session(t(), String.t(), atom(), pos_integer()) :: t()
+  @doc "Attaches harness session identity and sequence information to an event."
+  def attach_session(%__MODULE__{} = event, session_id, provider, sequence) do
+    %{event | run_id: nil, session_id: session_id, provider: provider, sequence: sequence}
   end
 
   defp update_payload(attrs) do

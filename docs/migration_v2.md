@@ -39,9 +39,21 @@ provider package's stream directly.
 
 - `run_id` identifies one harness-owned execution.
 - `process_id` identifies one directly managed OS process.
-- `session_id` is the provider's resumable session or thread identifier.
+- `session_id` identifies one harness-owned interactive session.
+- `provider_session_id` is a provider's resumable session or thread identifier.
+- `turn_id` identifies one turn inside a harness session.
 
-Do not use a provider session ID to look up or cancel a harness run.
+Do not use a provider session ID to look up or cancel a harness run or session.
+There is intentionally no compatibility alias for the former provider
+`session_id` request field.
+
+## Interactive conversations
+
+Use `open_session/3` for multi-turn work, `send_message/3` for an idle session,
+and `follow_up/3` for FIFO queuing. Session streams and replay are cursor-based,
+just like finite runs. `interrupt_turn/2` ends the active turn but preserves a
+healthy session; `close_session/1` resolves approvals as denied, stops the
+transport, and emits one terminal session event.
 
 ## Errors and events
 
@@ -50,6 +62,11 @@ event structs with `%Jido.Harness.Event{}` and handle `:provider_event` for data
 without a canonical mapping.
 
 Exactly one terminal event is present in every completed result.
+
+`RunResult` and `TurnResult` retain at most the configured in-memory text tail.
+When output exceeds that bound, `text_truncated?` is true and `text` contains
+the newest retained text; cursor replay remains the source for the complete
+journaled event sequence.
 
 ## Shell and workspace code
 

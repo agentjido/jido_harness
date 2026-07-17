@@ -36,15 +36,15 @@ defmodule Jido.Harness.Adapters.CLIStream do
 
         %ProcessEvent{type: :failed, data: data}, buffer ->
           {flush(buffer, provider, mapper) ++
-             [Helpers.event(provider, :session_failed, nil, %{"error" => inspect(data)})], ""}
+             [Helpers.event(provider, :run_failed, nil, %{"error" => inspect(data)})], ""}
 
         %ProcessEvent{type: :timed_out}, buffer ->
           {flush(buffer, provider, mapper) ++
-             [Helpers.event(provider, :session_failed, nil, %{"error" => "process timed out"})], ""}
+             [Helpers.event(provider, :run_failed, nil, %{"error" => "process timed out"})], ""}
 
         %ProcessEvent{type: :cancelled}, buffer ->
           {flush(buffer, provider, mapper) ++
-             [Helpers.event(provider, :session_cancelled, nil, %{"reason" => "cancelled"})], ""}
+             [Helpers.event(provider, :run_cancelled, nil, %{"reason" => "cancelled"})], ""}
 
         %ProcessEvent{type: :exited}, buffer ->
           {flush(buffer, provider, mapper), ""}
@@ -91,7 +91,7 @@ defmodule Jido.Harness.Adapters.CLIStream do
       [
         Helpers.event(
           provider,
-          :session_failed,
+          :run_failed,
           nil,
           %{"error" => Exception.message(exception)},
           Error.execution("CLI event mapping failed", provider: provider, cause: exception)

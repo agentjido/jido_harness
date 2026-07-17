@@ -21,7 +21,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
     [
       Helpers.event(
         :amp,
-        :session_started,
+        :run_started,
         message.session_id,
         %{"cwd" => message.cwd, "tools" => message.tools},
         message
@@ -83,7 +83,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
         Helpers.event(:amp, :output_text_final, message.session_id, %{"text" => message.result}, message),
         Helpers.event(
           :amp,
-          :session_completed,
+          :run_completed,
           message.session_id,
           %{"num_turns" => message.num_turns, "duration_ms" => message.duration_ms},
           message
@@ -96,7 +96,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
       [
         Helpers.event(
           :amp,
-          :session_failed,
+          :run_failed,
           message.session_id,
           %{"error" => message.error, "kind" => message.kind},
           message
@@ -111,7 +111,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
     [
       Helpers.event(
         :claude,
-        :session_started,
+        :run_started,
         get(data, :session_id),
         %{"cwd" => get(data, :cwd), "model" => get(data, :model), "tools" => get(data, :tools, [])},
         message
@@ -140,7 +140,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
         Helpers.event(:claude, :output_text_final, sid, %{"text" => get(data, :result, "")}, message),
         Helpers.event(
           :claude,
-          :session_completed,
+          :run_completed,
           sid,
           %{
             "num_turns" => get(data, :num_turns),
@@ -156,7 +156,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
     [
       Helpers.event(
         :claude,
-        :session_failed,
+        :run_failed,
         get(data, :session_id),
         %{"error" => get(data, :error, get(data, :result, "Claude failed"))},
         message
@@ -187,7 +187,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
     do: [Helpers.event(:claude, :provider_event, session_id(other), %{"event_module" => struct_name(other)}, other)]
 
   def gemini(%InitEvent{} = event, _sid),
-    do: [Helpers.event(:gemini, :session_started, event.session_id, %{"model" => event.model}, event)]
+    do: [Helpers.event(:gemini, :run_started, event.session_id, %{"model" => event.model}, event)]
 
   def gemini(%MessageEvent{role: "assistant"} = event, sid) do
     type = if event.delta == true, do: :output_text_delta, else: :output_text_final
@@ -224,14 +224,14 @@ defmodule Jido.Harness.Adapters.SDKMapper do
 
     terminal =
       if event.status == "success",
-        do: Helpers.event(:gemini, :session_completed, sid, %{"status" => event.status}, event),
-        else: Helpers.event(:gemini, :session_failed, sid, %{"status" => event.status, "error" => event.error}, event)
+        do: Helpers.event(:gemini, :run_completed, sid, %{"status" => event.status}, event),
+        else: Helpers.event(:gemini, :run_failed, sid, %{"status" => event.status, "error" => event.error}, event)
 
     usage ++ [terminal]
   end
 
   def gemini(%ErrorEvent{} = event, sid) do
-    type = if event.severity == "fatal", do: :session_failed, else: :provider_event
+    type = if event.severity == "fatal", do: :run_failed, else: :provider_event
 
     [
       Helpers.event(
@@ -259,7 +259,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
         Enum.flat_map(Map.get(event, :events, []), &codex/1)
 
       suffix?(module, ["ThreadStarted", "SessionConfigured"]) ->
-        [Helpers.event(:codex, :session_started, sid, %{"cwd" => get(event, :cwd)}, event)]
+        [Helpers.event(:codex, :run_started, sid, %{"cwd" => get(event, :cwd)}, event)]
 
       String.ends_with?(module, "TurnStarted") ->
         [Helpers.event(:codex, :turn_started, sid, %{"turn_id" => get(event, :turn_id)}, event)]
@@ -267,7 +267,35 @@ defmodule Jido.Harness.Adapters.SDKMapper do
       suffix?(module, ["ItemAgentMessageDelta"]) ->
         maybe_text(:codex, :output_text_delta, sid, item_text(get(event, :item)), event)
 
-      String.ends_with?(module, "ReasoningDelta") ->
+      String.ends_with?(module, "CommandOutputDelta") ->
+        maybe_text(:codex, :command_output_delta, sid, get(event, :delta), event)
+
+      String.ends_with?(module, "FileChangeOutputDelta") ->
+        [
+          Helpers.event(
+            :codex,
+            :file_change,
+            sid,
+            %{"item_id" => get(event, :item_id), "delta" => get(event, :delta)},
+            event
+          )
+        ]
+
+      String.ends_with?(module, "TurnDiffUpdated") ->
+        [Helpers.event(:codex, :file_change, sid, %{"diff" => get(event, :diff)}, event)]
+
+      String.ends_with?(module, "TurnPlanUpdated") ->
+        [
+          Helpers.event(
+            :codex,
+            :plan_updated,
+            sid,
+            %{"explanation" => get(event, :explanation), "plan" => get(event, :plan, [])},
+            event
+          )
+        ]
+
+      suffix?(module, ["ReasoningDelta", "ReasoningSummaryDelta"]) ->
         maybe_text(:codex, :thinking_delta, sid, get(event, :delta), event)
 
       String.ends_with?(module, "ItemCompleted") ->
@@ -307,14 +335,14 @@ defmodule Jido.Harness.Adapters.SDKMapper do
         usage_event(:codex, sid, get(event, :usage), event) ++
           [
             Helpers.event(:codex, :turn_completed, sid, %{"status" => get(event, :status)}, event),
-            Helpers.event(:codex, :session_completed, sid, %{"status" => get(event, :status)}, event)
+            Helpers.event(:codex, :run_completed, sid, %{"status" => get(event, :status)}, event)
           ]
 
       suffix?(module, ["TurnFailed", ".Error"]) ->
         [
           Helpers.event(
             :codex,
-            :session_failed,
+            :run_failed,
             sid,
             %{"error" => get(event, :error, get(event, :message, "Codex failed"))},
             event
@@ -322,7 +350,7 @@ defmodule Jido.Harness.Adapters.SDKMapper do
         ]
 
       String.ends_with?(module, "TurnAborted") ->
-        [Helpers.event(:codex, :session_cancelled, sid, %{"reason" => get(event, :reason)}, event)]
+        [Helpers.event(:codex, :run_cancelled, sid, %{"reason" => get(event, :reason)}, event)]
 
       true ->
         [Helpers.event(:codex, :provider_event, sid, %{"event_module" => module}, event)]

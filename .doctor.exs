@@ -1,7 +1,7 @@
 %Doctor.Config{
   ignore_modules: [
     ~r/^Jido\.Harness\.Adapters\.(CLIStream|Helpers|JSONMapper|SDKMapper)$/,
-    ~r/^Jido\.Harness\.(Buffer|CursorStream|ID|Journal|ProcessWorker|Registry|RequestResolver|Retention|RunManager|RunWorker)$/
+    ~r/^Jido\.Harness\.(Buffer|CursorStream|EventLog|ID|Journal|ProcessWorker|Protocol\.JSONL|Redaction|Registry|RequestResolver|Retention|RetentionOptions|RunManager|RunWorker|SessionManager|TextTail|Validation)$/
   ],
   ignore_paths: [],
   min_module_doc_coverage: 40,

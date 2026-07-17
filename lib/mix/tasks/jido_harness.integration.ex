@@ -2,23 +2,31 @@ defmodule Mix.Tasks.JidoHarness.Integration do
   @moduledoc "Runs opt-in Jido.Harness provider integration contracts."
   use Mix.Task
 
-  @shortdoc "Run harness smoke, contract, lifecycle, or soak tests"
+  @shortdoc "Run harness smoke, contract, lifecycle, interactive, or soak tests"
 
   @impl true
   def run(args) do
     {options, _rest, invalid} =
       OptionParser.parse(args,
-        strict: [providers: :string, profile: :string, strict: :boolean, env_file: :string],
-        aliases: [p: :providers]
+        strict: [provider: :string, providers: :string, profile: :string, strict: :boolean, env_file: :string],
+        aliases: [p: :provider]
       )
 
     if invalid != [], do: Mix.raise("invalid integration options: #{inspect(invalid)}")
 
     profile = Keyword.get(options, :profile, "contract")
-    unless profile in ["smoke", "contract", "lifecycle", "soak"], do: Mix.raise("invalid profile: #{profile}")
+
+    unless profile in ["smoke", "contract", "lifecycle", "interactive", "soak"],
+      do: Mix.raise("invalid profile: #{profile}")
 
     if path = options[:env_file], do: load_env_file(path)
-    if providers = options[:providers], do: System.put_env("JIDO_HARNESS_INTEGRATION_PROVIDERS", providers)
+
+    if providers = options[:provider] || options[:providers] do
+      if providers == "all",
+        do: System.delete_env("JIDO_HARNESS_INTEGRATION_PROVIDERS"),
+        else: System.put_env("JIDO_HARNESS_INTEGRATION_PROVIDERS", providers)
+    end
+
     System.put_env("JIDO_HARNESS_INTEGRATION_PROFILE", profile)
     if options[:strict], do: System.put_env("JIDO_HARNESS_INTEGRATION_STRICT", "true")
 

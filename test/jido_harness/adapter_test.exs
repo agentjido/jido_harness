@@ -1,7 +1,7 @@
 defmodule Jido.Harness.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, Zai}
+  alias Jido.Harness.Adapters.{Amp, Claude, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, SDKMapper, Zai}
   alias Jido.Harness.{Error, Event, RequestResolver, RunRequest}
 
   setup do
@@ -13,7 +13,7 @@ defmodule Jido.Harness.AdapterTest do
     request =
       RunRequest.new!(%{
         prompt: "amp",
-        session_id: "thread-1",
+        provider_session_id: "thread-1",
         mcp_config: %{"server" => %{}},
         reasoning_effort: :high
       })
@@ -31,7 +31,7 @@ defmodule Jido.Harness.AdapterTest do
     request =
       RunRequest.new!(%{
         prompt: "claude",
-        session_id: "session-1",
+        provider_session_id: "session-1",
         reasoning_effort: :medium,
         approval_mode: :auto_edit,
         sandbox_mode: :workspace_write
@@ -64,7 +64,10 @@ defmodule Jido.Harness.AdapterTest do
     }
 
     assert {:ok, stream} = Zai.run(request, context)
-    assert [%Event{provider: :zai, type: :session_started, session_id: "zai-session"}] = Enum.to_list(stream)
+
+    assert [%Event{provider: :zai, type: :run_started, provider_session_id: "zai-session"}] =
+             Enum.to_list(stream)
+
     assert_receive {:zai_options, :query, "zai", options}
     assert options.model == "glm-5.2"
     assert options.env["ANTHROPIC_BASE_URL"] == "https://api.z.ai/api/anthropic"
@@ -109,7 +112,7 @@ defmodule Jido.Harness.AdapterTest do
     request =
       RunRequest.new!(%{
         prompt: "codex",
-        session_id: "thread-2",
+        provider_session_id: "thread-2",
         reasoning_effort: :low,
         approval_mode: :prompt,
         sandbox_mode: :read_only,
@@ -176,7 +179,7 @@ defmodule Jido.Harness.AdapterTest do
       RunRequest.new!(%{
         prompt: "grok prompt",
         model: "grok-code",
-        session_id: "session-3",
+        provider_session_id: "session-3",
         max_turns: 2,
         system_prompt: "system",
         allowed_tools: ["Read", "Grep"],
@@ -213,7 +216,7 @@ defmodule Jido.Harness.AdapterTest do
       RunRequest.new!(%{
         prompt: "open prompt",
         model: "provider/model",
-        session_id: "open-session",
+        provider_session_id: "open-session",
         attachments: ["one.png", "two.png"],
         reasoning_effort: :medium,
         approval_mode: :auto_approve
@@ -235,7 +238,7 @@ defmodule Jido.Harness.AdapterTest do
       RunRequest.new!(%{
         prompt: "kimi prompt",
         model: "k3",
-        session_id: "ses_123",
+        provider_session_id: "ses_123",
         add_dirs: ["../shared", "/tmp/extra"],
         reasoning_effort: :high,
         env: %{"KIMI_MODEL_API_KEY" => "integration-test-key"}
@@ -295,7 +298,7 @@ defmodule Jido.Harness.AdapterTest do
              %Event{
                provider: :kimi,
                type: :provider_event,
-               session_id: "ses_123",
+               provider_session_id: "ses_123",
                payload: %{"type" => "session.resume_hint"}
              }
            ] =
@@ -309,7 +312,7 @@ defmodule Jido.Harness.AdapterTest do
   end
 
   test "Kimi rejects conflicting or unsupported normalized controls" do
-    request = RunRequest.new!(%{prompt: "kimi", session_id: "ses_123"})
+    request = RunRequest.new!(%{prompt: "kimi", provider_session_id: "ses_123"})
 
     assert {:error, %Error{category: :validation, provider: :kimi}} =
              Kimi.build_argv(request, %{extra_args: ["--output-format=json"]})
@@ -326,7 +329,7 @@ defmodule Jido.Harness.AdapterTest do
       RunRequest.new!(%{
         prompt: "pi prompt",
         model: "claude-sonnet-4-5",
-        session_id: "session-uuid",
+        provider_session_id: "session-uuid",
         system_prompt: "system",
         allowed_tools: ["read", "grep"],
         disallowed_tools: ["bash"],
@@ -368,7 +371,7 @@ defmodule Jido.Harness.AdapterTest do
   end
 
   test "Pi maps session, streaming, usage, and tool JSONL records" do
-    assert [%Event{provider: :pi, type: :session_started, session_id: "pi-session"}] =
+    assert [%Event{provider: :pi, type: :run_started, provider_session_id: "pi-session"}] =
              Pi.map_event(%{"type" => "session", "id" => "pi-session", "cwd" => "/tmp"})
 
     assert [%Event{type: :output_text_delta, payload: %{"text" => "hello"}}] =
@@ -432,7 +435,7 @@ defmodule Jido.Harness.AdapterTest do
                ]
              })
 
-    assert [%Event{type: :session_failed, payload: %{"error" => "authentication failed"}}] =
+    assert [%Event{type: :run_failed, payload: %{"error" => "authentication failed"}}] =
              Pi.map_event(%{
                "type" => "agent_end",
                "willRetry" => false,
@@ -443,7 +446,7 @@ defmodule Jido.Harness.AdapterTest do
   end
 
   test "Pi rejects conflicting sessions, unsafe credential argv, and unsupported controls" do
-    session_request = RunRequest.new!(%{prompt: "pi", session_id: "session-uuid"})
+    session_request = RunRequest.new!(%{prompt: "pi", provider_session_id: "session-uuid"})
 
     assert {:error, %Error{category: :validation, provider: :pi}} =
              Pi.build_argv(session_request, %{continue: true})
@@ -488,7 +491,7 @@ defmodule Jido.Harness.AdapterTest do
              JSONMapper.map(:grok, %{"type" => "delta", "text" => "hello"})
 
     events = List.wrap(JSONMapper.map(:opencode, %{"type" => "completed", "text" => "done"}))
-    assert Enum.map(events, & &1.type) == [:output_text_final, :session_completed]
+    assert Enum.map(events, & &1.type) == [:output_text_final, :run_completed]
 
     assert %Event{
              type: :provider_event,
@@ -496,6 +499,72 @@ defmodule Jido.Harness.AdapterTest do
              raw: %{"type" => "new-event"}
            } =
              JSONMapper.map(:grok, %{"type" => "new-event"})
+  end
+
+  test "Codex maps rich app-server deltas into canonical events" do
+    assert [%Event{type: :command_output_delta, payload: %{"text" => "building"}}] =
+             SDKMapper.codex(%Elixir.Codex.Events.CommandOutputDelta{
+               thread_id: "thread-1",
+               turn_id: "turn-1",
+               item_id: "item-1",
+               delta: "building"
+             })
+
+    assert [%Event{type: :file_change, payload: %{"diff" => "@@ -1 +1 @@"}}] =
+             SDKMapper.codex(%Elixir.Codex.Events.TurnDiffUpdated{
+               thread_id: "thread-1",
+               turn_id: "turn-1",
+               diff: "@@ -1 +1 @@"
+             })
+
+    assert [
+             %Event{
+               type: :plan_updated,
+               payload: %{
+                 "explanation" => "checking",
+                 "plan" => [%{"step" => "test", "status" => :in_progress}]
+               }
+             }
+           ] =
+             SDKMapper.codex(%Elixir.Codex.Events.TurnPlanUpdated{
+               thread_id: "thread-1",
+               turn_id: "turn-1",
+               explanation: "checking",
+               plan: [%{step: "test", status: :in_progress}]
+             })
+
+    assert [%Event{type: :thinking_delta, payload: %{"text" => "reasoning"}}] =
+             SDKMapper.codex(%Elixir.Codex.Events.ReasoningSummaryDelta{
+               thread_id: "thread-1",
+               turn_id: "turn-1",
+               item_id: "item-1",
+               delta: "reasoning"
+             })
+  end
+
+  test "all requested providers publish a truthful default session transport" do
+    expected = %{
+      amp: :sdk,
+      claude: :sdk,
+      codex: :exec_jsonl_resume,
+      gemini: :sdk,
+      grok: :streaming_json_resume,
+      kimi: :acp,
+      opencode: :acp,
+      pi: :rpc,
+      zai: :claude_sdk
+    }
+
+    Enum.each(expected, fn {provider, transport} ->
+      {:ok, spec} = Jido.Harness.Registry.spec(provider)
+      assert spec.default_session_transport == transport
+      assert Enum.any?(spec.session_transports, &(&1.name == transport))
+    end)
+
+    app_server = Enum.find(Codex.spec().session_transports, &(&1.name == :app_server))
+    assert app_server.minimum_version == "0.144.0"
+    assert app_server.capabilities.maturity == :experimental
+    assert app_server.capabilities.steer == :native
   end
 
   defp pairs(argv, flag) do

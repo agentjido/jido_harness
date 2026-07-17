@@ -5,8 +5,14 @@ defmodule Jido.Harness.Adapters.Helpers do
 
   @sdk_infinite_timeout 2_147_483_647
 
-  def event(provider, type, session_id, payload, raw \\ nil) do
-    Event.new!(%{type: type, provider: provider, session_id: session_id, payload: stringify_keys(payload), raw: raw})
+  def event(provider, type, provider_session_id, payload, raw \\ nil) do
+    Event.new!(%{
+      type: type,
+      provider: provider,
+      provider_session_id: provider_session_id,
+      payload: stringify_keys(payload),
+      raw: raw
+    })
   end
 
   def provider_options(options, allowed) when is_map(options) do

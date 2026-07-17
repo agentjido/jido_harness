@@ -2,7 +2,15 @@ defmodule Jido.Harness.Adapters.Pi do
   @moduledoc "Official Pi coding-agent adapter using JSON event-stream mode."
   @behaviour Jido.Harness.Adapter
 
-  alias Jido.Harness.{AdapterSpec, Adapters.CLIStream, Adapters.Helpers, Capabilities, Error, RunRequest}
+  alias Jido.Harness.{
+    AdapterSpec,
+    Adapters.CLIStream,
+    Adapters.Helpers,
+    Capabilities,
+    Error,
+    RunRequest,
+    SessionRequest
+  }
 
   @auth_envs [
     "AI_GATEWAY_API_KEY",
@@ -121,9 +129,40 @@ defmodule Jido.Harness.Adapters.Pi do
         usage?: true,
         native_cancel?: true
       },
+      default_session_transport: :rpc,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :rpc,
+          adapter: Jido.Harness.SessionAdapters.PiRPC,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :rpc,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            steer: :native,
+            interrupt: :native,
+            dynamic_model: :native,
+            dynamic_configuration: :native
+          },
+          session_options: [
+            :model,
+            :provider_session_id,
+            :system_prompt,
+            :allowed_tools,
+            :disallowed_tools,
+            :approval_mode,
+            :sandbox_mode,
+            :reasoning_effort,
+            :env
+          ],
+          session_provider_options: :adapter,
+          turn_options: [:reasoning_effort],
+          configuration_options: [:model, :reasoning_effort]
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :system_prompt,
         :allowed_tools,
         :disallowed_tools,
@@ -186,7 +225,7 @@ defmodule Jido.Harness.Adapters.Pi do
           pair("--provider", options[:model_provider]) ++
           pair("--model", request.model) ++
           pair("--thinking", request.reasoning_effort) ++
-          pair("--session", request.session_id) ++
+          pair("--session", request.provider_session_id) ++
           flag("--continue", options[:continue]) ++
           pair("--fork", options[:fork_session]) ++
           flag("--no-session", options[:no_session]) ++
@@ -209,8 +248,56 @@ defmodule Jido.Harness.Adapters.Pi do
   end
 
   @doc false
+  def build_session_argv(%SessionRequest{} = request, options) do
+    run_request =
+      RunRequest.new!(%{
+        prompt: "interactive-session",
+        cwd: request.cwd,
+        model: request.model,
+        provider_session_id: request.provider_session_id,
+        system_prompt: request.system_prompt,
+        allowed_tools: request.allowed_tools,
+        disallowed_tools: request.disallowed_tools,
+        approval_mode: request.approval_mode,
+        sandbox_mode: request.sandbox_mode,
+        reasoning_effort: request.reasoning_effort,
+        env: request.env,
+        provider_options: request.provider_options
+      })
+
+    with :ok <- validate_options(run_request, options),
+         {:ok, trust_args} <- project_trust(options[:project_trust]),
+         {:ok, tool_args} <- tool_args(run_request),
+         {:ok, extensions} <- string_list(options[:extensions], :extensions),
+         {:ok, skills} <- string_list(options[:skills], :skills),
+         {:ok, extra_args} <- extra_args(options[:extra_args]) do
+      {:ok,
+       ["--mode", "rpc"] ++
+         pair("--provider", options[:model_provider]) ++
+         pair("--model", request.model) ++
+         pair("--thinking", request.reasoning_effort) ++
+         pair("--session", request.provider_session_id) ++
+         flag("--continue", options[:continue]) ++
+         pair("--fork", options[:fork_session]) ++
+         flag("--no-session", options[:no_session]) ++
+         pair("--session-dir", options[:session_dir]) ++
+         pair("--name", options[:session_name]) ++
+         tool_args ++
+         list_pair("--exclude-tools", request.disallowed_tools) ++
+         pair("--system-prompt", request.system_prompt) ++
+         trust_args ++
+         repeat("--extension", extensions) ++
+         repeat("--skill", skills) ++
+         flag("--no-extensions", options[:no_extensions]) ++
+         flag("--no-skills", options[:no_skills]) ++
+         flag("--no-context-files", options[:no_context_files]) ++
+         flag("--offline", options[:offline]) ++ extra_args}
+    end
+  end
+
+  @doc false
   def map_event(%{"type" => "session", "id" => session_id} = raw) do
-    [Helpers.event(:pi, :session_started, session_id, raw, raw)]
+    [Helpers.event(:pi, :run_started, session_id, raw, raw)]
   end
 
   def map_event(%{"type" => "turn_start"} = raw),
@@ -290,11 +377,11 @@ defmodule Jido.Harness.Adapters.Pi do
     case last_assistant(messages) do
       %{"stopReason" => "error"} = message ->
         error = Map.get(message, "errorMessage", "Pi request failed")
-        [Helpers.event(:pi, :session_failed, nil, %{"error" => error}, raw)]
+        [Helpers.event(:pi, :run_failed, nil, %{"error" => error}, raw)]
 
       %{"stopReason" => "aborted"} = message ->
         reason = Map.get(message, "errorMessage", "Pi request aborted")
-        [Helpers.event(:pi, :session_cancelled, nil, %{"reason" => reason}, raw)]
+        [Helpers.event(:pi, :run_cancelled, nil, %{"reason" => reason}, raw)]
 
       _message ->
         [provider_event(raw)]
@@ -306,18 +393,18 @@ defmodule Jido.Harness.Adapters.Pi do
   def map_event(raw),
     do: [Helpers.event(:pi, :provider_event, nil, %{"mapped" => false, "value_type" => value_type(raw)}, raw)]
 
-  defp validate_options(%{session_id: session_id}, %{continue: true}) when is_binary(session_id),
-    do: conflict("session_id and provider continue")
+  defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
+    do: conflict("provider_session_id and provider continue")
 
-  defp validate_options(%{session_id: session_id}, %{fork_session: fork})
+  defp validate_options(%{provider_session_id: session_id}, %{fork_session: fork})
        when is_binary(session_id) and is_binary(fork),
-       do: conflict("session_id and provider fork_session")
+       do: conflict("provider_session_id and provider fork_session")
 
   defp validate_options(_request, %{continue: true, fork_session: fork}) when is_binary(fork),
     do: conflict("provider continue and fork_session")
 
-  defp validate_options(%{session_id: session_id}, %{no_session: true}) when is_binary(session_id),
-    do: conflict("session_id and provider no_session")
+  defp validate_options(%{provider_session_id: session_id}, %{no_session: true}) when is_binary(session_id),
+    do: conflict("provider_session_id and provider no_session")
 
   defp validate_options(_request, %{continue: true, no_session: true}),
     do: conflict("provider continue and no_session")

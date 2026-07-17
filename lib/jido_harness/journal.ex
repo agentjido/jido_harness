@@ -3,29 +3,29 @@ defmodule Jido.Harness.Journal do
 
   require Logger
 
-  defstruct [
-    :dir,
-    :path,
-    segment: 0,
-    segment_bytes: 8 * 1_024 * 1_024,
-    current_bytes: 0,
-    total_bytes: 0,
-    disk_limit_bytes: 256 * 1_024 * 1_024,
-    failed?: false,
-    available_from: 1
-  ]
+  alias Jido.Harness.Redaction
 
-  @type t :: %__MODULE__{
-          dir: String.t(),
-          path: String.t(),
-          segment: non_neg_integer(),
-          segment_bytes: pos_integer(),
-          current_bytes: non_neg_integer(),
-          total_bytes: non_neg_integer(),
-          disk_limit_bytes: pos_integer(),
-          failed?: boolean(),
-          available_from: pos_integer()
-        }
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              dir: Zoi.string() |> Zoi.nullish(),
+              path: Zoi.string() |> Zoi.nullish(),
+              segment: Zoi.integer() |> Zoi.default(0),
+              segment_bytes: Zoi.integer() |> Zoi.default(8 * 1_024 * 1_024),
+              current_bytes: Zoi.integer() |> Zoi.default(0),
+              total_bytes: Zoi.integer() |> Zoi.default(0),
+              disk_limit_bytes: Zoi.integer() |> Zoi.default(256 * 1_024 * 1_024),
+              failed?: Zoi.boolean() |> Zoi.default(false),
+              available_from: Zoi.integer() |> Zoi.default(1)
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  def schema, do: @schema
 
   @spec open(String.t(), map()) :: {:ok, t()} | {:error, term()}
   def open(id, options \\ %{}) do
@@ -55,7 +55,7 @@ defmodule Jido.Harness.Journal do
   def append(%__MODULE__{failed?: true} = state, _record), do: {:error, :journal_unavailable, state}
 
   def append(%__MODULE__{} = state, record) when is_map(record) do
-    with {:ok, json} <- Jason.encode(sanitize(record)),
+    with {:ok, json} <- Jason.encode(record |> Redaction.redact() |> sanitize()),
          line = json <> "\n",
          {:ok, state} <- maybe_rotate(state, byte_size(line)),
          :ok <- File.write(state.path, line, [:append, :binary]) do

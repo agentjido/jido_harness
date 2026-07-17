@@ -9,7 +9,7 @@ defmodule Jido.Harness.RunRequest do
     :provider,
     :cwd,
     :model,
-    :session_id,
+    :provider_session_id,
     :max_turns,
     :runtime_timeout_ms,
     :idle_timeout_ms,
@@ -34,7 +34,7 @@ defmodule Jido.Harness.RunRequest do
               provider: Zoi.atom() |> Zoi.nullish(),
               cwd: Zoi.string(),
               model: Zoi.string() |> Zoi.nullish(),
-              session_id: Zoi.string() |> Zoi.nullish(),
+              provider_session_id: Zoi.string() |> Zoi.nullish(),
               max_turns: Zoi.integer() |> Zoi.nullish(),
               runtime_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity),
               idle_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity),
@@ -66,13 +66,19 @@ defmodule Jido.Harness.RunRequest do
 
   @spec new(map() | keyword()) :: {:ok, t()} | {:error, Jido.Harness.Error.t()}
   @doc "Validates a provider-neutral request and its working directory."
-  def new(attrs) when is_map(attrs) or is_list(attrs) do
-    with {:ok, normalized} <- normalize_keys(Map.new(attrs)),
+  def new(attrs) when is_map(attrs) do
+    with {:ok, normalized} <- normalize_keys(attrs),
          :ok <- validate_values(normalized),
          {:ok, request} <- parse(Map.put_new(normalized, :cwd, File.cwd!())),
          :ok <- validate_cwd(request.cwd) do
       {:ok, request}
     end
+  end
+
+  def new(attrs) when is_list(attrs) do
+    if Enum.all?(attrs, &match?({_, _}, &1)),
+      do: new(Map.new(attrs)),
+      else: {:error, Jido.Harness.Error.validation("request must be a map or keyword list")}
   end
 
   def new(other),

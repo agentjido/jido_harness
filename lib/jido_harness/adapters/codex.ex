@@ -33,9 +33,41 @@ defmodule Jido.Harness.Adapters.Codex do
         usage?: true,
         file_changes?: true
       },
+      default_session_transport: :exec_jsonl_resume,
+      session_transports: [
+        Jido.Harness.SessionTransportSpec.managed(:exec_jsonl_resume, %{multimodal: :managed}),
+        %Jido.Harness.SessionTransportSpec{
+          name: :app_server,
+          adapter: Jido.Harness.SessionAdapters.CodexAppServer,
+          minimum_version: "0.144.0",
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :app_server,
+            maturity: :experimental,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            steer: :native,
+            interrupt: :native,
+            approvals: :native,
+            structured_output: :native,
+            multimodal: :native
+          },
+          session_options: [
+            :model,
+            :provider_session_id,
+            :system_prompt,
+            :add_dirs,
+            :approval_mode,
+            :sandbox_mode,
+            :reasoning_effort
+          ],
+          session_provider_options: [:cli_path],
+          turn_options: [:reasoning_effort, :output_schema, :attachments, :content]
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :max_turns,
         :system_prompt,
         :add_dirs,
@@ -124,8 +156,9 @@ defmodule Jido.Harness.Adapters.Codex do
   defp thread(_request, %{resume_last: true}, sdk, options, thread_options),
     do: sdk.resume_thread(:last, options, thread_options)
 
-  defp thread(%{session_id: session_id}, _provider, sdk, options, thread_options) when is_binary(session_id),
-    do: sdk.resume_thread(session_id, options, thread_options)
+  defp thread(%{provider_session_id: session_id}, _provider, sdk, options, thread_options)
+       when is_binary(session_id),
+       do: sdk.resume_thread(session_id, options, thread_options)
 
   defp thread(_request, _provider, sdk, options, thread_options), do: sdk.start_thread(options, thread_options)
 

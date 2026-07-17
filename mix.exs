@@ -52,6 +52,7 @@ defmodule Jido.Harness.MixProject do
         export: "cov",
         ignore_modules: [
           Jido.Harness.IntegrationCase,
+          Mix.Tasks.JidoHarness.Chat,
           Mix.Tasks.JidoHarness.Integration,
           Mix.Tasks.JidoHarness.Live,
           Mix.Tasks.JidoHarness.Query,
@@ -95,10 +96,10 @@ defmodule Jido.Harness.MixProject do
         coveralls: :test,
         "coveralls.github": :test,
         "coveralls.html": :test,
+        "jido_harness.check": :test,
         "jido_harness.integration": :test,
-        "jido_harness.live": :test,
-        "jido_harness.query": :test,
-        "jido_harness.tools": :test
+        "jido_harness.chat": :test,
+        "jido_harness.query": :test
       ]
     ]
   end

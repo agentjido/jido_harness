@@ -50,9 +50,11 @@ defmodule Jido.Harness.Adapters.Grok do
         usage?: true,
         native_cancel?: true
       },
+      default_session_transport: :streaming_json_resume,
+      session_transports: [Jido.Harness.SessionTransportSpec.managed(:streaming_json_resume)],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :max_turns,
         :system_prompt,
         :allowed_tools,
@@ -100,7 +102,7 @@ defmodule Jido.Harness.Adapters.Grok do
         ["--no-auto-update", "--no-alt-screen", "-p", request.prompt, "--output-format", "streaming-json"] ++
           pair("--model", request.model) ++
           pair("--cwd", request.cwd) ++
-          pair("--resume", request.session_id) ++
+          pair("--resume", request.provider_session_id) ++
           pair("--max-turns", request.max_turns) ++
           pair("--system-prompt-override", request.system_prompt) ++
           list_pair("--tools", request.allowed_tools) ++
@@ -117,8 +119,8 @@ defmodule Jido.Harness.Adapters.Grok do
     end
   end
 
-  defp validate_options(%{session_id: session_id}, %{continue: true}) when is_binary(session_id),
-    do: {:error, Error.validation("Grok session_id and provider continue cannot be combined", provider: :grok)}
+  defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
+    do: {:error, Error.validation("Grok provider_session_id and provider continue cannot be combined", provider: :grok)}
 
   defp validate_options(_request, _options), do: :ok
 

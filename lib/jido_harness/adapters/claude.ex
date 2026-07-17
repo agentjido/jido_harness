@@ -31,9 +31,41 @@ defmodule Jido.Harness.Adapters.Claude do
         resume?: true,
         usage?: true
       },
+      default_session_transport: :sdk,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :sdk,
+          adapter: Jido.Harness.SessionAdapters.ClaudeClient,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :sdk,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            interrupt: :native,
+            approvals: :native,
+            dynamic_model: :native,
+            dynamic_configuration: :native
+          },
+          session_options: [
+            :model,
+            :provider_session_id,
+            :system_prompt,
+            :allowed_tools,
+            :disallowed_tools,
+            :add_dirs,
+            :mcp_config,
+            :approval_mode,
+            :sandbox_mode,
+            :reasoning_effort,
+            :env
+          ],
+          session_provider_options: :adapter,
+          configuration_options: [:model, :approval_mode]
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :max_turns,
         :system_prompt,
         :allowed_tools,
@@ -81,8 +113,8 @@ defmodule Jido.Harness.Adapters.Claude do
     sdk = Map.get(context.config, :sdk_module, ClaudeAgentSDK)
 
     source =
-      if request.session_id do
-        sdk.resume(request.session_id, request.prompt, options)
+      if request.provider_session_id do
+        sdk.resume(request.provider_session_id, request.prompt, options)
       else
         sdk.query(request.prompt, options)
       end

@@ -44,9 +44,28 @@ defmodule Jido.Harness.Adapters.Kimi do
         resume?: true,
         native_cancel?: true
       },
+      default_session_transport: :acp,
+      session_transports: [
+        %Jido.Harness.SessionTransportSpec{
+          name: :acp,
+          adapter: Jido.Harness.SessionAdapters.ACP,
+          capabilities: %Jido.Harness.InteractionCapabilities{
+            transport: :acp,
+            process: :persistent,
+            multi_turn: :native,
+            follow_up: :managed,
+            interrupt: :native,
+            approvals: :native,
+            multimodal: :native
+          },
+          session_options: [:provider_session_id, :mcp_config, :env],
+          session_provider_options: [:cli_path],
+          turn_options: [:attachments, :content]
+        }
+      ],
       normalized_options: [
         :model,
-        :session_id,
+        :provider_session_id,
         :add_dirs,
         :approval_mode,
         :sandbox_mode,
@@ -90,7 +109,7 @@ defmodule Jido.Harness.Adapters.Kimi do
       argv =
         ["-p", request.prompt, "--output-format", "stream-json"] ++
           model_args(request) ++
-          pair("--session", request.session_id) ++
+          pair("--session", request.provider_session_id) ++
           repeat("--add-dir", request.add_dirs) ++
           repeat("--skills-dir", skills_dirs) ++
           flag("--continue", options[:continue]) ++ extra_args
@@ -204,8 +223,8 @@ defmodule Jido.Harness.Adapters.Kimi do
     |> maybe_put("KIMI_MODEL_THINKING_EFFORT", request.reasoning_effort)
   end
 
-  defp validate_options(%{session_id: session_id}, %{continue: true}) when is_binary(session_id),
-    do: {:error, Error.validation("Kimi session_id and provider continue cannot be combined", provider: :kimi)}
+  defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
+    do: {:error, Error.validation("Kimi provider_session_id and provider continue cannot be combined", provider: :kimi)}
 
   defp validate_options(_request, _options), do: :ok
 

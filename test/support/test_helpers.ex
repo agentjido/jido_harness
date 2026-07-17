@@ -14,6 +14,7 @@ defmodule Jido.Harness.TestHelpers do
       restore_env(:providers, providers)
       restore_env(:provider_config, config)
       restore_env(:default_provider, default)
+      cleanup_sessions()
       cleanup_runs()
       cleanup_processes()
       File.rm_rf!(context.journal_dir)
@@ -26,6 +27,13 @@ defmodule Jido.Harness.TestHelpers do
     Enum.each(Jido.Harness.list_runs(), fn info ->
       unless Jido.Harness.RunInfo.terminal?(info), do: Jido.Harness.cancel(info.run_id)
       Jido.Harness.prune(info.run_id)
+    end)
+  end
+
+  def cleanup_sessions do
+    Enum.each(Jido.Harness.list_sessions(), fn info ->
+      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.close_session(info.session_id)
+      Jido.Harness.prune_session(info.session_id)
     end)
   end
 

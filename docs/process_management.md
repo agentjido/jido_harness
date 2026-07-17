@@ -42,6 +42,14 @@ begins with a `:replay_gap` event. If journal creation or writes fail, the
 process continues with bounded memory and emits journal error telemetry.
 
 Environment values and full process specifications are never journaled.
+Sensitive structured fields, bearer credentials, and credential environment
+values that appear in process output are redacted before disk persistence. The
+in-memory tail remains process-local and journals should still be treated as
+sensitive operational data.
+
+Retention maps accept only `journal_dir`, `memory_bytes`, `segment_bytes`, and
+`disk_limit_bytes`; string keys are normalized and unknown keys are rejected.
+Byte limits must be positive, and a segment cannot exceed the total disk limit.
 
 ## Streaming
 

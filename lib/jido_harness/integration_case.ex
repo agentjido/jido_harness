@@ -168,11 +168,11 @@ defmodule Jido.Harness.IntegrationCase do
               |> Jido.Harness.IntegrationCase.limit_turns(spec)
               |> then(&Jido.Harness.IntegrationCase.run!(provider, &1, await_timeout: 360_000))
 
-            if first && is_binary(first.session_id) do
+            if first && is_binary(first.provider_session_id) do
               resumed =
                 %{
                   prompt: "Reply with exactly: resumed",
-                  session_id: first.session_id,
+                  provider_session_id: first.provider_session_id,
                   runtime_timeout_ms: 300_000
                 }
                 |> Jido.Harness.IntegrationCase.limit_turns(spec)
@@ -181,12 +181,48 @@ defmodule Jido.Harness.IntegrationCase do
               if resumed do
                 Jido.Harness.IntegrationCase.verify!(provider, resumed, fn ->
                   assert resumed.status == :completed
-                  assert resumed.session_id
+                  assert resumed.provider_session_id
                 end)
               end
             else
               if first, do: Jido.Harness.IntegrationCase.unavailable!(provider, :provider_did_not_return_session_id)
             end
+          end
+        end)
+      end
+
+      @tag skip: Jido.Harness.IntegrationCase.skip_reason(@jido_harness_provider, :interactive)
+      test "#{@jido_harness_provider} preserves context across two interactive turns" do
+        provider = @jido_harness_provider
+
+        Jido.Harness.IntegrationCase.with_ready_provider(provider, fn _spec ->
+          token = "harness-#{System.unique_integer([:positive])}"
+          {:ok, session_id} = Jido.Harness.open_session(provider, %{})
+
+          try do
+            assert {:ok, %{state: :idle}} =
+                     Jido.Harness.IntegrationCase.await_session_ready(provider, session_id, 60_000)
+
+            {:ok, first_id} =
+              Jido.Harness.send_message(
+                session_id,
+                "Remember the token #{token}. Reply with exactly: first-ok"
+              )
+
+            assert {:ok, first} = Jido.Harness.await_turn(session_id, first_id, 600_000)
+            assert first.status == :completed
+
+            {:ok, second_id} =
+              Jido.Harness.send_message(
+                session_id,
+                "Reply with only the token I asked you to remember."
+              )
+
+            assert {:ok, second} = Jido.Harness.await_turn(session_id, second_id, 600_000)
+            assert second.status == :completed
+            assert second.text =~ token
+          after
+            Jido.Harness.close_session(session_id)
           end
         end)
       end
@@ -208,6 +244,7 @@ defmodule Jido.Harness.IntegrationCase do
       "smoke" -> :smoke
       "lifecycle" -> :lifecycle
       "soak" -> :soak
+      "interactive" -> :interactive
       _ -> :contract
     end
   end
@@ -223,6 +260,9 @@ defmodule Jido.Harness.IntegrationCase do
 
       kind == :lifecycle and profile() != :lifecycle ->
         "lifecycle profile not selected"
+
+      kind == :interactive and profile() != :interactive ->
+        "interactive profile not selected"
 
       strict?() ->
         false
@@ -281,12 +321,20 @@ defmodule Jido.Harness.IntegrationCase do
   def cleanup_baseline do
     %{
       runs: Jido.Harness.list_runs() |> Enum.map(& &1.run_id) |> MapSet.new(),
+      sessions: Jido.Harness.list_sessions() |> Enum.map(& &1.session_id) |> MapSet.new(),
       processes: Jido.Harness.list_processes() |> Enum.map(& &1.process_id) |> MapSet.new()
     }
   end
 
   @doc false
   def cleanup_since(provider, baseline) do
+    Jido.Harness.list_sessions(providers: [provider])
+    |> Enum.reject(&MapSet.member?(baseline.sessions, &1.session_id))
+    |> Enum.each(fn info ->
+      unless Jido.Harness.SessionInfo.terminal?(info), do: Jido.Harness.close_session(info.session_id)
+      _ = Jido.Harness.prune_session(info.session_id)
+    end)
+
     Jido.Harness.list_runs(providers: [provider])
     |> Enum.reject(&MapSet.member?(baseline.runs, &1.run_id))
     |> Enum.each(fn info ->
@@ -313,6 +361,12 @@ defmodule Jido.Harness.IntegrationCase do
       {:ok, result} -> result
       {:error, reason} -> failure!(provider, run_id, {:await_failed, reason})
     end
+  end
+
+  @doc false
+  def await_session_ready(provider, session_id, timeout) do
+    started = System.monotonic_time(:millisecond)
+    do_await_session_ready(provider, session_id, timeout, started)
   end
 
   @doc false
@@ -384,6 +438,27 @@ defmodule Jido.Harness.IntegrationCase do
       false
     else
       _reason -> "provider executable is unavailable"
+    end
+  end
+
+  defp do_await_session_ready(provider, session_id, timeout, started) do
+    case Jido.Harness.info_session(session_id) do
+      {:ok, %{state: :idle}} = result ->
+        result
+
+      {:ok, %{state: state, error: error}} when state in [:failed, :closed, :cancelled] ->
+        failure!(provider, nil, {:session_open_failed, error || state})
+
+      {:error, reason} ->
+        failure!(provider, nil, {:session_open_failed, reason})
+
+      _pending ->
+        if System.monotonic_time(:millisecond) - started >= timeout do
+          failure!(provider, nil, {:session_open_timeout, timeout})
+        else
+          Process.sleep(25)
+          do_await_session_ready(provider, session_id, timeout, started)
+        end
     end
   end
 

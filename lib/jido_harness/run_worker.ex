@@ -2,7 +2,7 @@ defmodule Jido.Harness.RunWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, Error, Event, Journal, RunInfo, RunResult}
+  alias Jido.Harness.{Buffer, Error, Event, EventLog, RunInfo, RunResult, TextTail}
 
   def start_link({id, provider, request, adapter, config}) do
     GenServer.start_link(
@@ -17,7 +17,7 @@ defmodule Jido.Harness.RunWorker do
     Process.flag(:trap_exit, true)
     retention = Map.get(config, :retention, %{}) |> Map.new()
     memory_bytes = Map.get(retention, :memory_bytes, 1_048_576)
-    journal = open_journal(id, retention)
+    journal = EventLog.open(id, retention)
 
     context = %{
       run_id: id,
@@ -37,9 +37,9 @@ defmodule Jido.Harness.RunWorker do
       status: :starting,
       started_at: timestamp(),
       finished_at: nil,
-      session_id: request.session_id,
+      provider_session_id: request.provider_session_id,
       sequence: 0,
-      buffer: Buffer.new(memory_bytes),
+      buffer: EventLog.new_buffer(memory_bytes),
       journal: journal,
       task: nil,
       adapter_started_at: nil,
@@ -48,8 +48,8 @@ defmodule Jido.Harness.RunWorker do
       idle_timer: nil,
       idle_token: nil,
       terminal_event: nil,
-      text_deltas: [],
-      final_text: nil,
+      text_tail: TextTail.new(memory_bytes),
+      final_text_tail: nil,
       usage: %{},
       error: nil,
       result: nil
@@ -60,7 +60,7 @@ defmodule Jido.Harness.RunWorker do
 
   @impl true
   def handle_continue(:start, state) do
-    started = Event.new!(%{type: :session_started, provider: state.provider, payload: %{"cwd" => state.request.cwd}})
+    started = Event.new!(%{type: :run_started, provider: state.provider, payload: %{"cwd" => state.request.cwd}})
     state = state |> Map.put(:status, :running) |> append(started)
     owner = self()
 
@@ -107,7 +107,7 @@ defmodule Jido.Harness.RunWorker do
     state =
       state
       |> stop_adapter()
-      |> append_terminal(:session_cancelled, %{"reason" => "cancelled"})
+      |> append_terminal(:run_cancelled, %{"reason" => "cancelled"})
       |> finalize(:cancelled, nil)
 
     {:reply, :ok, state}
@@ -116,7 +116,7 @@ defmodule Jido.Harness.RunWorker do
   def handle_call(:cancel, _from, state), do: {:reply, :ok, state}
 
   def handle_call(:prune, _from, state) when state.status in [:completed, :failed, :cancelled] do
-    if state.journal, do: Journal.remove(state.journal)
+    EventLog.remove(state.journal)
     {:stop, :normal, :ok, state}
   end
 
@@ -125,9 +125,13 @@ defmodule Jido.Harness.RunWorker do
   @impl true
   def handle_info({:adapter_event, %Event{} = event}, %{terminal_event: nil} = state) do
     state = schedule_idle(state)
-    state = if event.session_id, do: %{state | session_id: event.session_id}, else: state
 
-    if event.type == :session_started do
+    state =
+      if event.provider_session_id,
+        do: %{state | provider_session_id: event.provider_session_id},
+        else: state
+
+    if event.type == :run_started do
       {:noreply, state}
     else
       state = append(state, event)
@@ -214,7 +218,8 @@ defmodule Jido.Harness.RunWorker do
 
   defp append(state, %Event{} = event) do
     event = Event.attach(event, state.id, state.provider, state.sequence + 1)
-    journal = append_journal(state.journal, event)
+    secrets = Jido.Harness.Redaction.secrets_from_env(state.request.env)
+    {buffer, journal} = EventLog.append(state.buffer, state.journal, event, secrets)
 
     :telemetry.execute([:jido, :harness, :run, :event], %{count: 1}, %{
       run_id: state.id,
@@ -224,7 +229,7 @@ defmodule Jido.Harness.RunWorker do
 
     state
     |> Map.put(:sequence, event.sequence)
-    |> Map.put(:buffer, Buffer.append(state.buffer, event))
+    |> Map.put(:buffer, buffer)
     |> Map.put(:journal, journal)
     |> accumulate(event)
   end
@@ -232,32 +237,28 @@ defmodule Jido.Harness.RunWorker do
   defp append_terminal(%{terminal_event: %Event{}} = state, _type, _payload), do: state
 
   defp append_terminal(state, type, payload) do
-    event = Event.new!(%{type: type, provider: state.provider, session_id: state.session_id, payload: payload})
+    event =
+      Event.new!(%{
+        type: type,
+        provider: state.provider,
+        provider_session_id: state.provider_session_id,
+        payload: payload
+      })
+
     state = append(state, event)
     %{state | terminal_event: event}
   end
 
-  defp append_journal(nil, _event), do: nil
-
-  defp append_journal(journal, event) do
-    persisted = event |> Map.from_struct() |> Map.put(:raw, nil)
-
-    case Journal.append(journal, persisted) do
-      {:ok, updated} -> updated
-      {:error, _reason, updated} -> updated
-    end
-  end
-
   defp accumulate(state, %Event{type: :output_text_delta, payload: payload}) do
     case Map.get(payload, "text") do
-      text when is_binary(text) -> %{state | text_deltas: [text | state.text_deltas]}
+      text when is_binary(text) -> %{state | text_tail: TextTail.append(state.text_tail, text)}
       _ -> state
     end
   end
 
   defp accumulate(state, %Event{type: :output_text_final, payload: payload}) do
     case Map.get(payload, "text") do
-      text when is_binary(text) -> %{state | final_text: text}
+      text when is_binary(text) -> %{state | final_text_tail: TextTail.replace(state.text_tail, text)}
       _ -> state
     end
   end
@@ -266,29 +267,31 @@ defmodule Jido.Harness.RunWorker do
   defp accumulate(state, _event), do: state
 
   defp finish_success(%{terminal_event: nil} = state) do
-    state |> append_terminal(:session_completed, %{}) |> finalize(:completed, nil)
+    state |> append_terminal(:run_completed, %{}) |> finalize(:completed, nil)
   end
 
-  defp finish_success(%{terminal_event: %{type: :session_completed}} = state), do: finalize(state, :completed, nil)
-  defp finish_success(%{terminal_event: %{type: :session_cancelled}} = state), do: finalize(state, :cancelled, nil)
-  defp finish_success(%{terminal_event: %{type: :session_failed}} = state), do: finalize_from_terminal(state)
+  defp finish_success(%{terminal_event: %{type: :run_completed}} = state), do: finalize(state, :completed, nil)
+  defp finish_success(%{terminal_event: %{type: :run_cancelled}} = state), do: finalize(state, :cancelled, nil)
+  defp finish_success(%{terminal_event: %{type: :run_failed}} = state), do: finalize_from_terminal(state)
 
   defp finish_error(%{terminal_event: nil} = state, reason) do
     error = normalize_error(state, reason)
-    state |> append_terminal(:session_failed, %{"error" => Exception.message(error)}) |> finalize(:failed, error)
+    state |> append_terminal(:run_failed, %{"error" => Exception.message(error)}) |> finalize(:failed, error)
   end
 
   defp finish_error(%{terminal_event: %Event{}} = state, _reason), do: finalize_from_terminal(state)
 
   defp finalize(state, status, error) do
     events = Buffer.events(state.buffer)
+    text = state.final_text_tail || state.text_tail
 
     result = %RunResult{
       run_id: state.id,
       provider: state.provider,
-      session_id: state.session_id,
+      provider_session_id: state.provider_session_id,
       status: status,
-      text: state.final_text || state.text_deltas |> Enum.reverse() |> IO.iodata_to_binary(),
+      text: text.data,
+      text_truncated?: text.truncated?,
       usage: state.usage,
       events: events,
       metadata: state.request.metadata,
@@ -347,17 +350,17 @@ defmodule Jido.Harness.RunWorker do
 
     state
     |> stop_adapter()
-    |> append_terminal(:session_failed, %{"error" => error.message, "timeout" => Atom.to_string(kind)})
+    |> append_terminal(:run_failed, %{"error" => error.message, "timeout" => Atom.to_string(kind)})
     |> finalize(:failed, error)
   end
 
-  defp finalize_from_terminal(%{terminal_event: %Event{type: :session_completed}} = state),
+  defp finalize_from_terminal(%{terminal_event: %Event{type: :run_completed}} = state),
     do: finalize(state, :completed, nil)
 
-  defp finalize_from_terminal(%{terminal_event: %Event{type: :session_cancelled}} = state),
+  defp finalize_from_terminal(%{terminal_event: %Event{type: :run_cancelled}} = state),
     do: finalize(state, :cancelled, nil)
 
-  defp finalize_from_terminal(%{terminal_event: %Event{type: :session_failed, payload: payload}} = state) do
+  defp finalize_from_terminal(%{terminal_event: %Event{type: :run_failed, payload: payload}} = state) do
     message =
       case Map.get(payload, "error") do
         value when is_binary(value) and value != "" -> value
@@ -400,21 +403,9 @@ defmodule Jido.Harness.RunWorker do
     %{state | adapter_started_at: nil}
   end
 
-  defp replay_records(%{journal: %Journal{failed?: false} = journal} = state, cursor, limit) do
-    {records, journal} = Journal.replay(journal, cursor, limit)
-    {prepend_gap(records, state, cursor, journal.available_from), %{state | journal: journal}}
-  end
-
   defp replay_records(state, cursor, limit) do
-    records = state.buffer |> Buffer.events() |> Enum.filter(&(&1.sequence > cursor)) |> Enum.take(limit)
-
-    available_from =
-      case records do
-        [%Event{sequence: sequence} | _] -> sequence
-        _ -> cursor + 1
-      end
-
-    {prepend_gap(records, state, cursor, available_from), state}
+    {records, journal, available_from} = EventLog.replay(state.buffer, state.journal, cursor, limit)
+    {prepend_gap(records, state, cursor, available_from), %{state | journal: journal}}
   end
 
   defp prepend_gap(records, _state, cursor, available_from) when cursor >= available_from - 1, do: records
@@ -425,7 +416,7 @@ defmodule Jido.Harness.RunWorker do
         type: :provider_event,
         run_id: state.id,
         provider: state.provider,
-        session_id: state.session_id,
+        provider_session_id: state.provider_session_id,
         sequence: max(1, available_from - 1),
         payload: %{"kind" => "replay_gap", "available_from" => available_from}
       })
@@ -440,7 +431,9 @@ defmodule Jido.Harness.RunWorker do
       type: existing_atom(record["type"]),
       run_id: record["run_id"] || state.id,
       provider: existing_atom(record["provider"] || Atom.to_string(state.provider)),
-      session_id: record["session_id"],
+      provider_session_id: record["provider_session_id"],
+      turn_id: record["turn_id"],
+      request_id: record["request_id"],
       sequence: record["sequence"],
       timestamp: record["timestamp"],
       payload: record["payload"] || %{},
@@ -458,23 +451,12 @@ defmodule Jido.Harness.RunWorker do
       state: state.status,
       started_at: state.started_at,
       finished_at: state.finished_at,
-      session_id: state.session_id,
+      provider_session_id: state.provider_session_id,
       error: state.error,
-      journal_dir: if(state.journal, do: state.journal.dir),
+      journal_dir: EventLog.dir(state.journal),
       output_cursor: state.sequence,
       metadata: state.request.metadata
     }
-  end
-
-  defp open_journal(id, retention) do
-    case Journal.open(id, retention) do
-      {:ok, journal} ->
-        journal
-
-      {:error, reason} ->
-        :telemetry.execute([:jido, :harness, :journal, :error], %{count: 1}, %{owner_id: id, reason: reason})
-        nil
-    end
   end
 
   defp timestamp, do: DateTime.utc_now() |> DateTime.to_iso8601()
