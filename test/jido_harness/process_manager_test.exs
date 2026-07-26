@@ -3,6 +3,29 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   import Jido.Harness.TestHelpers
 
+  defmodule ExitBeforeOutputDriver do
+    @behaviour Jido.Harness.ProcessDriver
+
+    @impl true
+    def start(_spec, owner) do
+      os_pid = System.unique_integer([:positive])
+
+      spawn(fn ->
+        Process.sleep(5)
+        send(owner, {:stdout, os_pid, "late-output"})
+      end)
+
+      exec_pid = spawn_link(fn -> :ok end)
+      {:ok, exec_pid, os_pid}
+    end
+
+    @impl true
+    def send_input(_process, _data), do: :ok
+
+    @impl true
+    def signal(_process, _signal), do: :ok
+  end
+
   setup do
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-process-test-#{System.unique_integer([:positive])}")
     original = Application.get_env(:jido_harness, :process_manager)
@@ -48,6 +71,29 @@ defmodule Jido.Harness.ProcessManagerTest do
              {:ok, file_stat} = File.stat(path)
              Bitwise.band(file_stat.mode, 0o777) == 0o600
            end)
+  end
+
+  test "drains output that arrives immediately after the execution exit signal" do
+    original_driver = Application.get_env(:jido_harness, :process_driver)
+    Application.put_env(:jido_harness, :process_driver, ExitBeforeOutputDriver)
+
+    on_exit(fn ->
+      if original_driver,
+        do: Application.put_env(:jido_harness, :process_driver, original_driver),
+        else: Application.delete_env(:jido_harness, :process_driver)
+    end)
+
+    assert {:ok, id} =
+             Jido.Harness.Process.start(%{
+               executable: "/bin/true",
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "late-output"))
+    assert List.last(events).type == :exited
   end
 
   test "supports stdin, EOF, cursor replay, and pull streaming" do

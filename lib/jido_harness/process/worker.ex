@@ -5,6 +5,8 @@ defmodule Jido.Harness.ProcessWorker do
   alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo, Redaction, Waiters}
 
   @default_grace_ms 5_000
+  @default_output_drain_ms 50
+  @maximum_output_drain_ms 1_000
   @terminal_statuses [:exited, :failed, :cancelled, :timed_out]
 
   def start_link({id, spec}) do
@@ -39,9 +41,13 @@ defmodule Jido.Harness.ProcessWorker do
       idle_token: nil,
       stop_reason: nil,
       escalation_timer: nil,
+      exit_drain_timer: nil,
+      exit_drain_token: nil,
+      exit_reason: nil,
       waiters: %{},
       cancel_grace_ms: Map.get(manager_config, :cancel_grace_ms, @default_grace_ms),
-      term_grace_ms: Map.get(manager_config, :term_grace_ms, @default_grace_ms)
+      term_grace_ms: Map.get(manager_config, :term_grace_ms, @default_grace_ms),
+      output_drain_ms: bounded_output_drain_ms(Map.get(manager_config, :output_drain_ms, @default_output_drain_ms))
     }
 
     state = Map.put(state, :owner_monitor, monitor_owner(spec.lifecycle_owner))
@@ -114,20 +120,24 @@ defmodule Jido.Harness.ProcessWorker do
   @impl true
   def handle_info({:stdout, os_pid, data}, %{os_pid: os_pid, status: status} = state)
       when status not in @terminal_statuses do
-    {:noreply, state |> append(:stdout, :stdout, data) |> schedule_idle()}
+    {:noreply, state |> append(:stdout, :stdout, data) |> schedule_after_output()}
   end
 
   def handle_info({:stderr, os_pid, data}, %{os_pid: os_pid, status: status} = state)
       when status not in @terminal_statuses do
-    {:noreply, state |> append(:stderr, :stderr, data) |> schedule_idle()}
+    {:noreply, state |> append(:stderr, :stderr, data) |> schedule_after_output()}
   end
 
   def handle_info({:DOWN, _monitor, :process, exec_pid, reason}, %{exec_pid: exec_pid} = state) do
-    {:noreply, finish(state, reason)}
+    {:noreply, begin_exit_drain(state, reason)}
   end
 
   def handle_info({:EXIT, exec_pid, reason}, %{exec_pid: exec_pid} = state) do
-    {:noreply, finish(state, reason)}
+    {:noreply, begin_exit_drain(state, reason)}
+  end
+
+  def handle_info({:finish_exit, token}, %{exit_drain_token: token} = state) do
+    {:noreply, finish(state, state.exit_reason)}
   end
 
   def handle_info({:runtime_timeout, token}, %{runtime_token: token} = state) do
@@ -255,6 +265,7 @@ defmodule Jido.Harness.ProcessWorker do
     cancel_timer(state.runtime_timer)
     cancel_timer(state.idle_timer)
     cancel_timer(state.escalation_timer)
+    cancel_timer(state.exit_drain_timer)
     exit_status = exit_status(reason)
 
     {status, event_type} =
@@ -270,7 +281,10 @@ defmodule Jido.Harness.ProcessWorker do
       | status: status,
         exit_status: exit_status,
         finished_at: timestamp(),
-        error: error_reason(status, exit_status, reason)
+        error: error_reason(status, exit_status, reason),
+        exit_drain_timer: nil,
+        exit_drain_token: nil,
+        exit_reason: nil
     }
 
     state
@@ -299,6 +313,45 @@ defmodule Jido.Harness.ProcessWorker do
   defp signal(state, signal), do: state.driver.signal(state.os_pid || state.exec_pid, signal)
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer), do: Process.cancel_timer(timer, async: true, info: false)
+
+  defp begin_exit_drain(%{exit_drain_token: token} = state, _reason)
+       when not is_nil(token),
+       do: state
+
+  defp begin_exit_drain(state, reason) do
+    cancel_timer(state.runtime_timer)
+    cancel_timer(state.idle_timer)
+    cancel_timer(state.escalation_timer)
+
+    token = make_ref()
+    timer = Process.send_after(self(), {:finish_exit, token}, state.output_drain_ms)
+
+    %{
+      state
+      | runtime_timer: nil,
+        idle_timer: nil,
+        escalation_timer: nil,
+        exit_drain_timer: timer,
+        exit_drain_token: token,
+        exit_reason: reason
+    }
+  end
+
+  defp bounded_output_drain_ms(value)
+       when is_integer(value) and value >= 0,
+       do: min(value, @maximum_output_drain_ms)
+
+  defp bounded_output_drain_ms(_value), do: @default_output_drain_ms
+
+  defp schedule_after_output(%{exit_drain_token: nil} = state),
+    do: schedule_idle(state)
+
+  defp schedule_after_output(state) do
+    cancel_timer(state.exit_drain_timer)
+    token = make_ref()
+    timer = Process.send_after(self(), {:finish_exit, token}, state.output_drain_ms)
+    %{state | exit_drain_timer: timer, exit_drain_token: token}
+  end
 
   defp info(state) do
     %ProcessInfo{

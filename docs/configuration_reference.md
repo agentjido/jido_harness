@@ -78,7 +78,8 @@ config :jido_harness,
     terminal_ttl_ms: 24 * 60 * 60 * 1_000,
     retention_sweep_ms: 60_000,
     cancel_grace_ms: 5_000,
-    term_grace_ms: 5_000
+    term_grace_ms: 5_000,
+    output_drain_ms: 50
   }
 ```
 
@@ -91,6 +92,7 @@ config :jido_harness,
 | `retention_sweep_ms` | 60 seconds | Retention-worker sweep interval |
 | `cancel_grace_ms` | 5 seconds | SIGINT-to-SIGTERM delay |
 | `term_grace_ms` | 5 seconds | SIGTERM-to-SIGKILL delay |
+| `output_drain_ms` | 50 milliseconds | Bounded quiet period for stdout/stderr already in flight after process exit |
 
 Per-resource retention can set `journal_dir`, `memory_bytes`, `segment_bytes`,
 and `disk_limit_bytes`. Per-resource values override process-manager journal
