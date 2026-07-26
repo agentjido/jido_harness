@@ -277,6 +277,31 @@ defmodule Jido.Harness.ProcessManagerTest do
     refute persisted =~ secret
   end
 
+  test "replacement environment excludes ambient host variables" do
+    sentinel_name = "JIDO_HARNESS_HOST_SENTINEL"
+    previous = System.get_env(sentinel_name)
+    System.put_env(sentinel_name, "must-not-leak")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env(sentinel_name, previous),
+        else: System.delete_env(sentinel_name)
+    end)
+
+    assert {:ok, id} =
+             Jido.Harness.Process.start(%{
+               executable: "/bin/sh",
+               argv: ["-c", "printf '%s|%s' \"${JIDO_HARNESS_HOST_SENTINEL-unset}\" \"$RUN_SCOPE\""],
+               env: %{"RUN_SCOPE" => "scoped"},
+               env_mode: :replace,
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|scoped"))
+  end
+
   test "runs the deterministic long-session fixture in a short PR-safe mode" do
     fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 

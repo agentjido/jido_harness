@@ -109,3 +109,9 @@ system environment visible to the BEAM. Application configuration does not
 inherit an interactive shell's `PATH` automatically. Releases, GUI runtimes,
 containers, and service managers must expose the CLI executable and credential
 environment explicitly.
+
+Run and session requests accept `env_mode: :overlay | :replace`. Overlay mode
+preserves the BEAM environment and applies the request entries. Replacement
+mode clears the inherited child environment before applying the request
+entries; callers must then supply every required value, including `PATH`,
+isolated home/temp locations, and scoped credentials.

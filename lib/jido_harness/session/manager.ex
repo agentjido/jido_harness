@@ -141,6 +141,7 @@ defmodule Jido.Harness.SessionManager do
     :provider,
     :cwd,
     :env,
+    :env_mode,
     :metadata,
     :provider_options,
     :transport,

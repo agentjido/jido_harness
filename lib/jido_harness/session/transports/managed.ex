@@ -182,6 +182,7 @@ defmodule Jido.Harness.SessionAdapters.ManagedTransport do
       attachments: Enum.map(turn.attachments, &Path.expand(&1, session.cwd)),
       reasoning_effort: turn.reasoning_effort || session.reasoning_effort,
       env: session.env,
+      env_mode: session.env_mode,
       metadata: Map.merge(session.metadata, turn.metadata),
       provider_options: Map.merge(session.provider_options, turn.provider_options)
     }

@@ -16,6 +16,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
                argv: argv,
                cwd: request.cwd,
                env: context.config |> configured_env() |> Map.merge(env) |> Map.merge(request.env),
+               env_mode: request.env_mode,
                stdin: true,
                pty: false,
                runtime_timeout_ms: :infinity,

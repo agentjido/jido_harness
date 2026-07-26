@@ -46,6 +46,12 @@ Environment overlays accept string names with string, `false`, or `nil` values.
 Use `false` or `nil` to remove inherited variables when constructing a child
 environment.
 
+For hard isolation, set `env_mode: :replace` on every run or session and provide
+only the minimal environment required by that provider. Replacement mode is
+preserved by finite runs, managed-session turns, ACP sessions, and Pi RPC
+sessions; it prevents ambient host variables from reaching provider
+descendants.
+
 ## Redaction
 
 Jido.Harness redacts structured sensitive fields, bearer credentials, and

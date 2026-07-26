@@ -24,6 +24,7 @@ defmodule Jido.Harness.SessionAdapters.PiRPCTransport do
                  |> Map.merge(request.env)
                  |> Map.put("PI_SKIP_VERSION_CHECK", "1")
                  |> Map.put("PI_TELEMETRY", "0"),
+               env_mode: request.env_mode,
                stdin: true,
                pty: false,
                runtime_timeout_ms: :infinity,

@@ -9,6 +9,7 @@ defmodule Jido.Harness.Adapters.CLIStream do
       argv: argv,
       cwd: request.cwd,
       env: request.env,
+      env_mode: request.env_mode,
       runtime_timeout_ms: request.runtime_timeout_ms,
       idle_timeout_ms: request.idle_timeout_ms,
       stdin: false,
@@ -16,8 +17,10 @@ defmodule Jido.Harness.Adapters.CLIStream do
       metadata: %{run_id: context.run_id, provider: provider}
     }
 
-    with {:ok, process_id} <- ProcessManager.start_owned_process(spec, context.run_owner),
-         {:ok, process_stream} <- ProcessManager.stream_process(process_id) do
+    process_manager = Map.get(context, :process_manager, ProcessManager)
+
+    with {:ok, process_id} <- process_manager.start_owned_process(spec, context.run_owner),
+         {:ok, process_stream} <- process_manager.stream_process(process_id) do
       {:ok, decode(process_stream, provider, mapper, mapper_state)}
     end
   end

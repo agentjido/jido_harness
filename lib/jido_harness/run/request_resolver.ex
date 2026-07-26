@@ -3,7 +3,17 @@ defmodule Jido.Harness.RequestResolver do
 
   alias Jido.Harness.{AdapterSpec, Error, Registry, RunRequest}
 
-  @manager_fields [:prompt, :provider, :cwd, :runtime_timeout_ms, :idle_timeout_ms, :env, :metadata, :provider_options]
+  @manager_fields [
+    :prompt,
+    :provider,
+    :cwd,
+    :runtime_timeout_ms,
+    :idle_timeout_ms,
+    :env,
+    :env_mode,
+    :metadata,
+    :provider_options
+  ]
   @empty_values [nil, [], %{}, :default]
 
   def resolve(provider, %RunRequest{} = request) do
