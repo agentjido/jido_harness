@@ -18,7 +18,7 @@ defmodule Jido.Harness.CursorStream do
             case info_fun.() do
               {:ok, info} ->
                 if terminal_fun.(info) do
-                  {:halt, current}
+                  replay_after_terminal(replay_fun, current, limit)
                 else
                   Process.sleep(poll_interval)
                   {[], current}
@@ -34,5 +34,19 @@ defmodule Jido.Harness.CursorStream do
       end,
       fn _cursor -> :ok end
     )
+  end
+
+  defp replay_after_terminal(replay_fun, current, limit) do
+    case replay_fun.(current, limit) do
+      {:ok, [_ | _] = events} ->
+        next_cursor = events |> List.last() |> Map.fetch!(:sequence)
+        {events, next_cursor}
+
+      {:ok, []} ->
+        {:halt, current}
+
+      {:error, _reason} ->
+        {:halt, current}
+    end
   end
 end
