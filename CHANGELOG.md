@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Preserve stdout and stderr that arrive immediately after a fast process exit
-  by applying a bounded output-drain quiet period before terminal finalization.
-
 ### Added
 
 - Optional `session_id` field on `Jido.Harness.RunRequest` so callers can pass
