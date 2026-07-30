@@ -62,7 +62,7 @@ defmodule Jido.Harness.AdapterTest do
     assert env["API_TIMEOUT_MS"] == "2147483647"
     assert env["CONFIGURED"] == "yes"
     assert env["KEEP_ME"] == "yes"
-    refute Map.has_key?(env, "ZAI_API_KEY")
+    assert env["ZAI_API_KEY"] == nil
     assert env["ANTHROPIC_API_KEY"] == nil
     assert env["CLAUDE_AGENT_OAUTH_TOKEN"] == nil
   end

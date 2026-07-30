@@ -186,10 +186,12 @@ defmodule Jido.Harness.Adapters.Kimi do
 
   @doc false
   def prepare_request(%RunRequest{} = request, config \\ %{}) do
-    request = %{request | env: Helpers.merge_env(request, config)}
-    env_name = request.env["KIMI_MODEL_NAME"] || ambient_env(request, "KIMI_MODEL_NAME")
+    request_env = request.env
+    config_env = configured_env(config)
+    request = %{request | env: Map.merge(config_env, request_env)}
+    env_name = env_value(request_env, config_env, request.env_mode, "KIMI_MODEL_NAME")
     requested_name = request.model || env_name
-    api_key = request.env["KIMI_MODEL_API_KEY"] || ambient_env(request, "KIMI_MODEL_API_KEY")
+    api_key = env_value(request_env, config_env, request.env_mode, "KIMI_MODEL_API_KEY")
 
     cond do
       present?(env_name) and not present?(api_key) ->
@@ -224,8 +226,21 @@ defmodule Jido.Harness.Adapters.Kimi do
     |> maybe_put("KIMI_MODEL_THINKING_EFFORT", request.reasoning_effort)
   end
 
-  defp ambient_env(%{env_mode: :overlay}, name), do: System.get_env(name)
-  defp ambient_env(_request, _name), do: nil
+  defp env_value(request_env, config_env, mode, name) do
+    cond do
+      Map.has_key?(request_env, name) -> Map.get(request_env, name)
+      Map.has_key?(config_env, name) -> Map.get(config_env, name)
+      mode == :overlay -> System.get_env(name)
+      true -> nil
+    end
+  end
+
+  defp configured_env(config) do
+    case Map.get(config, :env, Map.get(config, "env", %{})) do
+      env when is_map(env) or is_list(env) -> Map.new(env)
+      _other -> %{}
+    end
+  end
 
   defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
     do: {:error, Error.validation("Kimi provider_session_id and provider continue cannot be combined", provider: :kimi)}

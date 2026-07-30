@@ -139,13 +139,15 @@ defmodule Jido.Harness.EnvironmentModeTest do
 
     zai_overlay = capture_run_spec(:zai, %{prompt: "test", env_mode: :overlay})
     assert zai_overlay.env["ANTHROPIC_AUTH_TOKEN"] == "ambient-zai"
+    assert zai_overlay.env["ZAI_API_KEY"] == nil
 
     kimi_overlay = capture_run_spec(:kimi, %{prompt: "test", env_mode: :overlay})
     assert kimi_overlay.env["KIMI_MODEL_NAME"] == "ambient-kimi-model"
     assert kimi_overlay.env["KIMI_MODEL_API_KEY"] == "ambient-kimi-key"
 
     zai_replace = capture_run_spec(:zai, %{prompt: "test", env_mode: :replace})
-    refute Map.has_key?(zai_replace.env, "ANTHROPIC_AUTH_TOKEN")
+    assert zai_replace.env["ANTHROPIC_AUTH_TOKEN"] == nil
+    assert zai_replace.env["ZAI_API_KEY"] == nil
 
     kimi_replace = capture_run_spec(:kimi, %{prompt: "test", env_mode: :replace})
     refute Map.has_key?(kimi_replace.env, "KIMI_MODEL_NAME")
@@ -187,6 +189,26 @@ defmodule Jido.Harness.EnvironmentModeTest do
     kimi_config = capture_run_spec(:kimi, %{prompt: "test", env_mode: :replace})
     assert kimi_config.env["KIMI_MODEL_NAME"] == "configured-kimi-model"
     assert kimi_config.env["KIMI_MODEL_API_KEY"] == "configured-kimi-key"
+
+    zai_unset =
+      capture_run_spec(:zai, %{
+        prompt: "test",
+        env_mode: :overlay,
+        env: %{"ZAI_API_KEY" => false}
+      })
+
+    assert zai_unset.env["ANTHROPIC_AUTH_TOKEN"] == nil
+    assert zai_unset.env["ZAI_API_KEY"] == nil
+
+    kimi_unset =
+      capture_run_spec(:kimi, %{
+        prompt: "test",
+        env_mode: :overlay,
+        env: %{"KIMI_MODEL_NAME" => nil, "KIMI_MODEL_API_KEY" => false}
+      })
+
+    assert kimi_unset.env["KIMI_MODEL_NAME"] == nil
+    assert kimi_unset.env["KIMI_MODEL_API_KEY"] == false
   end
 
   test "managed Z.AI and Kimi sessions apply the same replacement credential rules" do
@@ -200,7 +222,8 @@ defmodule Jido.Harness.EnvironmentModeTest do
     assert kimi_overlay.env["KIMI_MODEL_API_KEY"] == "ambient-kimi-key"
 
     zai_replace = capture_managed_turn_spec(:zai, %{env_mode: :replace})
-    refute Map.has_key?(zai_replace.env, "ANTHROPIC_AUTH_TOKEN")
+    assert zai_replace.env["ANTHROPIC_AUTH_TOKEN"] == nil
+    assert zai_replace.env["ZAI_API_KEY"] == nil
 
     kimi_replace = capture_managed_turn_spec(:kimi, %{env_mode: :replace})
     refute Map.has_key?(kimi_replace.env, "KIMI_MODEL_NAME")
@@ -223,6 +246,24 @@ defmodule Jido.Harness.EnvironmentModeTest do
 
     assert kimi_request.env["KIMI_MODEL_NAME"] == "session-kimi-model"
     assert kimi_request.env["KIMI_MODEL_API_KEY"] == "session-kimi-key"
+
+    zai_unset =
+      capture_managed_turn_spec(:zai, %{
+        env_mode: :overlay,
+        env: %{"ZAI_API_KEY" => nil}
+      })
+
+    assert zai_unset.env["ANTHROPIC_AUTH_TOKEN"] == nil
+    assert zai_unset.env["ZAI_API_KEY"] == nil
+
+    kimi_unset =
+      capture_managed_turn_spec(:kimi, %{
+        env_mode: :overlay,
+        env: %{"KIMI_MODEL_NAME" => false, "KIMI_MODEL_API_KEY" => nil}
+      })
+
+    assert kimi_unset.env["KIMI_MODEL_NAME"] == false
+    assert kimi_unset.env["KIMI_MODEL_API_KEY"] == nil
   end
 
   defp capture_run_spec(provider, request) do

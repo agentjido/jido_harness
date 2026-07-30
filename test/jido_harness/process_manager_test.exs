@@ -87,8 +87,12 @@ defmodule Jido.Harness.ProcessManagerTest do
   test "drains output that arrives immediately after the execution exit signal" do
     {id, worker, exec_pid, os_pid} = start_controlled_process(%{output_drain_ms: 100})
     state = begin_exit_drain(worker, exec_pid)
+    quiet_token = state.exit_drain_token
+    deadline_token = state.exit_drain_deadline_token
     send(worker, {:stdout, os_pid, "late-output"})
     state = await_worker_state(worker, &(&1.sequence > state.sequence))
+    refute state.exit_drain_token == quiet_token
+    assert state.exit_drain_deadline_token == deadline_token
     send(worker, {:finish_exit, state.exit_drain_token})
 
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
@@ -137,6 +141,10 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     send(worker, {:runtime_timeout, running.runtime_token})
     send(worker, {:idle_timeout, running.idle_token})
+    send(worker, {:runtime_timeout, nil})
+    send(worker, {:idle_timeout, nil})
+    send(worker, {:finish_exit, nil})
+    send(worker, {:finish_exit_deadline, nil})
     send(worker, {:escalate, :sigterm})
     send(worker, {:escalate, :sigkill})
     send(worker, {:EXIT, exec_pid, :duplicate_exit})
@@ -424,6 +432,36 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
     assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
     assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|scoped"))
+  end
+
+  test "overlay environment can remove ambient host variables explicitly" do
+    nil_name = "JIDO_HARNESS_NIL_SENTINEL"
+    false_name = "JIDO_HARNESS_FALSE_SENTINEL"
+    previous_nil = System.get_env(nil_name)
+    previous_false = System.get_env(false_name)
+    System.put_env(nil_name, "must-not-leak")
+    System.put_env(false_name, "must-not-leak")
+
+    on_exit(fn ->
+      if previous_nil, do: System.put_env(nil_name, previous_nil), else: System.delete_env(nil_name)
+      if previous_false, do: System.put_env(false_name, previous_false), else: System.delete_env(false_name)
+    end)
+
+    assert {:ok, id} =
+             Jido.Harness.Process.start(%{
+               executable: "/bin/sh",
+               argv: [
+                 "-c",
+                 "printf '%s|%s' \"${JIDO_HARNESS_NIL_SENTINEL-unset}\" \"${JIDO_HARNESS_FALSE_SENTINEL-unset}\""
+               ],
+               env: %{nil_name => nil, false_name => false},
+               env_mode: :overlay,
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|unset"))
   end
 
   test "runs the deterministic long-session fixture in a short PR-safe mode" do

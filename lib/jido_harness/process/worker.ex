@@ -145,19 +145,20 @@ defmodule Jido.Harness.ProcessWorker do
     {:noreply, begin_exit_drain(state, reason)}
   end
 
-  def handle_info({:finish_exit, token}, %{exit_drain_token: token} = state) do
+  def handle_info({:finish_exit, token}, %{exit_drain_token: token} = state) when not is_nil(token) do
     {:noreply, finish(state, state.exit_reason)}
   end
 
-  def handle_info({:finish_exit_deadline, token}, %{exit_drain_deadline_token: token} = state) do
+  def handle_info({:finish_exit_deadline, token}, %{exit_drain_deadline_token: token} = state)
+      when not is_nil(token) do
     {:noreply, finish(state, state.exit_reason)}
   end
 
-  def handle_info({:runtime_timeout, token}, %{runtime_token: token} = state) do
+  def handle_info({:runtime_timeout, token}, %{runtime_token: token} = state) when not is_nil(token) do
     {:noreply, begin_stop(state, :timed_out)}
   end
 
-  def handle_info({:idle_timeout, token}, %{idle_token: token} = state) do
+  def handle_info({:idle_timeout, token}, %{idle_token: token} = state) when not is_nil(token) do
     {:noreply, begin_stop(state, :timed_out)}
   end
 
