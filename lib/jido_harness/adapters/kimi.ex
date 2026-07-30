@@ -85,7 +85,7 @@ defmodule Jido.Harness.Adapters.Kimi do
     options = Helpers.provider_options(request.provider_options, @provider_options)
 
     with :ok <- validate_options(request, options),
-         {:ok, request} <- prepare_request(request),
+         {:ok, request} <- prepare_request(request, context.config),
          {:ok, argv} <- build_argv(request, options) do
       executable = options[:cli_path] || Helpers.cli_path(context.config, spec().executable)
       CLIStream.run(:kimi, request, context, executable, argv, &map_event/1)
@@ -185,10 +185,11 @@ defmodule Jido.Harness.Adapters.Kimi do
     do: [provider_event(raw, %{"mapped" => false, "value_type" => value_type(raw)})]
 
   @doc false
-  def prepare_request(%RunRequest{} = request) do
-    env_name = request.env["KIMI_MODEL_NAME"] || System.get_env("KIMI_MODEL_NAME")
+  def prepare_request(%RunRequest{} = request, config \\ %{}) do
+    request = %{request | env: Helpers.merge_env(request, config)}
+    env_name = request.env["KIMI_MODEL_NAME"] || ambient_env(request, "KIMI_MODEL_NAME")
     requested_name = request.model || env_name
-    api_key = request.env["KIMI_MODEL_API_KEY"] || System.get_env("KIMI_MODEL_API_KEY")
+    api_key = request.env["KIMI_MODEL_API_KEY"] || ambient_env(request, "KIMI_MODEL_API_KEY")
 
     cond do
       present?(env_name) and not present?(api_key) ->
@@ -201,7 +202,7 @@ defmodule Jido.Harness.Adapters.Kimi do
       present?(api_key) and present?(requested_name) ->
         {:ok, %{request | env: managed_env(request, requested_name, api_key)}}
 
-      present?(request.env["KIMI_MODEL_API_KEY"]) ->
+      present?(api_key) ->
         {:error,
          Error.validation("KIMI_MODEL_API_KEY requires a model or KIMI_MODEL_NAME",
            provider: :kimi,
@@ -222,6 +223,9 @@ defmodule Jido.Harness.Adapters.Kimi do
     |> maybe_put("KIMI_MODEL_API_KEY", api_key)
     |> maybe_put("KIMI_MODEL_THINKING_EFFORT", request.reasoning_effort)
   end
+
+  defp ambient_env(%{env_mode: :overlay}, name), do: System.get_env(name)
+  defp ambient_env(_request, _name), do: nil
 
   defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),
     do: {:error, Error.validation("Kimi provider_session_id and provider continue cannot be combined", provider: :kimi)}

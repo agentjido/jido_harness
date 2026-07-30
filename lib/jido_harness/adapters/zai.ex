@@ -112,7 +112,7 @@ defmodule Jido.Harness.Adapters.Zai do
 
     token =
       request_env["ANTHROPIC_AUTH_TOKEN"] || request_env["ZAI_API_KEY"] || config_value(config, :api_key) ||
-        config_env["ANTHROPIC_AUTH_TOKEN"] || config_env["ZAI_API_KEY"] || System.get_env("ZAI_API_KEY")
+        config_env["ANTHROPIC_AUTH_TOKEN"] || config_env["ZAI_API_KEY"] || ambient_token(request)
 
     with {:ok, base_url} <- validate_base_url(base_url),
          {:ok, timeout} <- normalize_timeout(timeout),
@@ -170,6 +170,8 @@ defmodule Jido.Harness.Adapters.Zai do
       present?(env["ANTHROPIC_AUTH_TOKEN"])
   end
 
+  defp ambient_token(%{env_mode: :overlay}), do: System.get_env("ZAI_API_KEY")
+  defp ambient_token(_request), do: nil
   defp stringify_env(env) when is_map(env), do: Map.new(env, fn {key, value} -> {to_string(key), value} end)
   defp stringify_env(_env), do: %{}
   defp config_value(config, key, default \\ nil), do: Map.get(config, key, Map.get(config, to_string(key), default))

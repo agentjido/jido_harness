@@ -7,6 +7,7 @@ defmodule Jido.Harness.ProcessWorker do
   @default_grace_ms 5_000
   @default_output_drain_ms 50
   @maximum_output_drain_ms 1_000
+  @output_drain_deadline_factor 4
   @terminal_statuses [:exited, :failed, :cancelled, :timed_out]
 
   def start_link({id, spec}) do
@@ -43,6 +44,8 @@ defmodule Jido.Harness.ProcessWorker do
       escalation_timer: nil,
       exit_drain_timer: nil,
       exit_drain_token: nil,
+      exit_drain_deadline_timer: nil,
+      exit_drain_deadline_token: nil,
       exit_reason: nil,
       waiters: %{},
       cancel_grace_ms: Map.get(manager_config, :cancel_grace_ms, @default_grace_ms),
@@ -86,18 +89,24 @@ defmodule Jido.Harness.ProcessWorker do
     {:reply, {:ok, events}, state}
   end
 
-  def handle_call({:input, data}, _from, %{status: :running} = state) do
+  def handle_call({:input, data}, _from, %{status: :running, exit_drain_token: nil} = state) do
     data = if data == :eof and state.spec.pty != false, do: <<4>>, else: data
     {:reply, state.driver.send_input(state.exec_pid || state.os_pid, data), state}
   end
 
   def handle_call({:input, _data}, _from, state), do: {:reply, {:error, :not_running}, state}
 
+  def handle_call(:cancel, _from, %{exit_drain_token: token} = state) when not is_nil(token),
+    do: {:reply, :ok, state}
+
   def handle_call(:cancel, _from, state) when state.status in [:starting, :running, :stopping] do
     {:reply, :ok, begin_stop(state, :cancelled)}
   end
 
   def handle_call(:cancel, _from, state), do: {:reply, :ok, state}
+
+  def handle_call(:kill, _from, %{exit_drain_token: token} = state) when not is_nil(token),
+    do: {:reply, :ok, state}
 
   def handle_call(:kill, _from, state) when state.status in [:starting, :running, :stopping] do
     _ = signal(state, :sigkill)
@@ -140,12 +149,24 @@ defmodule Jido.Harness.ProcessWorker do
     {:noreply, finish(state, state.exit_reason)}
   end
 
+  def handle_info({:finish_exit_deadline, token}, %{exit_drain_deadline_token: token} = state) do
+    {:noreply, finish(state, state.exit_reason)}
+  end
+
   def handle_info({:runtime_timeout, token}, %{runtime_token: token} = state) do
     {:noreply, begin_stop(state, :timed_out)}
   end
 
   def handle_info({:idle_timeout, token}, %{idle_token: token} = state) do
     {:noreply, begin_stop(state, :timed_out)}
+  end
+
+  def handle_info(
+        {:DOWN, monitor, :process, _owner, _reason},
+        %{owner_monitor: monitor, exit_drain_token: token} = state
+      )
+      when not is_nil(token) do
+    {:noreply, state}
   end
 
   def handle_info({:DOWN, monitor, :process, _owner, _reason}, %{owner_monitor: monitor} = state) do
@@ -156,13 +177,13 @@ defmodule Jido.Harness.ProcessWorker do
     {:noreply, %{state | waiters: Waiters.drop_monitor(state.waiters, monitor)}}
   end
 
-  def handle_info({:escalate, :sigterm}, %{status: :stopping} = state) do
+  def handle_info({:escalate, :sigterm}, %{status: :stopping, exit_drain_token: nil} = state) do
     _ = signal(state, :sigterm)
     timer = Process.send_after(self(), {:escalate, :sigkill}, state.term_grace_ms)
     {:noreply, %{state | escalation_timer: timer}}
   end
 
-  def handle_info({:escalate, :sigkill}, %{status: :stopping} = state) do
+  def handle_info({:escalate, :sigkill}, %{status: :stopping, exit_drain_token: nil} = state) do
     _ = signal(state, :sigkill)
     {:noreply, state}
   end
@@ -266,6 +287,7 @@ defmodule Jido.Harness.ProcessWorker do
     cancel_timer(state.idle_timer)
     cancel_timer(state.escalation_timer)
     cancel_timer(state.exit_drain_timer)
+    cancel_timer(state.exit_drain_deadline_timer)
     exit_status = exit_status(reason)
 
     {status, event_type} =
@@ -284,6 +306,8 @@ defmodule Jido.Harness.ProcessWorker do
         error: error_reason(status, exit_status, reason),
         exit_drain_timer: nil,
         exit_drain_token: nil,
+        exit_drain_deadline_timer: nil,
+        exit_drain_deadline_token: nil,
         exit_reason: nil
     }
 
@@ -314,6 +338,10 @@ defmodule Jido.Harness.ProcessWorker do
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer), do: Process.cancel_timer(timer, async: true, info: false)
 
+  defp begin_exit_drain(%{status: status} = state, _reason)
+       when status in @terminal_statuses,
+       do: state
+
   defp begin_exit_drain(%{exit_drain_token: token} = state, _reason)
        when not is_nil(token),
        do: state
@@ -325,14 +353,26 @@ defmodule Jido.Harness.ProcessWorker do
 
     token = make_ref()
     timer = Process.send_after(self(), {:finish_exit, token}, state.output_drain_ms)
+    deadline_token = make_ref()
+
+    deadline_timer =
+      Process.send_after(
+        self(),
+        {:finish_exit_deadline, deadline_token},
+        output_drain_deadline_ms(state.output_drain_ms)
+      )
 
     %{
       state
       | runtime_timer: nil,
+        runtime_token: nil,
         idle_timer: nil,
+        idle_token: nil,
         escalation_timer: nil,
         exit_drain_timer: timer,
         exit_drain_token: token,
+        exit_drain_deadline_timer: deadline_timer,
+        exit_drain_deadline_token: deadline_token,
         exit_reason: reason
     }
   end
@@ -342,6 +382,9 @@ defmodule Jido.Harness.ProcessWorker do
        do: min(value, @maximum_output_drain_ms)
 
   defp bounded_output_drain_ms(_value), do: @default_output_drain_ms
+
+  defp output_drain_deadline_ms(0), do: 0
+  defp output_drain_deadline_ms(value), do: value * @output_drain_deadline_factor
 
   defp schedule_after_output(%{exit_drain_token: nil} = state),
     do: schedule_idle(state)
