@@ -111,8 +111,7 @@ defmodule Jido.Harness.Adapters.Zai do
         Map.get(request, :runtime_timeout_ms, Map.get(request, :turn_runtime_timeout_ms, :infinity))
 
     token =
-      request_env["ANTHROPIC_AUTH_TOKEN"] || request_env["ZAI_API_KEY"] || config_value(config, :api_key) ||
-        config_env["ANTHROPIC_AUTH_TOKEN"] || config_env["ZAI_API_KEY"] || System.get_env("ZAI_API_KEY")
+      resolve_token(request_env, config, config_env, request)
 
     with {:ok, base_url} <- validate_base_url(base_url),
          {:ok, timeout} <- normalize_timeout(timeout),
@@ -120,12 +119,12 @@ defmodule Jido.Harness.Adapters.Zai do
       env =
         config_env
         |> Map.merge(request_env)
-        |> Map.delete("ZAI_API_KEY")
+        |> Map.put("ZAI_API_KEY", nil)
         |> Map.put("ANTHROPIC_BASE_URL", base_url)
         |> Map.put("API_TIMEOUT_MS", Integer.to_string(timeout))
         |> Map.put("ANTHROPIC_API_KEY", nil)
         |> Map.put("CLAUDE_AGENT_OAUTH_TOKEN", nil)
-        |> maybe_put("ANTHROPIC_AUTH_TOKEN", token)
+        |> Map.put("ANTHROPIC_AUTH_TOKEN", token)
 
       {:ok, env}
     end
@@ -157,7 +156,7 @@ defmodule Jido.Harness.Adapters.Zai do
   defp normalize_timeout(_value),
     do: {:error, Error.validation("Z.AI api_timeout_ms must be :infinity or a positive integer", provider: :zai)}
 
-  defp validate_optional_token(nil), do: {:ok, nil}
+  defp validate_optional_token(value) when value in [nil, false], do: {:ok, nil}
   defp validate_optional_token(value) when is_binary(value) and value != "", do: {:ok, value}
 
   defp validate_optional_token(_value),
@@ -170,10 +169,34 @@ defmodule Jido.Harness.Adapters.Zai do
       present?(env["ANTHROPIC_AUTH_TOKEN"])
   end
 
+  defp resolve_token(request_env, config, config_env, request) do
+    with :missing <- first_present(request_env, ["ANTHROPIC_AUTH_TOKEN", "ZAI_API_KEY"]),
+         :missing <- config_present(config, :api_key),
+         :missing <- first_present(config_env, ["ANTHROPIC_AUTH_TOKEN", "ZAI_API_KEY"]) do
+      ambient_token(request)
+    else
+      {:present, value} -> value
+    end
+  end
+
+  defp first_present(env, keys) do
+    Enum.find_value(keys, :missing, fn key ->
+      if Map.has_key?(env, key), do: {:present, Map.get(env, key)}
+    end)
+  end
+
+  defp config_present(config, key) do
+    cond do
+      Map.has_key?(config, key) -> {:present, Map.get(config, key)}
+      Map.has_key?(config, to_string(key)) -> {:present, Map.get(config, to_string(key))}
+      true -> :missing
+    end
+  end
+
+  defp ambient_token(%{env_mode: :overlay}), do: System.get_env("ZAI_API_KEY")
+  defp ambient_token(_request), do: nil
   defp stringify_env(env) when is_map(env), do: Map.new(env, fn {key, value} -> {to_string(key), value} end)
   defp stringify_env(_env), do: %{}
   defp config_value(config, key, default \\ nil), do: Map.get(config, key, Map.get(config, to_string(key), default))
   defp present?(value), do: is_binary(value) and value != ""
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

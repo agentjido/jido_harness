@@ -3,6 +3,40 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   import Jido.Harness.TestHelpers
 
+  defmodule ControlledExitDriver do
+    @behaviour Jido.Harness.ProcessDriver
+
+    @impl true
+    def start(_spec, owner) do
+      test_pid = Application.fetch_env!(:jido_harness, :process_manager_test_pid)
+      os_pid = System.unique_integer([:positive])
+
+      exec_pid =
+        spawn_link(fn ->
+          send(test_pid, {:driver_ready, self(), owner, os_pid})
+
+          receive do
+            {:exit, reason, caller} ->
+              send(caller, {:driver_exiting, self(), reason})
+              exit(reason)
+          end
+        end)
+
+      {:ok, exec_pid, os_pid}
+    end
+
+    @impl true
+    def send_input(_process, _data), do: :ok
+
+    @impl true
+    def signal(process, signal) do
+      if test_pid = Application.get_env(:jido_harness, :process_manager_test_pid),
+        do: send(test_pid, {:driver_signal, process, signal})
+
+      :ok
+    end
+  end
+
   setup do
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-process-test-#{System.unique_integer([:positive])}")
     original = Application.get_env(:jido_harness, :process_manager)
@@ -48,6 +82,104 @@ defmodule Jido.Harness.ProcessManagerTest do
              {:ok, file_stat} = File.stat(path)
              Bitwise.band(file_stat.mode, 0o777) == 0o600
            end)
+  end
+
+  test "drains output that arrives immediately after the execution exit signal" do
+    {id, worker, exec_pid, os_pid} = start_controlled_process(%{output_drain_ms: 100})
+    state = begin_exit_drain(worker, exec_pid)
+    quiet_token = state.exit_drain_token
+    deadline_token = state.exit_drain_deadline_token
+    send(worker, {:stdout, os_pid, "late-output"})
+    state = await_worker_state(worker, &(&1.sequence > state.sequence))
+    refute state.exit_drain_token == quiet_token
+    assert state.exit_drain_deadline_token == deadline_token
+    send(worker, {:finish_exit, state.exit_drain_token})
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "late-output"))
+    assert List.last(events).type == :exited
+  end
+
+  test "continuous output cannot extend the exit drain without limit" do
+    {id, worker, exec_pid, os_pid} = start_controlled_process(%{output_drain_ms: 10})
+    _state = begin_exit_drain(worker, exec_pid)
+    producer = spawn(fn -> output_loop(worker, os_pid) end)
+    send(producer, :emit)
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 1_000)
+    send(producer, :stop)
+
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "trailing-output"))
+    assert List.last(events).type == :exited
+  end
+
+  test "an observed exit is not replaced by drain-window control messages" do
+    lifecycle_owner =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    owner_monitor = Process.monitor(lifecycle_owner)
+
+    {id, worker, exec_pid, _os_pid} =
+      start_controlled_process(
+        %{output_drain_ms: 500, runtime_timeout_ms: 5_000, idle_timeout_ms: 5_000},
+        lifecycle_owner
+      )
+
+    running = :sys.get_state(worker)
+    _state = begin_exit_drain(worker, exec_pid)
+
+    assert {:error, :not_running} = Jido.Harness.Process.send_input(id, "ignored")
+    assert :ok = Jido.Harness.Process.cancel(id)
+    assert :ok = Jido.Harness.Process.kill(id)
+
+    send(worker, {:runtime_timeout, running.runtime_token})
+    send(worker, {:idle_timeout, running.idle_token})
+    send(worker, {:runtime_timeout, nil})
+    send(worker, {:idle_timeout, nil})
+    send(worker, {:finish_exit, nil})
+    send(worker, {:finish_exit_deadline, nil})
+    send(worker, {:escalate, :sigterm})
+    send(worker, {:escalate, :sigkill})
+    send(worker, {:EXIT, exec_pid, :duplicate_exit})
+
+    Process.exit(lifecycle_owner, :shutdown)
+    assert_receive {:DOWN, ^owner_monitor, :process, ^lifecycle_owner, :shutdown}, 1_000
+    send(worker, {:DOWN, running.owner_monitor, :process, lifecycle_owner, :shutdown})
+
+    state = :sys.get_state(worker)
+    assert state.exit_reason == :normal
+    assert state.stop_reason == nil
+    assert state.runtime_token == nil
+    assert state.idle_token == nil
+    refute_received {:driver_signal, _process, _signal}
+
+    send(worker, {:finish_exit_deadline, state.exit_drain_deadline_token})
+    assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 1_000)
+
+    send(worker, {:EXIT, exec_pid, :duplicate_after_terminal})
+    terminal = :sys.get_state(worker)
+    assert terminal.status == :exited
+    assert terminal.exit_drain_token == nil
+    assert terminal.exit_drain_deadline_token == nil
+  end
+
+  test "zero output drain finalizes an observed exit immediately" do
+    {id, _worker, exec_pid, _os_pid} = start_controlled_process(%{output_drain_ms: 0})
+    exec_monitor = Process.monitor(exec_pid)
+    send(exec_pid, {:exit, :normal, self()})
+    assert_receive {:driver_exiting, ^exec_pid, :normal}, 1_000
+    assert_receive {:DOWN, ^exec_monitor, :process, ^exec_pid, :normal}, 1_000
+
+    assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 1_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert List.last(events).type == :exited
   end
 
   test "supports stdin, EOF, cursor replay, and pull streaming" do
@@ -277,6 +409,61 @@ defmodule Jido.Harness.ProcessManagerTest do
     refute persisted =~ secret
   end
 
+  test "replacement environment excludes ambient host variables" do
+    sentinel_name = "JIDO_HARNESS_HOST_SENTINEL"
+    previous = System.get_env(sentinel_name)
+    System.put_env(sentinel_name, "must-not-leak")
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env(sentinel_name, previous),
+        else: System.delete_env(sentinel_name)
+    end)
+
+    assert {:ok, id} =
+             Jido.Harness.Process.start(%{
+               executable: "/bin/sh",
+               argv: ["-c", "printf '%s|%s' \"${JIDO_HARNESS_HOST_SENTINEL-unset}\" \"$RUN_SCOPE\""],
+               env: %{"RUN_SCOPE" => "scoped"},
+               env_mode: :replace,
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|scoped"))
+  end
+
+  test "overlay environment can remove ambient host variables explicitly" do
+    nil_name = "JIDO_HARNESS_NIL_SENTINEL"
+    false_name = "JIDO_HARNESS_FALSE_SENTINEL"
+    previous_nil = System.get_env(nil_name)
+    previous_false = System.get_env(false_name)
+    System.put_env(nil_name, "must-not-leak")
+    System.put_env(false_name, "must-not-leak")
+
+    on_exit(fn ->
+      if previous_nil, do: System.put_env(nil_name, previous_nil), else: System.delete_env(nil_name)
+      if previous_false, do: System.put_env(false_name, previous_false), else: System.delete_env(false_name)
+    end)
+
+    assert {:ok, id} =
+             Jido.Harness.Process.start(%{
+               executable: "/bin/sh",
+               argv: [
+                 "-c",
+                 "printf '%s|%s' \"${JIDO_HARNESS_NIL_SENTINEL-unset}\" \"${JIDO_HARNESS_FALSE_SENTINEL-unset}\""
+               ],
+               env: %{nil_name => nil, false_name => false},
+               env_mode: :overlay,
+               stdin: false
+             })
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|unset"))
+  end
+
   test "runs the deterministic long-session fixture in a short PR-safe mode" do
     fixture = Jido.Harness.TestHelpers.fixture_path("long_running_cli.exs")
 
@@ -328,6 +515,69 @@ defmodule Jido.Harness.ProcessManagerTest do
   end
 
   defp eventually(_function, 0), do: false
+
+  defp start_controlled_process(manager_options, lifecycle_owner \\ nil) do
+    original_driver = Application.get_env(:jido_harness, :process_driver)
+    original_test_pid = Application.get_env(:jido_harness, :process_manager_test_pid)
+    manager_config = Application.get_env(:jido_harness, :process_manager, %{})
+    spec_options = Map.take(manager_options, [:runtime_timeout_ms, :idle_timeout_ms])
+    manager_options = Map.drop(manager_options, [:runtime_timeout_ms, :idle_timeout_ms])
+
+    Application.put_env(:jido_harness, :process_driver, ControlledExitDriver)
+    Application.put_env(:jido_harness, :process_manager_test_pid, self())
+    Application.put_env(:jido_harness, :process_manager, Map.merge(manager_config, manager_options))
+
+    on_exit(fn ->
+      if original_driver,
+        do: Application.put_env(:jido_harness, :process_driver, original_driver),
+        else: Application.delete_env(:jido_harness, :process_driver)
+
+      if original_test_pid,
+        do: Application.put_env(:jido_harness, :process_manager_test_pid, original_test_pid),
+        else: Application.delete_env(:jido_harness, :process_manager_test_pid)
+    end)
+
+    spec = Map.merge(%{executable: "/bin/true", stdin: true}, spec_options)
+
+    result =
+      if lifecycle_owner,
+        do: Jido.Harness.ProcessManager.start_owned_process(spec, lifecycle_owner),
+        else: Jido.Harness.Process.start(spec)
+
+    assert {:ok, id} = result
+    assert_receive {:driver_ready, exec_pid, worker, os_pid}, 1_000
+    assert [{^worker, _value}] = Registry.lookup(Jido.Harness.ProcessRegistry, id)
+    {id, worker, exec_pid, os_pid}
+  end
+
+  defp begin_exit_drain(worker, exec_pid) do
+    exec_monitor = Process.monitor(exec_pid)
+    send(exec_pid, {:exit, :normal, self()})
+    assert_receive {:driver_exiting, ^exec_pid, :normal}, 1_000
+    assert_receive {:DOWN, ^exec_monitor, :process, ^exec_pid, :normal}, 1_000
+    await_worker_state(worker, &(not is_nil(&1.exit_drain_token)))
+  end
+
+  defp await_worker_state(worker, predicate, attempts \\ 1_000)
+
+  defp await_worker_state(_worker, _predicate, 0), do: flunk("process worker did not reach the expected state")
+
+  defp await_worker_state(worker, predicate, attempts) do
+    state = :sys.get_state(worker)
+    if predicate.(state), do: state, else: await_worker_state(worker, predicate, attempts - 1)
+  end
+
+  defp output_loop(worker, os_pid) do
+    receive do
+      :emit ->
+        send(worker, {:stdout, os_pid, "trailing-output"})
+        Process.send_after(self(), :emit, 1)
+        output_loop(worker, os_pid)
+
+      :stop ->
+        :ok
+    end
+  end
 
   defp process_alive?(pid) do
     {_output, status} = System.cmd("/bin/kill", ["-0", Integer.to_string(pid)], stderr_to_stdout: true)

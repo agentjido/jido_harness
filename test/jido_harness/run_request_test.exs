@@ -9,11 +9,13 @@ defmodule Jido.Harness.RunRequestTest do
                "prompt" => "hello",
                "cwd" => File.cwd!(),
                "approval_mode" => :prompt,
+               "env_mode" => :replace,
                "runtime_timeout_ms" => :infinity
              })
 
     assert request.prompt == "hello"
     assert request.approval_mode == :prompt
+    assert request.env_mode == :replace
     assert request.runtime_timeout_ms == :infinity
   end
 
@@ -51,5 +53,8 @@ defmodule Jido.Harness.RunRequestTest do
 
     assert {:error, %Error{category: :validation}} =
              RunRequest.new(prompt: "hello", provider_options: nil)
+
+    assert {:error, %Error{category: :validation}} =
+             RunRequest.new(prompt: "hello", env_mode: :inherit)
   end
 end

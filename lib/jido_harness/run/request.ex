@@ -23,6 +23,7 @@ defmodule Jido.Harness.RunRequest do
     :attachments,
     :reasoning_effort,
     :env,
+    :env_mode,
     :metadata,
     :provider_options
   ]
@@ -48,6 +49,7 @@ defmodule Jido.Harness.RunRequest do
               attachments: Zoi.array(Zoi.string()) |> Zoi.default([]),
               reasoning_effort: Zoi.enum(@reasoning_efforts) |> Zoi.nullish(),
               env: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{}),
+              env_mode: Zoi.enum([:overlay, :replace]) |> Zoi.default(:overlay),
               metadata: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{}),
               provider_options: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{})
             },

@@ -85,7 +85,7 @@ defmodule Jido.Harness.Adapters.Kimi do
     options = Helpers.provider_options(request.provider_options, @provider_options)
 
     with :ok <- validate_options(request, options),
-         {:ok, request} <- prepare_request(request),
+         {:ok, request} <- prepare_request(request, context.config),
          {:ok, argv} <- build_argv(request, options) do
       executable = options[:cli_path] || Helpers.cli_path(context.config, spec().executable)
       CLIStream.run(:kimi, request, context, executable, argv, &map_event/1)
@@ -185,10 +185,13 @@ defmodule Jido.Harness.Adapters.Kimi do
     do: [provider_event(raw, %{"mapped" => false, "value_type" => value_type(raw)})]
 
   @doc false
-  def prepare_request(%RunRequest{} = request) do
-    env_name = request.env["KIMI_MODEL_NAME"] || System.get_env("KIMI_MODEL_NAME")
+  def prepare_request(%RunRequest{} = request, config \\ %{}) do
+    request_env = request.env
+    config_env = configured_env(config)
+    request = %{request | env: Map.merge(config_env, request_env)}
+    env_name = env_value(request_env, config_env, request.env_mode, "KIMI_MODEL_NAME")
     requested_name = request.model || env_name
-    api_key = request.env["KIMI_MODEL_API_KEY"] || System.get_env("KIMI_MODEL_API_KEY")
+    api_key = env_value(request_env, config_env, request.env_mode, "KIMI_MODEL_API_KEY")
 
     cond do
       present?(env_name) and not present?(api_key) ->
@@ -201,7 +204,7 @@ defmodule Jido.Harness.Adapters.Kimi do
       present?(api_key) and present?(requested_name) ->
         {:ok, %{request | env: managed_env(request, requested_name, api_key)}}
 
-      present?(request.env["KIMI_MODEL_API_KEY"]) ->
+      present?(api_key) ->
         {:error,
          Error.validation("KIMI_MODEL_API_KEY requires a model or KIMI_MODEL_NAME",
            provider: :kimi,
@@ -221,6 +224,22 @@ defmodule Jido.Harness.Adapters.Kimi do
     |> maybe_put("KIMI_MODEL_NAME", model_name)
     |> maybe_put("KIMI_MODEL_API_KEY", api_key)
     |> maybe_put("KIMI_MODEL_THINKING_EFFORT", request.reasoning_effort)
+  end
+
+  defp env_value(request_env, config_env, mode, name) do
+    cond do
+      Map.has_key?(request_env, name) -> Map.get(request_env, name)
+      Map.has_key?(config_env, name) -> Map.get(config_env, name)
+      mode == :overlay -> System.get_env(name)
+      true -> nil
+    end
+  end
+
+  defp configured_env(config) do
+    case Map.get(config, :env, Map.get(config, "env", %{})) do
+      env when is_map(env) or is_list(env) -> Map.new(env)
+      _other -> %{}
+    end
   end
 
   defp validate_options(%{provider_session_id: session_id}, %{continue: true}) when is_binary(session_id),

@@ -68,7 +68,12 @@ Graceful cancellation targets the complete process group:
 `:exited`, `:failed`, `:cancelled`, `:timed_out`, and `:replay_gap`.
 
 stdout and stderr data remain binary. Replay pages are cursor-addressed and
-capped at 10,000 events.
+capped at 10,000 events. After the execution process exits, the manager waits
+for a 50-millisecond output quiet period before appending its terminal event.
+Each trailing output event restarts that configured quiet period. A hard
+deadline of four times the quiet period prevents continuous trailing output
+from delaying the terminal event without limit. This behavior prevents terminal
+replay from overtaking output already in flight.
 
 ## Retention
 

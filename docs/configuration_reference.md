@@ -78,7 +78,8 @@ config :jido_harness,
     terminal_ttl_ms: 24 * 60 * 60 * 1_000,
     retention_sweep_ms: 60_000,
     cancel_grace_ms: 5_000,
-    term_grace_ms: 5_000
+    term_grace_ms: 5_000,
+    output_drain_ms: 50
   }
 ```
 
@@ -91,6 +92,7 @@ config :jido_harness,
 | `retention_sweep_ms` | 60 seconds | Retention-worker sweep interval |
 | `cancel_grace_ms` | 5 seconds | SIGINT-to-SIGTERM delay |
 | `term_grace_ms` | 5 seconds | SIGTERM-to-SIGKILL delay |
+| `output_drain_ms` | 50 milliseconds | Quiet period for stdout/stderr already in flight after process exit |
 
 Per-resource retention can set `journal_dir`, `memory_bytes`, `segment_bytes`,
 and `disk_limit_bytes`. Per-resource values override process-manager journal
@@ -109,3 +111,9 @@ system environment visible to the BEAM. Application configuration does not
 inherit an interactive shell's `PATH` automatically. Releases, GUI runtimes,
 containers, and service managers must expose the CLI executable and credential
 environment explicitly.
+
+Run and session requests accept `env_mode: :overlay | :replace`. Overlay mode
+preserves the BEAM environment and applies the request entries. Replacement
+mode clears the inherited child environment before applying the request
+entries; callers must then supply every required value, including `PATH`,
+isolated home/temp locations, and scoped credentials.

@@ -33,7 +33,8 @@ from `config :jido_harness, default_provider: ...`.
 - system prompt, allowed/disallowed tools, additional directories, and MCP
   configuration;
 - approval mode, sandbox mode, attachments, and reasoning effort;
-- child environment, in-memory metadata, and nested `provider_options`.
+- child environment plus `env_mode: :overlay | :replace`, in-memory metadata,
+  and nested `provider_options`.
 
 The selected adapter declares which non-default fields it supports. Validation
 fails before the CLI starts when a field or value cannot be represented.

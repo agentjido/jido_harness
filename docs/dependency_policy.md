@@ -15,6 +15,8 @@ one of those boundaries without duplicating the package's core responsibility.
 
 Every built-in provider uses its official CLI through the Jido.Harness process
 manager. Z.AI uses its officially supported Claude Code environment mapping.
+The public Zoi schemas are kept compatible across the 0.17 and 0.18 lines so a
+consumer can share the validation runtime already selected by Jido 2.x.
 
 ## Explicit exclusions
 
