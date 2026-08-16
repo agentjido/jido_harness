@@ -6,7 +6,7 @@ defmodule Jido.Harness.DirectCLIAdapterTest do
     original = Application.get_env(:jido_harness, :provider_config, %{})
 
     provider_config =
-      [:amp, :claude, :codex, :gemini, :zai]
+      [:amp, :claude, :codex, :gemini, :grok, :zai]
       |> Map.new(&{&1, %{cli_path: fixture}})
 
     Application.put_env(:jido_harness, :provider_config, Map.merge(original, provider_config))
@@ -26,6 +26,7 @@ defmodule Jido.Harness.DirectCLIAdapterTest do
       claude: {"claude-ok", "claude-fixture-session"},
       codex: {"codex-ok", "codex-fixture-session"},
       gemini: {"gemini-ok", "gemini-fixture-session"},
+      grok: {"grok-ok", "grok-fixture-session"},
       zai: {"claude-ok", "claude-fixture-session"}
     }
 

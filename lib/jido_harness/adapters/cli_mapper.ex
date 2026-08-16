@@ -1,7 +1,7 @@
 defmodule Jido.Harness.Adapters.CLIMapper do
   @moduledoc false
 
-  alias Jido.Harness.Adapters.CLIMapper.{ClaudeStream, Codex, Gemini}
+  alias Jido.Harness.Adapters.CLIMapper.{ClaudeStream, Codex, Gemini, Grok}
   alias Jido.Harness.Event
 
   @doc "Maps an Amp stream-json record."
@@ -19,4 +19,8 @@ defmodule Jido.Harness.Adapters.CLIMapper do
   @doc "Maps a Gemini stream-json record while carrying its session identifier."
   @spec gemini(term(), String.t() | nil) :: {[Event.t()], String.t() | nil}
   def gemini(event, session_id), do: Gemini.map(event, session_id)
+
+  @doc "Maps a Grok streaming-json record."
+  @spec grok(term()) :: [Event.t()]
+  def grok(event), do: Grok.map(event)
 end

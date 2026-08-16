@@ -425,9 +425,76 @@ defmodule Jido.Harness.AdapterTest do
              OpenCode.build_argv(open_request, %{extra_args: ["--format=json"]})
   end
 
+  test "Grok maps the 1.0 streaming event format" do
+    assert [%Event{provider: :grok, type: :thinking_delta, payload: %{"text" => "checking"}}] =
+             CLIMapper.grok(%{"type" => "thought", "data" => "checking"})
+
+    assert [%Event{provider: :grok, type: :output_text_delta, payload: %{"text" => "hello"}}] =
+             CLIMapper.grok(%{"type" => "text", "data" => "hello"})
+
+    assert [%Event{type: :usage, payload: %{"total_tokens" => 16}}] =
+             CLIMapper.grok(%{
+               "type" => "usage",
+               "usage" => %{
+                 "input_tokens" => 7,
+                 "output_tokens" => 2,
+                 "cache_read_input_tokens" => 5,
+                 "cache_creation_input_tokens" => 2
+               }
+             })
+
+    assert [
+             %Event{
+               type: :tool_call,
+               payload: %{"name" => "read_file", "input" => %{"target_file" => "README.md"}, "call_id" => "call-1"}
+             }
+           ] =
+             CLIMapper.grok(%{
+               "type" => "tool_call",
+               "toolCallId" => "call-1",
+               "toolName" => "read_file",
+               "rawInput" => %{"target_file" => "README.md"}
+             })
+
+    assert [
+             %Event{
+               type: :tool_result,
+               payload: %{"output" => %{"content" => "# Jido.Harness"}, "call_id" => "call-1", "is_error" => false}
+             }
+           ] =
+             CLIMapper.grok(%{
+               "type" => "tool_call_update",
+               "toolCallId" => "call-1",
+               "status" => "completed",
+               "rawOutput" => %{"content" => "# Jido.Harness"}
+             })
+
+    assert [
+             %Event{type: :usage, provider_session_id: "session-1", payload: %{"total_tokens" => 9}},
+             %Event{
+               type: :run_completed,
+               provider_session_id: "session-1",
+               payload: %{"stop_reason" => "end_turn", "request_id" => "request-1"}
+             }
+           ] =
+             CLIMapper.grok(%{
+               "type" => "end",
+               "stopReason" => "end_turn",
+               "sessionId" => "session-1",
+               "requestId" => "request-1",
+               "usage" => %{"input_tokens" => 7, "output_tokens" => 2}
+             })
+
+    assert [%Event{type: :run_cancelled, provider_session_id: "session-2"}] =
+             CLIMapper.grok(%{"type" => "end", "stopReason" => "cancelled", "sessionId" => "session-2"})
+
+    assert [%Event{type: :provider_event, payload: %{"type" => "available_commands", "mapped" => false}}] =
+             CLIMapper.grok(%{"type" => "available_commands", "tools" => ["read_file"]})
+  end
+
   test "generic JSON mapping preserves unknown events and emits canonical terminals" do
     assert %Event{type: :output_text_delta, payload: %{"text" => "hello"}} =
-             JSONMapper.map(:grok, %{"type" => "delta", "text" => "hello"})
+             JSONMapper.map(:other, %{"type" => "delta", "text" => "hello"})
 
     events = List.wrap(JSONMapper.map(:opencode, %{"type" => "completed", "text" => "done"}))
     assert Enum.map(events, & &1.type) == [:output_text_final, :run_completed]
@@ -437,7 +504,7 @@ defmodule Jido.Harness.AdapterTest do
              payload: %{"type" => "new-event", "mapped" => false},
              raw: %{"type" => "new-event"}
            } =
-             JSONMapper.map(:grok, %{"type" => "new-event"})
+             JSONMapper.map(:other, %{"type" => "new-event"})
   end
 
   test "Codex maps direct exec JSONL records into canonical events" do
