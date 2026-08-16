@@ -15,6 +15,8 @@
 - Use `Jido.Harness.Session` for harness-owned multi-turn conversations.
 - Use `Jido.Harness.Process` for direct structured executable-plus-argv
   processes.
+- In a Mix escript, call `Jido.Harness.Escript.bootstrap_erlexec/1` before
+  starting `:jido_harness`.
 - Keep `run_id`, `session_id`, `turn_id`, and `process_id` distinct from a
   provider's `provider_session_id`.
 
