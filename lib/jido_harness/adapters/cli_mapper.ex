@@ -20,7 +20,7 @@ defmodule Jido.Harness.Adapters.CLIMapper do
   @spec gemini(term(), String.t() | nil) :: {[Event.t()], String.t() | nil}
   def gemini(event, session_id), do: Gemini.map(event, session_id)
 
-  @doc "Maps a Grok streaming-json record."
-  @spec grok(term()) :: [Event.t()]
-  def grok(event), do: Grok.map(event)
+  @doc "Maps a Grok streaming-json record while removing duplicate terminal usage."
+  @spec grok(term(), map() | nil) :: {[Event.t()], map()}
+  def grok(event, state), do: Grok.map(event, state)
 end

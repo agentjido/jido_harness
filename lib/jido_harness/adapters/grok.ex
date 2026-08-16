@@ -75,7 +75,7 @@ defmodule Jido.Harness.Adapters.Grok do
     with :ok <- validate_options(request, options),
          {:ok, argv} <- build_argv(request, options) do
       executable = options[:cli_path] || Helpers.cli_path(context.config, spec().executable)
-      CLIStream.run(:grok, request, context, executable, argv, &CLIMapper.grok/1)
+      CLIStream.run(:grok, request, context, executable, argv, &CLIMapper.grok/2, %{})
     end
   end
 

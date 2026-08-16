@@ -425,71 +425,122 @@ defmodule Jido.Harness.AdapterTest do
              OpenCode.build_argv(open_request, %{extra_args: ["--format=json"]})
   end
 
-  test "Grok maps the 1.0 streaming event format" do
-    assert [%Event{provider: :grok, type: :thinking_delta, payload: %{"text" => "checking"}}] =
-             CLIMapper.grok(%{"type" => "thought", "data" => "checking"})
+  test "Grok maps text, thought, and unknown 1.0 stream records" do
+    assert {[%Event{provider: :grok, type: :thinking_delta, payload: %{"text" => "checking"}}], _state} =
+             CLIMapper.grok(%{"type" => "thought", "data" => "checking"}, %{})
 
-    assert [%Event{provider: :grok, type: :output_text_delta, payload: %{"text" => "hello"}}] =
-             CLIMapper.grok(%{"type" => "text", "data" => "hello"})
+    assert {[%Event{provider: :grok, type: :output_text_delta, payload: %{"text" => " hello"}}], _state} =
+             CLIMapper.grok(%{"type" => "text", "data" => " hello"}, %{})
 
-    assert [%Event{type: :usage, payload: %{"total_tokens" => 16}}] =
-             CLIMapper.grok(%{
-               "type" => "usage",
-               "usage" => %{
-                 "input_tokens" => 7,
-                 "output_tokens" => 2,
-                 "cache_read_input_tokens" => 5,
-                 "cache_creation_input_tokens" => 2
+    assert {[], _state} = CLIMapper.grok(%{"type" => "text", "data" => ""}, %{})
+
+    assert {[%Event{type: :provider_event, payload: %{"type" => "available_commands", "mapped" => false}}], _state} =
+             CLIMapper.grok(%{"type" => "available_commands", "tools" => ["read_file"]}, %{})
+  end
+
+  test "Grok maps tool calls and terminal tool updates" do
+    assert {
+             [
+               %Event{
+                 type: :tool_call,
+                 payload: %{
+                   "name" => "read_file",
+                   "input" => %{"target_file" => "README.md"},
+                   "call_id" => "call-1"
+                 }
                }
-             })
+             ],
+             _state
+           } =
+             CLIMapper.grok(
+               %{
+                 "type" => "tool_call",
+                 "toolCallId" => "call-1",
+                 "toolName" => "read_file",
+                 "rawInput" => %{"target_file" => "README.md"}
+               },
+               %{}
+             )
 
-    assert [
-             %Event{
-               type: :tool_call,
-               payload: %{"name" => "read_file", "input" => %{"target_file" => "README.md"}, "call_id" => "call-1"}
-             }
-           ] =
-             CLIMapper.grok(%{
-               "type" => "tool_call",
-               "toolCallId" => "call-1",
-               "toolName" => "read_file",
-               "rawInput" => %{"target_file" => "README.md"}
-             })
+    assert {
+             [
+               %Event{
+                 type: :tool_result,
+                 payload: %{
+                   "output" => %{"content" => "# Jido.Harness"},
+                   "call_id" => "call-1",
+                   "is_error" => false
+                 }
+               }
+             ],
+             _state
+           } =
+             CLIMapper.grok(
+               %{
+                 "type" => "tool_call_update",
+                 "toolCallId" => "call-1",
+                 "status" => "completed",
+                 "rawOutput" => %{"content" => "# Jido.Harness"}
+               },
+               %{}
+             )
 
-    assert [
-             %Event{
-               type: :tool_result,
-               payload: %{"output" => %{"content" => "# Jido.Harness"}, "call_id" => "call-1", "is_error" => false}
-             }
-           ] =
-             CLIMapper.grok(%{
-               "type" => "tool_call_update",
-               "toolCallId" => "call-1",
-               "status" => "completed",
-               "rawOutput" => %{"content" => "# Jido.Harness"}
-             })
+    assert {[%Event{type: :tool_result, payload: %{"is_error" => true}}], _state} =
+             CLIMapper.grok(
+               %{"type" => "tool_call_update", "toolCallId" => "call-2", "status" => "cancelled"},
+               %{}
+             )
+  end
 
-    assert [
-             %Event{type: :usage, provider_session_id: "session-1", payload: %{"total_tokens" => 9}},
-             %Event{
-               type: :run_completed,
-               provider_session_id: "session-1",
-               payload: %{"stop_reason" => "end_turn", "request_id" => "request-1"}
-             }
-           ] =
-             CLIMapper.grok(%{
-               "type" => "end",
-               "stopReason" => "end_turn",
-               "sessionId" => "session-1",
-               "requestId" => "request-1",
-               "usage" => %{"input_tokens" => 7, "output_tokens" => 2}
-             })
+  test "Grok emits changed usage once and keeps terminal session identity" do
+    usage = %{
+      "input_tokens" => 7,
+      "output_tokens" => 2,
+      "cache_read_input_tokens" => 5,
+      "cache_creation_input_tokens" => 2
+    }
 
-    assert [%Event{type: :run_cancelled, provider_session_id: "session-2"}] =
-             CLIMapper.grok(%{"type" => "end", "stopReason" => "cancelled", "sessionId" => "session-2"})
+    assert {[%Event{type: :usage, payload: %{"total_tokens" => 16}}], state} =
+             CLIMapper.grok(%{"type" => "usage", "usage" => usage}, %{})
 
-    assert [%Event{type: :provider_event, payload: %{"type" => "available_commands", "mapped" => false}}] =
-             CLIMapper.grok(%{"type" => "available_commands", "tools" => ["read_file"]})
+    assert {
+             [
+               %Event{
+                 type: :run_completed,
+                 provider_session_id: "session-1",
+                 payload: %{"stop_reason" => "end_turn", "request_id" => "request-1"}
+               }
+             ],
+             _state
+           } =
+             CLIMapper.grok(
+               %{
+                 "type" => "end",
+                 "stopReason" => "end_turn",
+                 "sessionId" => "session-1",
+                 "requestId" => "request-1",
+                 "usage" => usage
+               },
+               state
+             )
+
+    assert {[%Event{type: :usage, payload: %{"total_tokens" => 10}}, %Event{type: :run_completed}], _state} =
+             CLIMapper.grok(
+               %{"type" => "end", "stopReason" => "end_turn", "usage" => %{"input_tokens" => 8, "output_tokens" => 2}},
+               state
+             )
+  end
+
+  test "Grok maps cancellation and failure terminals" do
+    assert {[%Event{type: :run_cancelled, provider_session_id: "session-2", payload: %{"stop_reason" => "cancelled"}}],
+            _state} =
+             CLIMapper.grok(%{"type" => "end", "stopReason" => "cancelled", "sessionId" => "session-2"}, %{})
+
+    assert {[%Event{type: :run_failed, payload: %{"error" => "request failed"}}], _state} =
+             CLIMapper.grok(%{"type" => "error", "message" => "request failed"}, %{})
+
+    assert {[%Event{type: :run_failed, payload: %{"error" => "%{\"code\" => \"bad_request\"}"}}], _state} =
+             CLIMapper.grok(%{"type" => "end", "stopReason" => "failed", "data" => %{"code" => "bad_request"}}, %{})
   end
 
   test "generic JSON mapping preserves unknown events and emits canonical terminals" do
