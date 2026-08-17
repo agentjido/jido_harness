@@ -52,4 +52,24 @@ defmodule Jido.Harness.DirectCLIAdapterTest do
     assert second.status == :completed
     assert second.provider_session_id == "gemini-fixture-session"
   end
+
+  test "Grok completes after a recovered tool error" do
+    assert {:ok, run_id} = Jido.Harness.Run.start(:grok, %{prompt: "fixture"})
+    assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
+
+    assert result.status == :completed
+    assert result.text == "grok-ok"
+    assert result.error == nil
+
+    assert {:ok, events} = Jido.Harness.Run.replay(run_id, limit: 100)
+
+    assert Enum.any?(events, fn
+             %{type: :tool_result, payload: %{"call_id" => "call-read", "is_error" => true}} -> true
+             _event -> false
+           end)
+
+    refute Enum.any?(events, &(&1.type == :run_failed))
+    assert Enum.count(events, &Jido.Harness.Event.run_terminal?/1) == 1
+    assert List.last(events).type == :run_completed
+  end
 end

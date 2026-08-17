@@ -31,6 +31,10 @@ defmodule Jido.Harness.Fixture.StreamCLI do
 
   @grok [
     ~s({"type":"thought","data":"checking"}),
+    ~s({"type":"tool_call","toolCallId":"call-read","toolName":"read_file",) <>
+      ~s("rawInput":{"target_file":"missing.md"}}),
+    ~s({"type":"tool_call_update","toolCallId":"call-read","status":"failed",) <>
+      ~s("rawOutput":{"FileNotFound":"missing.md does not exist"}}),
     ~s({"type":"text","data":"grok-ok"}),
     ~s({"type":"usage","usage":{"input_tokens":2,"output_tokens":1}}),
     ~s({"type":"end","stopReason":"end_turn","sessionId":"grok-fixture-session",) <>
