@@ -29,12 +29,21 @@ defmodule Jido.Harness.Fixture.StreamCLI do
       ~s("result":"amp-ok","usage":{"input_tokens":2,"output_tokens":1}})
   ]
 
+  @grok [
+    ~s({"type":"thought","data":"checking"}),
+    ~s({"type":"text","data":"grok-ok"}),
+    ~s({"type":"usage","usage":{"input_tokens":2,"output_tokens":1}}),
+    ~s({"type":"end","stopReason":"end_turn","sessionId":"grok-fixture-session",) <>
+      ~s("requestId":"grok-request","num_turns":1,"usage":{"input_tokens":2,"output_tokens":1}})
+  ]
+
   def run(args) do
     cond do
       "exec" in args and "--json" in args -> emit(@codex)
       "--prompt" in args -> emit(@gemini)
       "--print" in args -> emit(@claude)
       "--execute" in args -> emit(@amp)
+      "-p" in args and "streaming-json" in args -> emit(@grok)
       true -> unsupported()
     end
   end
