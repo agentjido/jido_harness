@@ -89,6 +89,14 @@ mix jido_harness.chat codex
 
 The chat task may consume paid API or subscription usage.
 
+## Escript packaging
+
+An escript must extract the native `erlexec` helper before it starts
+Jido.Harness. Configure the escript with `app: nil` and
+`include_priv_for: [:erlexec]`, then call
+`Jido.Harness.Escript.bootstrap_erlexec/1` from its main function. See the
+[escript packaging guide](guides/escripts.md).
+
 ## First request
 
 ```elixir
