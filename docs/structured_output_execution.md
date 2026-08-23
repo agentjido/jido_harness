@@ -1,9 +1,40 @@
 # Structured Output Execution Contract
 
-This contract defines the planned provider-neutral request, ephemeral schema
+This contract defines the implemented provider-neutral request, ephemeral schema
 lifecycle, isolation, Codex subscription execution, normalized result, and
-failure behavior for finite schema-constrained Jido.Harness runs. It does not
-claim that the capability is implemented or advertised.
+failure behavior for finite schema-constrained Jido.Harness runs. The initial
+capability is advertised by Jido.Harness `2.1.0-rc.2` for Codex CLI `0.144.6`
+or newer.
+
+## Example
+
+```elixir
+schema = %{
+  "type" => "object",
+  "properties" => %{
+    "department" => %{"type" => "string", "enum" => ["people", "finance"]},
+    "confidence" => %{"type" => "number", "minimum" => 0, "maximum" => 1}
+  },
+  "required" => ["department", "confidence"],
+  "additionalProperties" => false
+}
+
+{:ok, %Jido.Harness.RunResult{status: :completed} = result} =
+  Jido.Harness.run(:codex, %{
+    prompt: "Classify this bounded input.",
+    structured_output: %{
+      schema_id: "classification.v1",
+      schema: schema,
+      max_output_bytes: 16_384
+    }
+  })
+
+%{"schema_id" => "classification.v1", "value" => value} =
+  result.structured_output
+```
+
+`structured_output.isolation` defaults to the only supported value,
+`:ephemeral_read_only`. Callers supply schema data, never a schema path.
 
 ## Request
 
@@ -23,9 +54,9 @@ unknown or incompatible options.
 ## Schema admission and lifecycle
 
 Before process creation, the harness shall validate that the schema is a JSON
-object and enforce configured byte, nesting, property, enum, and combinator
-ceilings. Admission shall reject unsupported keywords when the selected
-provider cannot represent them exactly.
+object and enforce configured byte, nesting, property, and enum ceilings.
+Schema combinators and other unsupported keywords shall be rejected when the
+selected provider cannot represent them exactly.
 
 The admitted schema shall be serialized deterministically into a newly created
 private harness directory. The directory and file shall use owner-only access,

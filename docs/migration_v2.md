@@ -102,3 +102,16 @@ existing `cwd`. For direct executable ownership, use a structured
 `Jido.Harness.ProcessSpec` with executable plus argv.
 
 `jido_shell` remains a separate package and is not part of v2 execution.
+
+## Adopt 2.1 structured output explicitly
+
+Jido.Harness `2.1.0-rc.2` adds an optional `structured_output` field to finite
+`RunRequest` values and a nullable `structured_output` field to `RunResult`.
+Existing unstructured runs and sessions do not change.
+
+Consumers adopting the release candidate should pin its immutable Git commit,
+require Codex CLI `0.144.6` or newer, check
+`capabilities.structured_output?`, and call `Jido.Harness.status(:codex)` before
+an optional live smoke. Structured requests cannot use a provider session id,
+resume behavior, request environment, attachments, extra directories, or a
+writable sandbox.

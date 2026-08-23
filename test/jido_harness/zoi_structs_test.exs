@@ -20,6 +20,7 @@ defmodule Jido.Harness.ZoiStructsTest do
     SessionInfo,
     SessionRequest,
     SessionTransportSpec,
+    StructuredOutput,
     TextTail,
     TurnRequest,
     TurnResult
@@ -44,6 +45,7 @@ defmodule Jido.Harness.ZoiStructsTest do
     SessionInfo,
     SessionRequest,
     SessionTransportSpec,
+    StructuredOutput,
     TextTail,
     TurnRequest,
     TurnResult

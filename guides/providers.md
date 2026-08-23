@@ -35,17 +35,17 @@ All built-in providers stream normalized events and support process-group
 cancellation. Capability flags describe whether a provider protocol supplies a
 canonical form of optional data.
 
-| Provider | Thinking | Tool events | Usage | Structured file-change events |
-| --- | --- | --- | --- | --- |
-| Amp | yes | yes | yes | no |
-| Claude | yes | yes | yes | no |
-| Codex | yes | yes | yes | yes |
-| Gemini | no | yes | yes | no |
-| Grok | yes | yes | yes | no |
-| Kimi | no | yes | no | no |
-| OpenCode | no | no | no | no |
-| Pi | yes | yes | yes | no |
-| Z.AI | yes | yes | yes | no |
+| Provider | Thinking | Tool events | Usage | File changes | Structured output |
+| --- | --- | --- | --- | --- | --- |
+| Amp | yes | yes | yes | no | no |
+| Claude | yes | yes | yes | no | no |
+| Codex | yes | yes | yes | yes | yes |
+| Gemini | no | yes | yes | no | no |
+| Grok | yes | yes | yes | no | no |
+| Kimi | no | yes | no | no | no |
+| OpenCode | no | no | no | no | no |
+| Pi | yes | yes | yes | no | no |
+| Z.AI | yes | yes | yes | no | no |
 
 "No structured file-change events" does not mean a provider cannot modify
 files. It means its current adapter does not claim a reliable canonical
@@ -80,7 +80,14 @@ Jido.Harness.ProviderStatus.ready?(status)
 
 `ProviderStatus` includes installation, compatibility, authentication,
 readiness, version, executable, finite-run capabilities, and session transport
-specifications. Authentication may be `:unknown` for cached-login CLIs.
+specifications. Codex readiness verifies the CLI compatibility boundary and
+cached subscription login without making a billable model request or accepting
+an API key as a substitute.
+
+Codex structured output requires Jido.Harness `2.1.0-rc.2` or later in the
+2.1 line and `codex-cli` `0.144.6` or later. It is a finite-run capability, not
+an interactive-session capability. See the
+[structured-output contract](../docs/structured_output_execution.md).
 
 The equivalent operator command is:
 

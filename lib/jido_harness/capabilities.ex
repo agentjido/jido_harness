@@ -11,7 +11,8 @@ defmodule Jido.Harness.Capabilities do
               resume?: Zoi.boolean() |> Zoi.default(false),
               usage?: Zoi.boolean() |> Zoi.default(false),
               file_changes?: Zoi.boolean() |> Zoi.default(false),
-              native_cancel?: Zoi.boolean() |> Zoi.default(false)
+              native_cancel?: Zoi.boolean() |> Zoi.default(false),
+              structured_output?: Zoi.boolean() |> Zoi.default(false)
             },
             coerce: true
           )

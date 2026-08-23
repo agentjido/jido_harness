@@ -25,6 +25,7 @@ defmodule Jido.Harness.RunRequest do
     :env,
     :env_mode,
     :metadata,
+    :structured_output,
     :provider_options
   ]
 
@@ -51,6 +52,7 @@ defmodule Jido.Harness.RunRequest do
               env: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{}),
               env_mode: Zoi.enum([:overlay, :replace]) |> Zoi.default(:overlay),
               metadata: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{}),
+              structured_output: Jido.Harness.StructuredOutput.schema() |> Zoi.nullish(),
               provider_options: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{})
             },
             coerce: true
@@ -72,6 +74,7 @@ defmodule Jido.Harness.RunRequest do
     with {:ok, normalized} <- normalize_keys(attrs),
          :ok <- validate_values(normalized),
          {:ok, request} <- parse(Map.put_new(normalized, :cwd, File.cwd!())),
+         :ok <- validate_structured_output(request.structured_output),
          :ok <- validate_cwd(request.cwd) do
       {:ok, request}
     end
@@ -167,4 +170,9 @@ defmodule Jido.Harness.RunRequest do
       {:error, Jido.Harness.Error.validation("cwd must be an existing directory", details: %{cwd: path})}
     end
   end
+
+  defp validate_structured_output(nil), do: :ok
+
+  defp validate_structured_output(%Jido.Harness.StructuredOutput{} = output),
+    do: Jido.Harness.StructuredOutput.validate(output)
 end

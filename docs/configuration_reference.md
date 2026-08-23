@@ -67,6 +67,11 @@ Finite request precedence is:
 2. configured `provider_config[provider].request_defaults`;
 3. explicit request values.
 
+For Codex structured runs, provider-config environment entries and request
+defaults cannot weaken the fixed isolation profile. `cli_path` may select the
+installed Codex executable; all behavior remains represented by normalized
+request fields and the reviewed adapter argv.
+
 ## `:process_manager`
 
 ```elixir
