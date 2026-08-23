@@ -191,6 +191,9 @@ Start with:
 - [Choosing a workflow](guides/choosing_a_workflow.md)
 - [Providers and capabilities](guides/providers.md)
 - [Normalization and the data model](guides/normalization_and_data_model.md)
+- [Structured output execution contract](docs/structured_output_execution.md)
+- [Structured output schema-isolation decision](docs/decisions/structured-output-schema-isolation.md)
+- [W20 Codex structured-output child plan](.spec/planning/w20-codex-structured-output/README.md)
 
 Then follow the workflow guides for
 [one-shot requests](guides/one_shot_requests.md),
