@@ -105,6 +105,7 @@ defmodule Jido.Harness.MixProject do
           ],
           "Requests and results": [
             Jido.Harness.RunRequest,
+            Jido.Harness.StructuredOutput,
             Jido.Harness.RunResult,
             Jido.Harness.RunInfo,
             Jido.Harness.SessionRequest,

@@ -1,6 +1,6 @@
 ---
 id: plan.jido_harness_w20_codex_structured_output
-status: planned
+status: active
 intent: feature
 parent_plan: plan.w20_live_hr_company_brain_demonstration
 parent_phase: plan.w20_phase_02_codex_subscription_runtime
@@ -18,20 +18,20 @@ direct OpenAI API path.
 - [ ] 1 Phase - Release schema-constrained Codex finite execution.
 
   This phase maps Parent Phase 2 into one provider-owned release and remains
-  unauthorized until the W20 Phase 1 merged-default adoption receipt exists.
+  authorized by the W20 Phase 1 merged-default adoption receipt.
 
-  - [ ] 1.1 Section - Implement normalized structured-output requests and private schema lifecycle.
+  - [x] 1.1 Section - Implement normalized structured-output requests and private schema lifecycle.
 
     This section adds provider-neutral schema admission and harness-owned
     staging without changing existing unstructured runs or sessions.
 
-    - [ ] 1.1.1 Task {#jido-w20-p01-s01-schema} [parent: w20-p02-s01-structured-output] - Add the bounded structured-output request contract.
+    - [x] 1.1.1 Task {#jido-w20-p01-s01-schema} [parent: w20-p02-s01-structured-output] - Add the bounded structured-output request contract.
 
       This task makes schema data and isolation explicit normalized inputs and
       rejects raw provider arguments, schema paths, credentials, and sessions.
 
-      - [ ] 1.1.1.1 Subtask {#jido-w20-1-1-1-1} - Add request schema, capability declarations, limits, validation, and typed unsupported-option errors.
-      - [ ] 1.1.1.2 Subtask {#jido-w20-1-1-1-2} - Add owner-only schema directory/file creation, deterministic serialization, redaction, and cleanup across every terminal path.
+      - [x] 1.1.1.1 Subtask {#jido-w20-1-1-1-1} - Add request schema, capability declarations, limits, validation, and typed unsupported-option errors.
+      - [x] 1.1.1.2 Subtask {#jido-w20-1-1-1-2} - Add owner-only schema directory/file creation, deterministic serialization, redaction, and cleanup across every terminal path.
 
   - [ ] 1.2 Section - Implement Codex argv mapping, isolation, and result validation.
 
@@ -84,5 +84,5 @@ direct OpenAI API path.
 
 ## Current frontier
 
-No implementation section is authorized. This child plan becomes executable
-only after W20 Phase 1 accepts it on synchronized defaults.
+Section 1.1 is complete. Section 1.2 is the active implementation frontier;
+release publication and live-provider acceptance remain pending.

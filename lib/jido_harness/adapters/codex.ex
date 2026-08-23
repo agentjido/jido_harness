@@ -29,7 +29,8 @@ defmodule Jido.Harness.Adapters.Codex do
         resume?: true,
         usage?: true,
         file_changes?: true,
-        native_cancel?: true
+        native_cancel?: true,
+        structured_output?: true
       },
       default_session_transport: :exec_jsonl_resume,
       session_transports: [Jido.Harness.SessionTransportSpec.managed(:exec_jsonl_resume, %{multimodal: :managed})],
@@ -41,7 +42,8 @@ defmodule Jido.Harness.Adapters.Codex do
         :approval_mode,
         :sandbox_mode,
         :attachments,
-        :reasoning_effort
+        :reasoning_effort,
+        :structured_output
       ],
       provider_options: @provider_options,
       install: %{npm: "@openai/codex"}
