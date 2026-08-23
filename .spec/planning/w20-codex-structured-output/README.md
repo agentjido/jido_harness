@@ -33,26 +33,26 @@ direct OpenAI API path.
       - [x] 1.1.1.1 Subtask {#jido-w20-1-1-1-1} - Add request schema, capability declarations, limits, validation, and typed unsupported-option errors.
       - [x] 1.1.1.2 Subtask {#jido-w20-1-1-1-2} - Add owner-only schema directory/file creation, deterministic serialization, redaction, and cleanup across every terminal path.
 
-  - [ ] 1.2 Section - Implement Codex argv mapping, isolation, and result validation.
+  - [x] 1.2 Section - Implement Codex argv mapping, isolation, and result validation.
 
     This section translates the admitted request to one reviewed Codex CLI
     execution while preserving actual enforced isolation and subscription auth.
 
-    - [ ] 1.2.1 Task {#jido-w20-p01-s02-codex} [parent: w20-p02-s01-structured-output] [after: {#jido-w20-p01-s01-schema}] - Implement the Codex structured-output adapter path.
+    - [x] 1.2.1 Task {#jido-w20-p01-s02-codex} [parent: w20-p02-s01-structured-output] [after: {#jido-w20-p01-s01-schema}] - Implement the Codex structured-output adapter path.
 
       This task uses executable-plus-argv construction and fails closed when
       the installed Codex version cannot represent the exact contract.
 
-      - [ ] 1.2.1.1 Subtask {#jido-w20-1-2-1-1} - Map schema and isolation options, prohibit resume/session reuse, and preserve cached CLI authentication without reading credentials.
-      - [ ] 1.2.1.2 Subtask {#jido-w20-1-2-1-2} - Extract one terminal result under bounds, parse once, validate the schema, and normalize missing, duplicate, malformed, truncated, or invalid output.
+      - [x] 1.2.1.1 Subtask {#jido-w20-1-2-1-1} - Map schema and isolation options, prohibit resume/session reuse, and preserve cached CLI authentication without reading credentials.
+      - [x] 1.2.1.2 Subtask {#jido-w20-1-2-1-2} - Extract one terminal result under bounds, parse once, validate the schema, and normalize missing, duplicate, malformed, truncated, or invalid output.
 
-    - [ ] 1.2.2 Task {#jido-w20-p01-s02-safety} [parent: w20-p02-s02-isolation] [after: {#jido-w20-p01-s02-codex}] - Prove isolation, cancellation, and redaction behavior.
+    - [x] 1.2.2 Task {#jido-w20-p01-s02-safety} [parent: w20-p02-s02-isolation] [after: {#jido-w20-p01-s02-codex}] - Prove isolation, cancellation, and redaction behavior.
 
       This task ensures concurrent and failed runs cannot retain or disclose
       another run's schema, workspace, environment, output, or terminal state.
 
-      - [ ] 1.2.2.1 Subtask {#jido-w20-1-2-2-1} - Cover start failure, caller exit, timeout, cancellation, provider crash, cleanup failure, and concurrent-run isolation.
-      - [ ] 1.2.2.2 Subtask {#jido-w20-1-2-2-2} - Cover absent authentication and incompatible CLI behavior with no API, provider, or offline fallback.
+      - [x] 1.2.2.1 Subtask {#jido-w20-1-2-2-1} - Cover start failure, caller exit, timeout, cancellation, provider crash, cleanup failure, and concurrent-run isolation.
+      - [x] 1.2.2.2 Subtask {#jido-w20-1-2-2-2} - Cover absent authentication and incompatible CLI behavior with no API, provider, or offline fallback.
 
   - [ ] 1.3 Section - Freeze release compatibility and consumer handoff.
 
@@ -84,5 +84,5 @@ direct OpenAI API path.
 
 ## Current frontier
 
-Section 1.1 is complete. Section 1.2 is the active implementation frontier;
-release publication and live-provider acceptance remain pending.
+Sections 1.1 and 1.2 are complete. Section 1.3 is the active release frontier;
+provider release acceptance remains pending.

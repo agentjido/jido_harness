@@ -3,25 +3,38 @@ defmodule Jido.Harness.StructuredOutput.SchemaWorkspace do
 
   alias Jido.Harness.{Error, JSONSchema, StructuredOutput}
 
-  @enforce_keys [:directory, :schema_path]
-  defstruct [:directory, :schema_path]
+  @enforce_keys [:directory, :schema_path, :working_directory]
+  defstruct [:directory, :schema_path, :working_directory]
 
-  @type t :: %__MODULE__{directory: String.t(), schema_path: String.t()}
+  @type t :: %__MODULE__{
+          directory: String.t(),
+          schema_path: String.t(),
+          working_directory: String.t()
+        }
 
+  @doc false
   @spec open(StructuredOutput.t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def open(%StructuredOutput{} = output, options \\ []) do
     base_directory = Keyword.get(options, :base_directory, default_base_directory())
     directory = Path.join(base_directory, random_name())
     schema_path = Path.join(directory, "schema.json")
+    working_directory = Path.join(directory, "workspace")
 
     try do
       with {:ok, encoded} <- JSONSchema.encode(output.schema),
            :ok <- prepare_base(base_directory),
            :ok <- File.mkdir(directory),
            :ok <- File.chmod(directory, 0o700),
+           :ok <- File.mkdir(working_directory),
+           :ok <- File.chmod(working_directory, 0o700),
            :ok <- write_exclusive(schema_path, encoded),
            :ok <- File.chmod(schema_path, 0o600) do
-        {:ok, %__MODULE__{directory: directory, schema_path: schema_path}}
+        {:ok,
+         %__MODULE__{
+           directory: directory,
+           schema_path: schema_path,
+           working_directory: working_directory
+         }}
       else
         {:error, %Error{} = error} ->
           _ = File.rm_rf(directory)
@@ -38,14 +51,18 @@ defmodule Jido.Harness.StructuredOutput.SchemaWorkspace do
     end
   end
 
+  @doc false
   @spec close(t()) :: :ok | {:error, Error.t()}
   def close(%__MODULE__{directory: directory}) do
     case File.rm_rf(directory) do
       {:ok, _entries} -> :ok
       {:error, _reason, _path} -> workspace_error()
     end
+  rescue
+    _exception -> workspace_error()
   end
 
+  @doc false
   @spec with_open(StructuredOutput.t(), (t() -> term()), keyword()) :: term() | {:error, Error.t()}
   def with_open(%StructuredOutput{} = output, function, options \\ []) when is_function(function, 1) do
     case open(output, options) do

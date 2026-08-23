@@ -3,7 +3,9 @@ defmodule Jido.Harness.Adapters.Codex do
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{AdapterSpec, Adapters.CLIArgs, Adapters.CLIMapper, Adapters.CLIStream}
-  alias Jido.Harness.{Adapters.Helpers, Capabilities, Error, RunRequest}
+  alias Jido.Harness.{Adapters.CodexCompatibility, Adapters.CodexEnvironment, Adapters.Helpers}
+  alias Jido.Harness.{Capabilities, Error, RunRequest}
+  alias Jido.Harness.StructuredOutput.{SchemaWorkspace, Stream, WorkspaceGuard}
 
   @provider_options [
     :cli_path,
@@ -55,24 +57,51 @@ defmodule Jido.Harness.Adapters.Codex do
     options = Helpers.provider_options(request.provider_options, @provider_options)
 
     with :ok <- validate_options(request, options),
-         {:ok, argv} <- build_argv(request, options) do
-      request = %{request | env: Helpers.merge_env(request, context.config)}
-      executable = options[:cli_path] || Helpers.cli_path(context.config, spec().executable)
-      CLIStream.run(:codex, request, context, executable, argv, &CLIMapper.codex/1)
+         executable = options[:cli_path] || Helpers.cli_path(context.config, spec().executable) do
+      if request.structured_output do
+        run_structured(request, context, executable, options)
+      else
+        with {:ok, argv} <- build_argv(request, options) do
+          request = %{request | env: Helpers.merge_env(request, context.config)}
+          CLIStream.run(:codex, request, context, executable, argv, &CLIMapper.codex/1)
+        end
+      end
     end
   rescue
     exception ->
-      {:error,
-       Error.validation("invalid Codex options", provider: :codex, details: %{message: Exception.message(exception)})}
+      if request.structured_output do
+        structured_error(:structured_execution_setup_failed)
+      else
+        {:error,
+         Error.validation("invalid Codex options", provider: :codex, details: %{message: Exception.message(exception)})}
+      end
   end
 
   @impl true
-  def status(config),
-    do:
-      Helpers.status(:codex, spec().executable, ["OPENAI_API_KEY", "CODEX_API_KEY"], config,
-        cli_path_env: "CODEX_PATH",
-        capabilities: spec().capabilities
-      )
+  def status(config) do
+    with {:ok, status} <-
+           Helpers.status(:codex, spec().executable, [], config,
+             cli_path_env: "CODEX_PATH",
+             capabilities: spec().capabilities,
+             probe_env: CodexEnvironment.cached_subscription(),
+             probe_env_mode: :replace
+           ) do
+      status =
+        if status.installed and status.compatible do
+          with :ok <- CodexCompatibility.validate(status.executable, %{}),
+               true <- CodexCompatibility.subscription_authenticated?(status.executable) do
+            %{status | authenticated: true}
+          else
+            false -> %{status | authenticated: false, error: :cached_subscription_authentication_missing}
+            {:error, error} -> %{status | compatible: false, authenticated: :unknown, error: error}
+          end
+        else
+          status
+        end
+
+      {:ok, Jido.Harness.ProviderStatus.finalize(status)}
+    end
+  end
 
   @impl true
   def install(_config, options), do: Helpers.install_npm(:codex, "@openai/codex", options)
@@ -81,9 +110,10 @@ defmodule Jido.Harness.Adapters.Codex do
   def cancel(run_id, _context), do: Helpers.cancel_cli_run(run_id)
 
   @doc false
-  def build_argv(request, options) do
+  def build_argv(request, options, schema_path \\ nil) do
     common =
       ["exec", "--json"] ++
+        structured_args(request, schema_path) ++
         CLIArgs.pair("--model", request.model) ++
         sandbox_args(request.sandbox_mode) ++
         CLIArgs.repeat("--add-dir", request.add_dirs) ++
@@ -120,6 +150,99 @@ defmodule Jido.Harness.Adapters.Codex do
       true -> :ok
     end
   end
+
+  defp run_structured(request, context, executable, options) do
+    with :ok <- validate_structured_options(request, options),
+         :ok <- CodexCompatibility.validate(executable, context),
+         {:ok, workspace} <- SchemaWorkspace.open(request.structured_output),
+         {:ok, guard} <- start_guard(workspace) do
+      prepared = isolate(request, workspace.working_directory)
+      {:ok, argv} = build_argv(prepared, options, workspace.schema_path)
+
+      case CLIStream.run(:codex, prepared, context, executable, argv, &CLIMapper.codex/1) do
+        {:ok, stream} -> {:ok, Stream.wrap(stream, request.structured_output, guard)}
+        _error -> close_guard(guard, :provider_start_failed)
+      end
+    end
+  end
+
+  defp start_guard(workspace) do
+    case WorkspaceGuard.start(workspace, self()) do
+      {:ok, guard} ->
+        {:ok, guard}
+
+      {:error, _reason} ->
+        _ = SchemaWorkspace.close(workspace)
+        structured_error(:schema_guard_failed)
+    end
+  end
+
+  defp close_guard(guard, failure_kind) do
+    :ok = WorkspaceGuard.close(guard)
+    structured_error(failure_kind)
+  end
+
+  defp validate_structured_options(request, options) do
+    cond do
+      request.provider_session_id -> unsupported_structured(:provider_session_id)
+      options[:resume_last] -> unsupported_structured(:resume_last)
+      request.add_dirs not in [nil, []] -> unsupported_structured(:add_dirs)
+      request.attachments != [] -> unsupported_structured(:attachments)
+      request.env != %{} -> unsupported_structured(:env)
+      request.sandbox_mode not in [:default, :read_only] -> unsupported_structured(:sandbox_mode)
+      request.approval_mode not in [:default, :auto_approve] -> unsupported_structured(:approval_mode)
+      Enum.any?(Map.keys(options), &(&1 != :cli_path)) -> unsupported_structured(:provider_options)
+      true -> :ok
+    end
+  end
+
+  defp isolate(request, working_directory) do
+    %{
+      request
+      | cwd: working_directory,
+        env: CodexEnvironment.cached_subscription(),
+        env_mode: :replace,
+        provider_session_id: nil,
+        add_dirs: nil,
+        attachments: [],
+        approval_mode: :auto_approve,
+        sandbox_mode: :read_only
+    }
+  end
+
+  defp structured_args(%{structured_output: nil}, _schema_path), do: []
+
+  defp structured_args(%{structured_output: %{}}, schema_path) when is_binary(schema_path) do
+    [
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--output-schema",
+      schema_path,
+      "--skip-git-repo-check"
+    ] ++
+      CLIArgs.config("project_doc_max_bytes", 0) ++
+      ["--config", "project_doc_fallback_filenames=[]"] ++
+      CLIArgs.config("shell_environment_policy.inherit", "none") ++
+      CLIArgs.config("features.web_search_request", false) ++
+      CLIArgs.config("sandbox_workspace_write.network_access", false)
+  end
+
+  defp unsupported_structured(field),
+    do:
+      {:error,
+       Error.validation("option is incompatible with isolated structured output",
+         provider: :codex,
+         details: %{field: field, failure_kind: :incompatible_option}
+       )}
+
+  defp structured_error(kind),
+    do:
+      {:error,
+       Error.execution("structured-output execution could not start",
+         provider: :codex,
+         details: %{failure_kind: kind}
+       )}
 
   defp approval_args(:default), do: []
   defp approval_args(:prompt), do: CLIArgs.config("approval_policy", "on-request")

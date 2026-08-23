@@ -50,6 +50,7 @@ defmodule Jido.Harness.RunWorker do
       terminal_event: nil,
       text_tail: TextTail.new(memory_bytes),
       final_text_tail: nil,
+      structured_output: nil,
       usage: %{},
       error: nil,
       result: nil,
@@ -278,6 +279,10 @@ defmodule Jido.Harness.RunWorker do
     end
   end
 
+  defp accumulate(state, %Event{type: :structured_output, payload: payload}) do
+    %{state | structured_output: Map.take(payload, ["schema_id", "value"])}
+  end
+
   defp accumulate(state, %Event{type: :usage, payload: payload}), do: %{state | usage: Map.merge(state.usage, payload)}
   defp accumulate(state, _event), do: state
 
@@ -307,6 +312,7 @@ defmodule Jido.Harness.RunWorker do
       status: status,
       text: text.data,
       text_truncated?: text.truncated?,
+      structured_output: state.structured_output,
       usage: state.usage,
       events: events,
       metadata: state.request.metadata,
@@ -385,9 +391,13 @@ defmodule Jido.Harness.RunWorker do
         _value -> "provider reported failure"
       end
 
-    error = state.error || Error.execution(message, provider: state.provider, run_id: state.id)
+    details = failure_details(payload)
+    error = state.error || Error.execution(message, provider: state.provider, run_id: state.id, details: details)
     finalize(state, :failed, error)
   end
+
+  defp failure_details(%{"failure_kind" => kind}) when is_binary(kind), do: %{failure_kind: kind}
+  defp failure_details(_payload), do: %{}
 
   defp schedule_runtime(%{request: %{runtime_timeout_ms: :infinity}} = state), do: state
 

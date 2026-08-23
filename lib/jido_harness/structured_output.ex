@@ -15,6 +15,7 @@ defmodule Jido.Harness.StructuredOutput do
             %{
               schema_id: Zoi.string(),
               schema: Zoi.map(),
+              isolation: Zoi.literal(:ephemeral_read_only) |> Zoi.default(:ephemeral_read_only),
               max_output_bytes: Zoi.integer() |> Zoi.default(@default_max_output_bytes)
             },
             coerce: true

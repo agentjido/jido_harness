@@ -59,7 +59,7 @@ defmodule Jido.Harness.Adapters.Helpers do
     status =
       case Jido.Harness.ProcessSpec.resolve_executable(executable) do
         {:ok, path} ->
-          with {:ok, output} <- probe(path, version_argv),
+          with {:ok, output} <- probe(path, version_argv, options),
                :ok <- compatibility_probe(path, options) do
             %ProviderStatus{
               provider: provider,
@@ -132,8 +132,16 @@ defmodule Jido.Harness.Adapters.Helpers do
     :ok
   end
 
-  defp probe(path, argv) do
-    with {:ok, id} <- ProcessManager.start_process(%{executable: path, argv: argv, runtime_timeout_ms: 15_000}),
+  defp probe(path, argv, options) do
+    spec = %{
+      executable: path,
+      argv: argv,
+      runtime_timeout_ms: 15_000,
+      env: Keyword.get(options, :probe_env, %{}),
+      env_mode: Keyword.get(options, :probe_env_mode, :overlay)
+    }
+
+    with {:ok, id} <- ProcessManager.start_process(spec),
          {:ok, info} <- ProcessManager.await_process(id, 20_000),
          {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 1_000) do
       output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
@@ -145,7 +153,7 @@ defmodule Jido.Harness.Adapters.Helpers do
   defp compatibility_probe(path, options) do
     with argv when is_list(argv) <- Keyword.get(options, :compatibility_argv),
          pattern when is_binary(pattern) <- Keyword.get(options, :compatibility_pattern),
-         {:ok, output} <- probe(path, argv) do
+         {:ok, output} <- probe(path, argv, options) do
       if String.contains?(output, pattern), do: :ok, else: {:error, {:incompatible_cli, pattern}}
     else
       nil -> :ok

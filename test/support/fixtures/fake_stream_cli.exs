@@ -8,6 +8,13 @@ defmodule Jido.Harness.Fixture.StreamCLI do
       ~s("usage":{"input_tokens":2,"output_tokens":1}})
   ]
 
+  @codex_structured [
+    ~s({"type":"thread.started","thread_id":"codex-fixture-session"}),
+    ~s({"type":"item.completed","thread_id":"codex-fixture-session","item":{"type":"agent_message","text":"{\\"department\\":\\"people\\",\\"confidence\\":0.9}"}}),
+    ~s({"type":"turn.completed","thread_id":"codex-fixture-session","status":"completed",) <>
+      ~s("usage":{"input_tokens":2,"output_tokens":1}})
+  ]
+
   @gemini [
     ~s({"type":"init","session_id":"gemini-fixture-session","model":"fixture"}),
     ~s({"type":"message","role":"assistant","content":"gemini-ok","delta":true}),
@@ -43,6 +50,9 @@ defmodule Jido.Harness.Fixture.StreamCLI do
 
   def run(args) do
     cond do
+      args == ["--version"] -> IO.puts("codex-cli 0.144.6")
+      args == ["exec", "--help"] -> IO.puts("--output-schema --ephemeral --ignore-user-config --ignore-rules")
+      "exec" in args and "--json" in args and "--output-schema" in args -> structured(args)
       "exec" in args and "--json" in args -> emit(@codex)
       "--prompt" in args -> emit(@gemini)
       "--print" in args -> emit(@claude)
@@ -53,6 +63,22 @@ defmodule Jido.Harness.Fixture.StreamCLI do
   end
 
   defp emit(events), do: Enum.each(events, &IO.puts/1)
+
+  defp structured(args) do
+    required = ["--ephemeral", "--ignore-user-config", "--ignore-rules", "--output-schema"]
+    forbidden_env = Enum.any?(~w(OPENAI_API_KEY CODEX_API_KEY CODEX_ACCESS_TOKEN), &System.get_env/1)
+    isolated_cwd = Path.basename(File.cwd!()) == "workspace"
+
+    if Enum.all?(required, &(&1 in args)) and not forbidden_env and isolated_cwd do
+      case List.last(args) do
+        "structured-wait" -> Process.sleep(30_000)
+        "structured-crash" -> System.halt(7)
+        _prompt -> emit(@codex_structured)
+      end
+    else
+      emit([~s({"type":"turn.failed","error":{"message":"fixture isolation failed"}})])
+    end
+  end
 
   defp unsupported do
     IO.puts(:stderr, "unsupported fixture invocation")

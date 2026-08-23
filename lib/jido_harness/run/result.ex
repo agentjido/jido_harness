@@ -19,6 +19,7 @@ defmodule Jido.Harness.RunResult do
               status: Zoi.enum([:completed, :failed, :cancelled]),
               text: Zoi.string() |> Zoi.default(""),
               text_truncated?: Zoi.boolean() |> Zoi.default(false),
+              structured_output: Zoi.map() |> Zoi.nullish(),
               usage: Zoi.map() |> Zoi.default(%{}),
               events: Zoi.array(Event.schema()) |> Zoi.default([]),
               metadata: Zoi.map() |> Zoi.default(%{}),

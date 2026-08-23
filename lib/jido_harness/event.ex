@@ -28,6 +28,7 @@ defmodule Jido.Harness.Event do
     :turn_started,
     :output_text_delta,
     :output_text_final,
+    :structured_output,
     :thinking_delta,
     :command_output_delta,
     :tool_call,

@@ -15,6 +15,7 @@ defmodule Jido.Harness.JSONSchema do
     anyOf oneOf allOf
   ))
 
+  @doc false
   @spec admit(map()) :: :ok | {:error, Error.t()}
   def admit(schema) when is_map(schema) do
     with {:ok, encoded} <- encode(schema),
@@ -26,6 +27,7 @@ defmodule Jido.Harness.JSONSchema do
 
   def admit(_schema), do: invalid(:schema_not_object)
 
+  @doc false
   @spec encode(map()) :: {:ok, binary()} | {:error, Error.t()}
   def encode(schema) when is_map(schema) do
     case Jason.encode(canonical(schema)) do
@@ -34,6 +36,15 @@ defmodule Jido.Harness.JSONSchema do
     end
   rescue
     _exception -> invalid(:schema_not_json)
+  end
+
+  @doc false
+  @spec validate(term(), map()) :: :ok | {:error, Error.t()}
+  def validate(value, schema) when is_map(schema) do
+    case validate_value(value, schema) do
+      :ok -> :ok
+      :error -> invalid(:schema_validation_failed)
+    end
   end
 
   defp validate_schema(schema, depth, counts) when depth <= @maximum_depth do
@@ -216,6 +227,115 @@ defmodule Jido.Harness.JSONSchema do
 
   defp canonical(list) when is_list(list), do: Enum.map(list, &canonical/1)
   defp canonical(value), do: value
+
+  defp validate_value(value, schema) do
+    with :ok <- validate_value_type(value, schema["type"]),
+         :ok <- validate_value_enum(value, schema),
+         :ok <- validate_value_const(value, schema),
+         :ok <- validate_string(value, schema),
+         :ok <- validate_number(value, schema),
+         :ok <- validate_array(value, schema),
+         :ok <- validate_object(value, schema),
+         :ok <- validate_value_combinators(value, schema) do
+      :ok
+    end
+  end
+
+  defp validate_value_type(_value, nil), do: :ok
+
+  defp validate_value_type(value, types) when is_list(types),
+    do: if(Enum.any?(types, &type?(&1, value)), do: :ok, else: :error)
+
+  defp validate_value_type(value, type), do: if(type?(type, value), do: :ok, else: :error)
+
+  defp type?("null", value), do: is_nil(value)
+  defp type?("boolean", value), do: is_boolean(value)
+  defp type?("object", value), do: is_map(value)
+  defp type?("array", value), do: is_list(value)
+  defp type?("number", value), do: is_number(value)
+  defp type?("integer", value), do: is_integer(value)
+  defp type?("string", value), do: is_binary(value)
+  defp type?(_type, _value), do: false
+
+  defp validate_value_enum(value, %{"enum" => values}), do: if(value in values, do: :ok, else: :error)
+  defp validate_value_enum(_value, _schema), do: :ok
+  defp validate_value_const(value, %{"const" => expected}), do: if(value == expected, do: :ok, else: :error)
+  defp validate_value_const(_value, _schema), do: :ok
+
+  defp validate_string(value, schema) when is_binary(value) do
+    length = String.length(value)
+
+    if (not Map.has_key?(schema, "minLength") or length >= schema["minLength"]) and
+         (not Map.has_key?(schema, "maxLength") or length <= schema["maxLength"]),
+       do: :ok,
+       else: :error
+  end
+
+  defp validate_string(_value, _schema), do: :ok
+
+  defp validate_number(value, schema) when is_number(value) do
+    if (not Map.has_key?(schema, "minimum") or value >= schema["minimum"]) and
+         (not Map.has_key?(schema, "maximum") or value <= schema["maximum"]),
+       do: :ok,
+       else: :error
+  end
+
+  defp validate_number(_value, _schema), do: :ok
+
+  defp validate_array(value, schema) when is_list(value) do
+    valid_length =
+      (not Map.has_key?(schema, "minItems") or length(value) >= schema["minItems"]) and
+        (not Map.has_key?(schema, "maxItems") or length(value) <= schema["maxItems"])
+
+    valid_items =
+      case schema["items"] do
+        nil -> true
+        item_schema -> Enum.all?(value, &(validate_value(&1, item_schema) == :ok))
+      end
+
+    if valid_length and valid_items, do: :ok, else: :error
+  end
+
+  defp validate_array(_value, _schema), do: :ok
+
+  defp validate_object(value, schema) when is_map(value) do
+    properties = Map.get(schema, "properties", %{})
+    required = Map.get(schema, "required", [])
+    additional = Map.get(schema, "additionalProperties", true)
+
+    required? = Enum.all?(required, &Map.has_key?(value, &1))
+
+    properties? =
+      Enum.all?(value, fn {key, child} ->
+        case Map.fetch(properties, key) do
+          {:ok, child_schema} -> validate_value(child, child_schema) == :ok
+          :error when additional == true -> true
+          :error when additional == false -> false
+          :error when is_map(additional) -> validate_value(child, additional) == :ok
+        end
+      end)
+
+    if required? and properties?, do: :ok, else: :error
+  end
+
+  defp validate_object(_value, _schema), do: :ok
+
+  defp validate_value_combinators(value, schema) do
+    checks = [
+      {"allOf", fn matches -> matches == length(schema["allOf"]) end},
+      {"anyOf", fn matches -> matches >= 1 end},
+      {"oneOf", fn matches -> matches == 1 end}
+    ]
+
+    if Enum.all?(checks, fn {keyword, accepted?} ->
+         case schema[keyword] do
+           nil -> true
+           branches -> branches |> Enum.count(&(validate_value(value, &1) == :ok)) |> accepted?.()
+         end
+       end),
+       do: :ok,
+       else: :error
+  end
 
   defp non_negative_integer?(value), do: is_integer(value) and value >= 0
   defp within(value, maximum, _kind) when value <= maximum, do: :ok
