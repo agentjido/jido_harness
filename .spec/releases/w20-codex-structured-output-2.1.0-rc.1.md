@@ -1,6 +1,6 @@
 ---
 id: release.jido_harness_w20_codex_structured_output_2_1_0_rc_1
-status: release_candidate
+status: superseded
 version: 2.1.0-rc.1
 minimum_codex_cli: 0.144.6
 capability: structured_output
@@ -9,6 +9,10 @@ authentication: cached_subscription
 ---
 
 # W20 Codex Structured Output Release Candidate
+
+This candidate was superseded by `2.1.0-rc.2` during integration because the
+128-concept consumer schema requires a larger bounded aggregate enum ceiling.
+It is not an accepted consumer pin.
 
 This release candidate is the immutable consumer handoff for W20 Phase 2.
 Consumers must pin the 40-character Git commit containing this manifest; path,

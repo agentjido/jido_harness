@@ -6,13 +6,11 @@ defmodule Jido.Harness.JSONSchema do
   @maximum_bytes 65_536
   @maximum_depth 16
   @maximum_properties 256
-  @maximum_enum_values 128
-  @maximum_combinators 32
+  @maximum_enum_values 256
   @types ~w(null boolean object array number integer string)
   @keywords MapSet.new(~w(
     $schema title description type properties required additionalProperties
     items enum const minLength maxLength minimum maximum minItems maxItems
-    anyOf oneOf allOf
   ))
 
   @doc false
@@ -20,7 +18,7 @@ defmodule Jido.Harness.JSONSchema do
   def admit(schema) when is_map(schema) do
     with {:ok, encoded} <- encode(schema),
          :ok <- within(byte_size(encoded), @maximum_bytes, :schema_too_large),
-         {:ok, _counts} <- validate_schema(schema, 1, %{properties: 0, enums: 0, combinators: 0}) do
+         {:ok, _counts} <- validate_schema(schema, 1, %{properties: 0, enums: 0}) do
       :ok
     end
   end
@@ -56,8 +54,7 @@ defmodule Jido.Harness.JSONSchema do
          {:ok, counts} <- validate_properties(schema, depth, counts),
          {:ok, counts} <- validate_items(schema, depth, counts),
          {:ok, counts} <- validate_additional_properties(schema, depth, counts),
-         {:ok, counts} <- validate_enum(schema, counts),
-         {:ok, counts} <- validate_combinators(schema, depth, counts) do
+         {:ok, counts} <- validate_enum(schema, counts) do
       {:ok, counts}
     end
   end
@@ -180,44 +177,6 @@ defmodule Jido.Harness.JSONSchema do
   defp validate_enum(%{"enum" => _values}, _counts), do: invalid(:invalid_schema_enum)
   defp validate_enum(_schema, counts), do: {:ok, counts}
 
-  defp validate_combinators(schema, depth, counts) do
-    Enum.reduce_while(~w(anyOf oneOf allOf), {:ok, counts}, fn keyword, {:ok, acc} ->
-      case Map.fetch(schema, keyword) do
-        :error ->
-          {:cont, {:ok, acc}}
-
-        {:ok, branches} when is_list(branches) and branches != [] ->
-          count = acc.combinators + length(branches)
-
-          case within(count, @maximum_combinators, :too_many_schema_combinators) do
-            :ok ->
-              result =
-                Enum.reduce_while(branches, {:ok, %{acc | combinators: count}}, fn
-                  branch, {:ok, branch_counts} when is_map(branch) ->
-                    case validate_schema(branch, depth + 1, branch_counts) do
-                      {:ok, next} -> {:cont, {:ok, next}}
-                      error -> {:halt, error}
-                    end
-
-                  _branch, _state ->
-                    {:halt, invalid(:invalid_schema_combinator)}
-                end)
-
-              case result do
-                {:ok, next} -> {:cont, {:ok, next}}
-                error -> {:halt, error}
-              end
-
-            error ->
-              {:halt, error}
-          end
-
-        {:ok, _branches} ->
-          {:halt, invalid(:invalid_schema_combinator)}
-      end
-    end)
-  end
-
   defp canonical(map) when is_map(map) do
     map
     |> Enum.sort_by(fn {key, _value} -> key end)
@@ -235,8 +194,7 @@ defmodule Jido.Harness.JSONSchema do
          :ok <- validate_string(value, schema),
          :ok <- validate_number(value, schema),
          :ok <- validate_array(value, schema),
-         :ok <- validate_object(value, schema),
-         :ok <- validate_value_combinators(value, schema) do
+         :ok <- validate_object(value, schema) do
       :ok
     end
   end
@@ -319,23 +277,6 @@ defmodule Jido.Harness.JSONSchema do
   end
 
   defp validate_object(_value, _schema), do: :ok
-
-  defp validate_value_combinators(value, schema) do
-    checks = [
-      {"allOf", fn matches -> matches == length(schema["allOf"]) end},
-      {"anyOf", fn matches -> matches >= 1 end},
-      {"oneOf", fn matches -> matches == 1 end}
-    ]
-
-    if Enum.all?(checks, fn {keyword, accepted?} ->
-         case schema[keyword] do
-           nil -> true
-           branches -> branches |> Enum.count(&(validate_value(value, &1) == :ok)) |> accepted?.()
-         end
-       end),
-       do: :ok,
-       else: :error
-  end
 
   defp non_negative_integer?(value), do: is_integer(value) and value >= 0
   defp within(value, maximum, _kind) when value <= maximum, do: :ok

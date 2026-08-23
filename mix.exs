@@ -1,7 +1,7 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "2.1.0-rc.1"
+  @version "2.1.0-rc.2"
   @source_url "https://github.com/agentjido/jido_harness"
   @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 

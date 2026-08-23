@@ -105,7 +105,7 @@ existing `cwd`. For direct executable ownership, use a structured
 
 ## Adopt 2.1 structured output explicitly
 
-Jido.Harness `2.1.0-rc.1` adds an optional `structured_output` field to finite
+Jido.Harness `2.1.0-rc.2` adds an optional `structured_output` field to finite
 `RunRequest` values and a nullable `structured_output` field to `RunResult`.
 Existing unstructured runs and sessions do not change.
 

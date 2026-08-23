@@ -55,6 +55,37 @@ defmodule Jido.Harness.StructuredOutputTest do
              JSONSchema.admit(%{"type" => "object", "properties" => properties})
   end
 
+  test "admits the governed 128-concept schema within the bounded aggregate enum ceiling" do
+    concepts = Enum.map(1..128, &"concept-#{&1}")
+
+    schema = %{
+      "type" => "object",
+      "properties" => %{
+        "disposition" => %{"type" => "string", "enum" => ~w(classified insufficient ambiguous)},
+        "concept_id" => %{"type" => "string", "enum" => concepts}
+      },
+      "required" => ~w(disposition concept_id),
+      "additionalProperties" => false
+    }
+
+    assert :ok = JSONSchema.admit(schema)
+
+    too_many = %{"type" => "string", "enum" => Enum.map(1..257, &"value-#{&1}")}
+    assert {:error, %Error{details: %{failure_kind: :too_many_schema_enum_values}}} = JSONSchema.admit(too_many)
+  end
+
+  test "rejects schema combinators before provider execution" do
+    schema = %{
+      "anyOf" => [
+        %{"type" => "string"},
+        %{"type" => "null"}
+      ]
+    }
+
+    assert {:error, %Error{details: %{failure_kind: :unsupported_schema_keyword}}} =
+             JSONSchema.admit(schema)
+  end
+
   test "serializes schemas deterministically in an owner-only workspace and removes it" do
     base = Path.join(System.tmp_dir!(), "jido-harness-schema-test-#{System.unique_integer([:positive])}")
     output = StructuredOutput.new!(schema_id: "hr.v1", schema: @schema)

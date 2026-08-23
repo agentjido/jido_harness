@@ -84,7 +84,7 @@ specifications. Codex readiness verifies the CLI compatibility boundary and
 cached subscription login without making a billable model request or accepting
 an API key as a substitute.
 
-Codex structured output requires Jido.Harness `2.1.0-rc.1` or later in the
+Codex structured output requires Jido.Harness `2.1.0-rc.2` or later in the
 2.1 line and `codex-cli` `0.144.6` or later. It is a finite-run capability, not
 an interactive-session capability. See the
 [structured-output contract](../docs/structured_output_execution.md).

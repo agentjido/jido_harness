@@ -3,7 +3,7 @@
 This contract defines the implemented provider-neutral request, ephemeral schema
 lifecycle, isolation, Codex subscription execution, normalized result, and
 failure behavior for finite schema-constrained Jido.Harness runs. The initial
-capability is advertised by Jido.Harness `2.1.0-rc.1` for Codex CLI `0.144.6`
+capability is advertised by Jido.Harness `2.1.0-rc.2` for Codex CLI `0.144.6`
 or newer.
 
 ## Example
@@ -54,9 +54,9 @@ unknown or incompatible options.
 ## Schema admission and lifecycle
 
 Before process creation, the harness shall validate that the schema is a JSON
-object and enforce configured byte, nesting, property, enum, and combinator
-ceilings. Admission shall reject unsupported keywords when the selected
-provider cannot represent them exactly.
+object and enforce configured byte, nesting, property, and enum ceilings.
+Schema combinators and other unsupported keywords shall be rejected when the
+selected provider cannot represent them exactly.
 
 The admitted schema shall be serialized deterministically into a newly created
 private harness directory. The directory and file shall use owner-only access,

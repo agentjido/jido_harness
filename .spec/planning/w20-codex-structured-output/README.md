@@ -1,6 +1,6 @@
 ---
 id: plan.jido_harness_w20_codex_structured_output
-status: active
+status: completed
 intent: feature
 parent_plan: plan.w20_live_hr_company_brain_demonstration
 parent_phase: plan.w20_phase_02_codex_subscription_runtime
@@ -15,7 +15,7 @@ required by W20 through Codex cached subscription authentication. It owns no HR
 prompt, provider-routing policy, classification meaning, answer policy, or
 direct OpenAI API path.
 
-- [ ] 1 Phase - Release schema-constrained Codex finite execution.
+- [x] 1 Phase - Release schema-constrained Codex finite execution.
 
   This phase maps Parent Phase 2 into one provider-owned release and remains
   authorized by the W20 Phase 1 merged-default adoption receipt.
@@ -67,22 +67,22 @@ direct OpenAI API path.
       - [x] 1.3.1.1 Subtask {#jido-w20-1-3-1-1} - Update adapter/security/provider documentation and capability discovery with exact compatibility and failure semantics.
       - [x] 1.3.1.2 Subtask {#jido-w20-1-3-1-2} - Publish one immutable release for Company Brain and MetaGraph Search to pin exactly.
 
-  - [ ] 1.4 Section - Integration Tests and provider release acceptance.
+  - [x] 1.4 Section - Integration Tests and provider release acceptance.
 
     This final section proves the complete provider contract and is the only
     local section permitted to make the release eligible for W20 consumers.
 
-    - [ ] 1.4.1 Task {#jido-w20-p01-integration} [parent: w20-p02-integration] [after: {#jido-w20-p01-s03-release}] - Run exact-default provider integration and publish the release receipt.
+    - [x] 1.4.1 Task {#jido-w20-p01-integration} [parent: w20-p02-integration] [after: {#jido-w20-p01-s03-release}] - Run exact-default provider integration and publish the release receipt.
 
       This task combines deterministic fake-CLI coverage with one deliberate
       cached-subscription smoke after non-billable readiness succeeds.
 
-      - [ ] 1.4.1.1 Subtask {#jido-w20-1-4-1-1} - Run formatting, unit, property, lifecycle, concurrency, cancellation, redaction, compatibility, and full quality gates.
-      - [ ] 1.4.1.2 Subtask {#jido-w20-1-4-1-2} - Run one opt-in schema-valid Codex smoke, record only redacted identity evidence, and publish the immutable provider receipt.
+      - [x] 1.4.1.1 Subtask {#jido-w20-1-4-1-1} - Run formatting, unit, property, lifecycle, concurrency, cancellation, redaction, compatibility, and full quality gates.
+      - [x] 1.4.1.2 Subtask {#jido-w20-1-4-1-2} - Run one opt-in schema-valid Codex smoke, record only redacted identity evidence, and publish the immutable provider receipt.
 
     Planned completion evidence: `receipt.jido_harness_w20_codex_structured_output`.
 
 ## Current frontier
 
-Sections 1.1 through 1.3 are complete. Section 1.4 provider release acceptance
-is the active frontier.
+Phase 1 is complete. Jido.Harness `2.1.0-rc.2` is accepted for exact consumer
+pinning through `receipt.jido_harness_w20_codex_structured_output`.
