@@ -69,7 +69,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         "fs" => %{"readTextFile" => false, "writeTextFile" => false},
         "terminal" => false
       },
-      "clientInfo" => %{"name" => "jido_harness", "title" => "Jido Harness", "version" => "2.0.0"}
+      "clientInfo" => %{"name" => "jido_harness", "title" => "Jido Harness", "version" => Jido.Harness.version()}
     }
 
     with {:ok, state} <- request(state, "initialize", params, {:initialize, from, request}) do

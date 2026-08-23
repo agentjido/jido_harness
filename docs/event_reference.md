@@ -49,6 +49,7 @@ Every accepted turn receives exactly one turn-terminal event.
 | --- | --- |
 | `:output_text_delta` | Incremental assistant text |
 | `:output_text_final` | Provider-declared final assistant text |
+| `:structured_output` | Schema id and validated JSON value from a successful structured run |
 | `:thinking_delta` | Incremental reasoning/thinking data |
 | `:command_output_delta` | Incremental output from a provider command/tool |
 | `:tool_call` | Normalized tool invocation |
@@ -59,6 +60,11 @@ Every accepted turn receives exactly one turn-terminal event.
 
 These events are capability-dependent. A provider that cannot supply a
 canonical value does not fabricate it.
+
+For structured runs, `:structured_output` is emitted only after the single
+terminal text has passed the byte ceiling, JSON decoding, and schema
+validation. Its payload is `%{"schema_id" => id, "value" => value}`. Private
+schema paths and resumable provider-session identifiers are omitted.
 
 ## Interaction events
 

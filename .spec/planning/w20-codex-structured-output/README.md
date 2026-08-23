@@ -54,18 +54,18 @@ direct OpenAI API path.
       - [x] 1.2.2.1 Subtask {#jido-w20-1-2-2-1} - Cover start failure, caller exit, timeout, cancellation, provider crash, cleanup failure, and concurrent-run isolation.
       - [x] 1.2.2.2 Subtask {#jido-w20-1-2-2-2} - Cover absent authentication and incompatible CLI behavior with no API, provider, or offline fallback.
 
-  - [ ] 1.3 Section - Freeze release compatibility and consumer handoff.
+  - [x] 1.3 Section - Freeze release compatibility and consumer handoff.
 
     This section publishes one immutable capability identity for downstream
     consumers without embedding any consumer prompt or domain schema.
 
-    - [ ] 1.3.1 Task {#jido-w20-p01-s03-release} [parent: w20-p02-s03-release-pin] [after: {#jido-w20-p01-s02-safety}] - Release and document the compatible structured-output seam.
+    - [x] 1.3.1 Task {#jido-w20-p01-s03-release} [parent: w20-p02-s03-release-pin] [after: {#jido-w20-p01-s02-safety}] - Release and document the compatible structured-output seam.
 
       This task separates non-billable readiness, optional live smoke, package
       release identity, Codex CLI compatibility, and consumer pin evidence.
 
-      - [ ] 1.3.1.1 Subtask {#jido-w20-1-3-1-1} - Update adapter/security/provider documentation and capability discovery with exact compatibility and failure semantics.
-      - [ ] 1.3.1.2 Subtask {#jido-w20-1-3-1-2} - Publish one immutable release for Company Brain and MetaGraph Search to pin exactly.
+      - [x] 1.3.1.1 Subtask {#jido-w20-1-3-1-1} - Update adapter/security/provider documentation and capability discovery with exact compatibility and failure semantics.
+      - [x] 1.3.1.2 Subtask {#jido-w20-1-3-1-2} - Publish one immutable release for Company Brain and MetaGraph Search to pin exactly.
 
   - [ ] 1.4 Section - Integration Tests and provider release acceptance.
 
@@ -84,5 +84,5 @@ direct OpenAI API path.
 
 ## Current frontier
 
-Sections 1.1 and 1.2 are complete. Section 1.3 is the active release frontier;
-provider release acceptance remains pending.
+Sections 1.1 through 1.3 are complete. Section 1.4 provider release acceptance
+is the active frontier.

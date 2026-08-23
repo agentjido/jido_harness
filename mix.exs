@@ -1,7 +1,7 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "2.0.0"
+  @version "2.1.0-rc.1"
   @source_url "https://github.com/agentjido/jido_harness"
   @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
@@ -50,6 +50,7 @@ defmodule Jido.Harness.MixProject do
           "docs/process_management.md",
           "docs/integration_testing.md",
           "docs/migration_v2.md",
+          "docs/structured_output_execution.md",
           "livebooks/01_one_shot_requests.livemd",
           "livebooks/02_detached_runs.livemd",
           "livebooks/03_sessions_and_processes.livemd"
@@ -87,7 +88,8 @@ defmodule Jido.Harness.MixProject do
             "docs/integration_testing.md",
             "docs/telemetry.md",
             "docs/dependency_policy.md",
-            "docs/migration_v2.md"
+            "docs/migration_v2.md",
+            "docs/structured_output_execution.md"
           ],
           Livebooks: [
             "livebooks/01_one_shot_requests.livemd",

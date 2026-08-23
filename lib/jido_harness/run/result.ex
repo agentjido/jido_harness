@@ -4,8 +4,9 @@ defmodule Jido.Harness.RunResult do
 
   `status` is `:completed`, `:failed`, or `:cancelled`. `text` is a bounded
   output tail; when `text_truncated?` is true, cursor replay is the source for
-  the complete retained event sequence. Optional usage depends on provider
-  capability.
+  the complete retained event sequence. A successful structured run also sets
+  `structured_output` to a map containing its `schema_id` and validated
+  `value`. Optional usage depends on provider capability.
   """
 
   alias Jido.Harness.{Error, Event}

@@ -52,6 +52,26 @@ preserved by finite runs, managed-session turns, ACP sessions, and Pi RPC
 sessions; it prevents ambient host variables from reaching provider
 descendants.
 
+Codex structured runs always replace the child environment with a minimal
+allowlist containing only executable, cached-login location, temporary-file,
+locale, and TLS-certificate variables. API-key and access-token variables are
+not inherited. The CLI reads its ordinary cached subscription authentication;
+the harness does not inspect or copy the credential files.
+
+## Structured-output isolation
+
+Selecting `structured_output` activates the fixed `:ephemeral_read_only`
+profile. Harness creates a fresh empty working directory, stages the JSON
+Schema in a separate owner-only path, disables session persistence, ignores
+user config and project rules, disables project instruction discovery, uses a
+read-only Codex sandbox with approval policy `never`, and removes the workspace
+after every terminal path.
+
+Structured requests reject session or resume identifiers, extra directories,
+attachments, request environment entries, writable or unrestricted sandboxes,
+interactive approval modes, and provider behavior switches. There is no API,
+alternate-provider, offline, or session fallback.
+
 ## Redaction
 
 Jido.Harness redacts structured sensitive fields, bearer credentials, and

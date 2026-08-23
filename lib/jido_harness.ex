@@ -34,7 +34,7 @@ defmodule Jido.Harness do
 
   alias Jido.Harness.{AdapterSpec, Error, ProviderStatus, Registry, Run, RunRequest, RunResult, Validation}
 
-  @version "2.0.0"
+  @version "2.1.0-rc.1"
 
   @type provider :: atom()
   @type request :: String.t() | map() | keyword() | RunRequest.t()
