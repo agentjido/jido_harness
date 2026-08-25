@@ -73,7 +73,8 @@ defmodule Jido.Harness.Adapters.Kimi do
       ],
       normalized_values: %{
         approval_mode: [:default],
-        sandbox_mode: [:default]
+        sandbox_mode: [:default],
+        reasoning_effort: [nil, :low, :medium, :high]
       },
       provider_options: @provider_options,
       install: %{npm: "@moonshot-ai/kimi-code"}

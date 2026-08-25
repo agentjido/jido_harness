@@ -100,7 +100,10 @@ mix jido_harness.check --providers codex --strict
 Common request concepts use normalized fields such as `model`,
 `provider_session_id`, `system_prompt`, `approval_mode`, `sandbox_mode`,
 `attachments`, and `reasoning_effort`. A provider accepts only the subset it
-declares.
+declares. Reasoning effort can be `low`, `medium`, `high`, or `xhigh`, but the
+adapter's `normalized_values` declaration limits the values for each provider.
+Codex and Grok accept `xhigh`; other built-in adapters retain their documented
+provider limits.
 
 Provider-specific escape hatches are nested:
 

@@ -100,6 +100,22 @@ defmodule Jido.Harness.SessionManagerTest do
     assert {:error, :not_found} = Jido.Harness.Session.info(session_id)
   end
 
+  test "accepts Codex xhigh sessions and rejects unsupported providers" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:codex, %{reasoning_effort: :xhigh})
+
+    assert {:ok, %{state: :idle}} = await_idle(session_id)
+    assert :ok = Jido.Harness.Session.configure(session_id, %{reasoning_effort: :xhigh})
+    assert :ok = Jido.Harness.Session.close(session_id)
+    assert :ok = Jido.Harness.Session.prune(session_id)
+
+    assert {:error,
+            %Jido.Harness.Error{
+              provider: :claude,
+              details: %{field: :reasoning_effort, value: :xhigh}
+            }} = Jido.Harness.Session.start(:claude, %{reasoning_effort: :xhigh})
+  end
+
   test "rejects unsupported rich turn inputs before provider dispatch" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:test)
     assert {:ok, _info} = await_idle(session_id)

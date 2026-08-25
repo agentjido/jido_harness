@@ -108,6 +108,21 @@ defmodule Jido.Harness.AdapterTest do
     assert Enum.take(argv, -3) == ["resume", "thread-2", "codex"]
   end
 
+  test "Codex accepts xhigh and emits the exact reasoning configuration" do
+    assert {:ok, request} =
+             RequestResolver.resolve(:codex, %{prompt: "codex", reasoning_effort: :xhigh})
+
+    assert {:ok, argv} = Codex.build_argv(request, %{})
+    assert "model_reasoning_effort=\"xhigh\"" in pairs(argv, "--config")
+
+    assert {:error,
+            %Error{
+              category: :validation,
+              provider: :claude,
+              details: %{field: :reasoning_effort, value: :xhigh}
+            }} = RequestResolver.resolve(:claude, %{prompt: "claude", reasoning_effort: :xhigh})
+  end
+
   test "removed Codex SDK escape hatches are rejected" do
     assert {:error, %Error{category: :validation, details: %{key: :codex_options}}} =
              RequestResolver.resolve(:codex, %{prompt: "codex", provider_options: %{codex_options: %{}}})

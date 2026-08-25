@@ -47,6 +47,7 @@ defmodule Jido.Harness.Adapters.Codex do
         :reasoning_effort,
         :structured_output
       ],
+      normalized_values: %{reasoning_effort: [nil, :low, :medium, :high, :xhigh]},
       provider_options: @provider_options,
       install: %{npm: "@openai/codex"}
     }

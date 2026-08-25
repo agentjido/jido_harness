@@ -40,6 +40,7 @@ defmodule Jido.Harness.Adapters.Amp do
       default_session_transport: :stream_json_resume,
       session_transports: [Jido.Harness.SessionTransportSpec.managed(:stream_json_resume)],
       normalized_options: [:provider_session_id, :mcp_config, :reasoning_effort],
+      normalized_values: %{reasoning_effort: [nil, :low, :medium, :high]},
       provider_options: @provider_options,
       install: %{npm: "@sourcegraph/amp"}
     }

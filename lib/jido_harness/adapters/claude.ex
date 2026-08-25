@@ -45,6 +45,7 @@ defmodule Jido.Harness.Adapters.Claude do
         :sandbox_mode,
         :reasoning_effort
       ],
+      normalized_values: %{reasoning_effort: [nil, :low, :medium, :high]},
       provider_options: @provider_options,
       install: %{npm: "@anthropic-ai/claude-code"}
     }
