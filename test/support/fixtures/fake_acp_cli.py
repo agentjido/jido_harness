@@ -74,13 +74,17 @@ for line in sys.stdin:
                     "protocolVersion": 1,
                     "agentCapabilities": {
                         "loadSession": True,
+                        "sessionCapabilities": {"close": {}},
                         "promptCapabilities": {"image": True, "embeddedContext": True},
                     },
                     "agentInfo": {"name": "fixture-acp", "version": "1.0.0"},
                 },
             }
         )
-    elif method in ("session/new", "session/load"):
+    elif method == "session/new":
+        send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
+    elif method == "session/load":
+        session_id = message.get("params", {}).get("sessionId", session_id)
         send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
     elif method == "session/prompt":
         text = " ".join(
@@ -102,6 +106,8 @@ for line in sys.stdin:
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")
         pending_prompt = None
+    elif method == "session/close":
+        send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif request_id == 99 and pending_prompt is not None:
         outcome = message.get("result", {}).get("outcome", {})
         selected = outcome.get("optionId", "")

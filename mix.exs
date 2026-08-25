@@ -47,6 +47,7 @@ defmodule Jido.Harness.MixProject do
           "docs/adapter_contract.md",
           "docs/telemetry.md",
           "docs/dependency_policy.md",
+          "docs/decisions/exmcp-acp-boundary.md",
           "docs/process_management.md",
           "docs/integration_testing.md",
           "docs/migration_v2.md",
@@ -88,6 +89,7 @@ defmodule Jido.Harness.MixProject do
             "docs/integration_testing.md",
             "docs/telemetry.md",
             "docs/dependency_policy.md",
+            "docs/decisions/exmcp-acp-boundary.md",
             "docs/migration_v2.md",
             "docs/structured_output_execution.md"
           ],
@@ -218,6 +220,7 @@ defmodule Jido.Harness.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:erlexec, "~> 2.3"},
+      {:ex_mcp, "~> 1.0"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

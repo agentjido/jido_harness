@@ -122,8 +122,8 @@ exist even when a particular provider transport rejects that capability.
 | Codex | `:exec_jsonl_resume` | resumed exec-JSONL process per turn |
 | Gemini | `:stream_json_resume` | resumed stream-JSON process per turn |
 | Grok | `:streaming_json_resume` | resumed streaming-JSON process per turn |
-| Kimi | `:acp` | persistent ACP JSON-RPC process |
-| OpenCode | `:acp` | persistent ACP JSON-RPC process |
+| Kimi | `:acp` | ExMCP ACP over a persistent Harness-managed process |
+| OpenCode | `:acp` | ExMCP ACP over a persistent Harness-managed process |
 | Pi | `:rpc` | persistent JSONL-RPC process |
 | Z.AI | `:stream_json_resume` | Claude stream JSON with Z.AI environment mapping |
 

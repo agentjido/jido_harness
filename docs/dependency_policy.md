@@ -9,12 +9,15 @@ one of those boundaries without duplicating the package's core responsibility.
 | Dependency | Purpose |
 | --- | --- |
 | `erlexec` | monitored subprocesses, stdin, PTY, process groups, and signals |
+| `ex_mcp` | ACP messages, protocol validation, and request correlation |
 | `telemetry` | direct runtime observation boundary |
 | `zoi` | validation and construction of normalized public structs |
 | `jason` | provider JSON/JSONL decoding and journal encoding |
 
 Every built-in provider uses its official CLI through the Jido.Harness process
-manager. Z.AI uses its officially supported Claude Code environment mapping.
+manager. ACP session transports use ExMCP for protocol behavior while they use
+the same Harness process manager for process ownership. Z.AI uses its officially
+supported Claude Code environment mapping.
 The public Zoi schemas are kept compatible across the 0.17 and 0.18 lines so a
 consumer can share the validation runtime already selected by Jido 2.x.
 
