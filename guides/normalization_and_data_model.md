@@ -126,7 +126,7 @@ Some canonical data exists only when the provider supplies it reliably:
 - approval exchange, steering, and dynamic configuration.
 
 Absence is not replaced with invented values. Capability declarations tell a
-caller what the adapter or selected session transport can represent.
+caller what the selected ACP agent can represent.
 
 ### Provider-specific escape hatch
 
@@ -142,14 +142,12 @@ and receives no cross-provider portability guarantee.
 
 ## Normalization is not equalization
 
-A managed session that resumes a new CLI process per turn is not labeled as a
-native persistent session. A provider that cannot enforce workspace-only writes
-does not advertise that sandbox value. An adapter that cannot extract reliable
-usage does not fabricate token counts.
+A provider that cannot enforce workspace-only writes does not advertise that
+sandbox value. An ACP agent that cannot report reliable usage does not
+fabricate token counts.
 
-`AdapterSpec`, `Capabilities`, `SessionTransportSpec`, and
-`InteractionCapabilities` make these differences part of the API rather than
-leaving them as documentation footnotes.
+`AdapterSpec`, `ACPAgentSpec`, and `SessionCapabilities` make these differences
+part of the API rather than leaving them as documentation footnotes.
 
 ## Errors at the boundary
 

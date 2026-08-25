@@ -67,7 +67,7 @@ mix test --include integration test/integration/providers_test.exs \
 | `smoke` | readiness and one minimal run |
 | `contract` | canonical events, result consistency, replay, reattachment |
 | `lifecycle` | caller death, resume, cancellation, cleanup |
-| `interactive` | live two-turn context through the selected transport |
+| `interactive` | live two-turn context through the ACP entry point |
 
 Unavailable providers are skipped unless strict mode is enabled.
 

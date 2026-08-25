@@ -3,12 +3,13 @@ defmodule Jido.Harness.ZoiStructsTest do
 
   alias Jido.Harness.{
     AdapterSpec,
+    ACPAgentSpec,
     ApprovalResponse,
     Buffer,
     Capabilities,
     Error,
     Event,
-    InteractionCapabilities,
+    SessionCapabilities,
     Journal,
     ProcessEvent,
     ProcessInfo,
@@ -19,7 +20,6 @@ defmodule Jido.Harness.ZoiStructsTest do
     RunResult,
     SessionInfo,
     SessionRequest,
-    SessionTransportSpec,
     StructuredOutput,
     TextTail,
     TurnRequest,
@@ -28,12 +28,13 @@ defmodule Jido.Harness.ZoiStructsTest do
 
   @struct_modules [
     AdapterSpec,
+    ACPAgentSpec,
     ApprovalResponse,
     Buffer,
     Capabilities,
     Error,
     Event,
-    InteractionCapabilities,
+    SessionCapabilities,
     Journal,
     ProcessEvent,
     ProcessInfo,
@@ -44,7 +45,6 @@ defmodule Jido.Harness.ZoiStructsTest do
     RunResult,
     SessionInfo,
     SessionRequest,
-    SessionTransportSpec,
     StructuredOutput,
     TextTail,
     TurnRequest,
@@ -80,23 +80,30 @@ defmodule Jido.Harness.ZoiStructsTest do
              TurnResult.new(session_id: "session_1", turn_id: "turn_1", provider: :test, status: :completed)
   end
 
-  test "adapter metadata rejects contradictory transport declarations" do
-    capabilities = InteractionCapabilities.new!(transport: :native)
+  test "adapter metadata validates one ACP agent declaration" do
+    capabilities = SessionCapabilities.new!(load_session: true, multimodal: true)
+    acp_agent = ACPAgentSpec.native("test", ["acp"], %{capabilities: capabilities})
 
-    transport =
-      SessionTransportSpec.new!(
-        name: :native,
-        adapter: Jido.Harness.SessionAdapters.Managed,
-        capabilities: capabilities
-      )
-
-    assert {:error, %{category: :validation}} =
+    assert {:ok, %AdapterSpec{acp_agent: ^acp_agent}} =
              AdapterSpec.new(
                provider: :test,
                name: "Test",
                executable: "test",
                capabilities: %Capabilities{},
-               session_transports: [transport]
+               acp_agent: acp_agent
+             )
+  end
+
+  test "ACP adapter declarations require an exact package and unique options" do
+    assert {:error, %Error{message: "ACP adapter source requires an exact package"}} =
+             ACPAgentSpec.new(executable: "test-acp", source: :adapter, package: "test-acp")
+
+    assert {:error, %Error{message: "ACP option names must be unique", details: %{field: :turn_options}}} =
+             ACPAgentSpec.new(
+               executable: "test-acp",
+               source: :adapter,
+               package: "test-acp@1.0.0",
+               turn_options: [:attachments, :attachments]
              )
   end
 end

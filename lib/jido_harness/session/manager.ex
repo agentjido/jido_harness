@@ -8,16 +8,15 @@ defmodule Jido.Harness.SessionManager do
   def start(provider, request) do
     with {:ok, adapter} <- Registry.lookup(provider),
          {:ok, spec} <- Registry.spec(provider),
-         {:ok, request, transport_spec} <- resolve_transport(request, spec),
-         :ok <- validate_request(request, spec, transport_spec),
-         :ok <- validate_transport_version(adapter, Registry.provider_config(provider), transport_spec) do
+         {:ok, acp_agent} <- require_acp_agent(spec),
+         request = %{request | provider: spec.provider},
+         :ok <- validate_request(request, spec, acp_agent) do
       id = ID.generate("session")
       config = Registry.provider_config(provider)
-      session_adapter = transport_spec.adapter
 
       case DynamicSupervisor.start_child(
              Jido.Harness.SessionSupervisor,
-             {SessionWorker, {id, provider, request, adapter, session_adapter, transport_spec, config}}
+             {SessionWorker, {id, provider, request, adapter, acp_agent, config}}
            ) do
         {:ok, _pid} ->
           {:ok, id}
@@ -104,37 +103,10 @@ defmodule Jido.Harness.SessionManager do
     end
   end
 
-  defp resolve_transport(%SessionRequest{} = request, spec) do
-    transports = spec.session_transports
+  defp require_acp_agent(%{acp_agent: %Jido.Harness.ACPAgentSpec{} = acp_agent}), do: {:ok, acp_agent}
 
-    selected =
-      request.transport || spec.default_session_transport ||
-        case transports do
-          [transport | _] -> transport.name
-          [] -> :managed
-        end
-
-    transport_spec =
-      Enum.find(transports, &(&1.name == selected)) ||
-        if selected == :managed, do: managed_transport(), else: nil
-
-    transport_spec = specialize_transport(transport_spec, spec)
-
-    cond do
-      is_nil(transport_spec) ->
-        {:error,
-         Error.validation("unknown session transport", provider: spec.provider, details: %{transport: selected})}
-
-      transport_spec.capabilities.maturity == :experimental and is_nil(request.transport) ->
-        {:error,
-         Error.validation("experimental session transport must be selected explicitly",
-           provider: spec.provider,
-           details: %{transport: selected}
-         )}
-
-      true ->
-        {:ok, %{request | provider: spec.provider, transport: selected}, transport_spec}
-    end
+  defp require_acp_agent(spec) do
+    {:error, Error.validation("provider does not expose an ACP agent", provider: spec.provider)}
   end
 
   @manager_fields [
@@ -144,7 +116,7 @@ defmodule Jido.Harness.SessionManager do
     :env_mode,
     :metadata,
     :provider_options,
-    :transport,
+    :acp_path,
     :turn_runtime_timeout_ms,
     :turn_idle_timeout_ms,
     :session_idle_timeout_ms,
@@ -153,12 +125,15 @@ defmodule Jido.Harness.SessionManager do
   ]
   @empty_values [nil, [], %{}, :default]
 
-  defp validate_request(%SessionRequest{} = request, spec, transport_spec) do
-    normalized_options = inherited_options(transport_spec.session_options, spec.normalized_options)
-    provider_option_names = inherited_options(transport_spec.session_provider_options, spec.provider_options)
+  @doc false
+  def validate_request(%SessionRequest{} = request, spec, acp_agent) do
+    normalized_options =
+      acp_agent.session_options
+      |> inherited_options(spec.normalized_options)
+      |> Kernel.++(acp_agent.configuration_options)
+      |> Enum.uniq()
 
-    env_supported? =
-      transport_spec.adapter == Jido.Harness.SessionAdapters.Managed or :env in normalized_options
+    provider_option_names = inherited_options(acp_agent.session_provider_options, spec.provider_options)
 
     unsupported =
       request
@@ -171,12 +146,15 @@ defmodule Jido.Harness.SessionManager do
     normalized_values = validate_normalized_values(request, spec, normalized_options)
 
     cond do
-      request.env != %{} and not env_supported? ->
+      not is_nil(request.provider_session_id) and not acp_agent.capabilities.load_session ->
         {:error,
-         Error.validation("session transport does not support environment overrides",
+         Error.validation("ACP agent does not support session loading",
            provider: spec.provider,
-           details: %{transport: transport_spec.name, field: :env}
+           details: %{capability: :load_session}
          )}
+
+      not is_nil(request.mcp_config) and not acp_agent.capabilities.mcp ->
+        {:error, Error.validation("ACP agent does not support MCP servers", provider: spec.provider)}
 
       unsupported ->
         {field, _value} = unsupported
@@ -236,65 +214,6 @@ defmodule Jido.Harness.SessionManager do
         {:halt, {:error, Error.validation("unknown provider option", provider: provider, details: %{key: key})}}
     end)
   end
-
-  defp managed_transport do
-    Jido.Harness.SessionTransportSpec.managed()
-  end
-
-  defp specialize_transport(%{adapter: Jido.Harness.SessionAdapters.Managed} = transport, spec) do
-    configuration_options = Enum.filter(transport.configuration_options, &(&1 in spec.normalized_options))
-
-    capabilities = %{
-      transport.capabilities
-      | dynamic_model: if(:model in configuration_options, do: transport.capabilities.dynamic_model, else: false),
-        dynamic_configuration:
-          if(configuration_options == [], do: false, else: transport.capabilities.dynamic_configuration)
-    }
-
-    %{transport | capabilities: capabilities, configuration_options: configuration_options}
-  end
-
-  defp specialize_transport(transport, _spec), do: transport
-
-  defp validate_transport_version(_adapter, _config, %{minimum_version: nil}), do: :ok
-
-  defp validate_transport_version(adapter, config, transport_spec) do
-    with {:ok, status} <- adapter.status(config),
-         true <- status.installed,
-         true <- status.compatible,
-         {:ok, installed} <- extract_version(status.version),
-         {:ok, minimum} <- Version.parse(transport_spec.minimum_version),
-         ordering when ordering in [:eq, :gt] <- Version.compare(installed, minimum) do
-      :ok
-    else
-      false ->
-        {:error,
-         Error.validation("session transport requires an installed compatible CLI",
-           details: %{transport: transport_spec.name, minimum_version: transport_spec.minimum_version}
-         )}
-
-      :lt ->
-        {:error,
-         Error.validation("session transport CLI version is too old",
-           details: %{transport: transport_spec.name, minimum_version: transport_spec.minimum_version}
-         )}
-
-      {:error, reason} ->
-        {:error,
-         Error.validation("could not verify session transport version",
-           details: %{transport: transport_spec.name, reason: inspect(reason)}
-         )}
-    end
-  end
-
-  defp extract_version(version) when is_binary(version) do
-    case Regex.run(~r/\d+\.\d+\.\d+/, version) do
-      [value] -> Version.parse(value)
-      _ -> {:error, :unparseable_version}
-    end
-  end
-
-  defp extract_version(_version), do: {:error, :missing_version}
 
   defp validate_replay(cursor, limit)
        when is_integer(cursor) and cursor >= 0 and is_integer(limit) and limit > 0 and limit <= @max_replay_limit,

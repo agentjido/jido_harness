@@ -10,7 +10,7 @@ defmodule Jido.Harness.ACPSessionTest do
     Application.put_env(:jido_harness, :providers, %{kimi: Jido.Harness.Adapters.Kimi})
 
     Application.put_env(:jido_harness, :provider_config, %{
-      kimi: %{cli_path: fixture, retention: %{journal_dir: journal_dir}}
+      kimi: %{acp_path: fixture, retention: %{journal_dir: journal_dir}}
     })
 
     on_exit(fn ->
@@ -26,11 +26,11 @@ defmodule Jido.Harness.ACPSessionTest do
 
   test "ExMCP correlates fragmented responses while Harness owns process and event identity" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
-    assert {:ok, %{provider_session_id: "acp-fixture-session", transport: :acp}} = await_ready(session_id)
+    assert {:ok, %{provider_session_id: "acp-fixture-session"}} = await_ready(session_id)
 
     process =
       Enum.find(Jido.Harness.Process.list(), fn process ->
-        process.metadata[:session_id] == session_id and process.metadata[:transport] == :acp
+        process.metadata[:session_id] == session_id and process.metadata[:protocol] == :acp
       end)
 
     assert %{state: :running, metadata: %{provider: :kimi}} = process
@@ -117,9 +117,9 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
   end
 
-  test "ACP rejects ignored session and turn options before dispatch" do
-    assert {:error, %Jido.Harness.Error{details: %{field: :model}}} =
-             Jido.Harness.Session.start(:kimi, %{model: "ignored"})
+  test "ACP accepts launch configuration and rejects unsupported turn options" do
+    assert {:ok, configured_id} = Jido.Harness.Session.start(:kimi, %{model: "fixture-model"})
+    assert {:ok, _info} = await_ready(configured_id)
 
     assert {:error, %Jido.Harness.Error{message: "unknown provider option"}} =
              Jido.Harness.Session.start(:kimi, %{provider_options: %{extra_args: ["--unsafe"]}})

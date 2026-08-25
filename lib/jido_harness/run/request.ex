@@ -26,7 +26,9 @@ defmodule Jido.Harness.RunRequest do
     :env_mode,
     :metadata,
     :structured_output,
-    :provider_options
+    :provider_options,
+    :acp_path,
+    :approval_timeout_ms
   ]
 
   @schema Zoi.struct(
@@ -53,7 +55,9 @@ defmodule Jido.Harness.RunRequest do
               env_mode: Zoi.enum([:overlay, :replace]) |> Zoi.default(:overlay),
               metadata: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{}),
               structured_output: Jido.Harness.StructuredOutput.schema() |> Zoi.nullish(),
-              provider_options: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{})
+              provider_options: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{}),
+              acp_path: Zoi.string() |> Zoi.nullish(),
+              approval_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity)
             },
             coerce: true
           )
@@ -128,6 +132,9 @@ defmodule Jido.Harness.RunRequest do
 
       invalid_timeout?(Map.get(attrs, :idle_timeout_ms, :infinity)) ->
         {:error, Jido.Harness.Error.validation("idle_timeout_ms must be :infinity or a positive integer")}
+
+      invalid_timeout?(Map.get(attrs, :approval_timeout_ms, :infinity)) ->
+        {:error, Jido.Harness.Error.validation("approval_timeout_ms must be :infinity or a positive integer")}
 
       invalid_max_turns?(Map.get(attrs, :max_turns)) ->
         {:error, Jido.Harness.Error.validation("max_turns must be a positive integer", details: %{field: :max_turns})}

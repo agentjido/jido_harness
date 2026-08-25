@@ -1,17 +1,7 @@
 defmodule Jido.Harness.EnvironmentModeTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.{AdapterSpec, Capabilities, Event, RunRequest}
-  alias Jido.Harness.Adapters.CLIStream
-
-  defmodule CaptureProcessManager do
-    def start_owned_process(spec, owner) do
-      send(owner, {:process_spec, spec})
-      {:ok, "proc_test"}
-    end
-
-    def stream_process("proc_test"), do: {:ok, []}
-  end
+  alias Jido.Harness.{AdapterSpec, Capabilities}
 
   defmodule CaptureAdapter do
     @behaviour Jido.Harness.Adapter
@@ -22,6 +12,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
         provider: :environment_capture,
         name: "Environment capture",
         executable: "fixture",
+        acp_agent: Jido.Harness.ACPAgentSpec.native("fixture-acp", []),
         capabilities: %Capabilities{streaming?: true},
         normalized_options: [],
         provider_options: []
@@ -30,12 +21,6 @@ defmodule Jido.Harness.EnvironmentModeTest do
 
     @impl true
     def status(_config), do: Jido.Harness.TestAdapter.status(%{})
-
-    @impl true
-    def run(request, _context) do
-      send(request.metadata.test_pid, {:run_request, request})
-      {:ok, [Event.new!(provider: :environment_capture, type: :turn_completed, payload: %{})]}
-    end
   end
 
   defmodule CaptureProcessDriver do
@@ -72,7 +57,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
     test_pid = Application.get_env(:jido_harness, :environment_mode_test_pid)
 
     Application.put_env(:jido_harness, :providers, %{environment_capture: CaptureAdapter})
-    Application.put_env(:jido_harness, :provider_config, %{environment_capture: %{}})
+    Application.put_env(:jido_harness, :provider_config, %{environment_capture: %{acp_path: "/bin/true"}})
     Application.put_env(:jido_harness, :process_driver, CaptureProcessDriver)
     Application.put_env(:jido_harness, :environment_mode_test_pid, self())
 
@@ -89,35 +74,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
     :ok
   end
 
-  test "finite-run CLI process specifications preserve replacement mode" do
-    request =
-      RunRequest.new!(%{
-        prompt: "test",
-        env: %{"RUN_SCOPE" => "scoped"},
-        env_mode: :replace
-      })
-
-    context = %{
-      run_id: "run_test",
-      run_owner: self(),
-      process_manager: CaptureProcessManager
-    }
-
-    assert {:ok, stream} =
-             CLIStream.run(
-               :environment_capture,
-               request,
-               context,
-               "/bin/true",
-               [],
-               fn _event -> [] end
-             )
-
-    assert Enum.to_list(stream) == []
-    assert_receive {:process_spec, %{env_mode: :replace, env: %{"RUN_SCOPE" => "scoped"}}}
-  end
-
-  test "managed sessions preserve replacement mode for every finite turn" do
+  test "ACP sessions preserve replacement environment mode" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:environment_capture, %{
                env: %{"RUN_SCOPE" => "scoped"},
@@ -125,16 +82,20 @@ defmodule Jido.Harness.EnvironmentModeTest do
                metadata: %{test_pid: self()}
              })
 
-    assert eventually(fn ->
-             match?({:ok, %{state: :idle}}, Jido.Harness.Session.info(session_id))
-           end)
+    assert_receive {:process_spec,
+                    %{
+                      env_mode: :replace,
+                      env: %{"RUN_SCOPE" => "scoped"},
+                      metadata: %{protocol: :acp}
+                    }},
+                   1_000
 
-    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "test")
-    assert_receive {:run_request, %RunRequest{env_mode: :replace, env: %{"RUN_SCOPE" => "scoped"}}}
-    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 5_000)
+    assert eventually(fn ->
+             match?({:ok, %{state: :failed}}, Jido.Harness.Session.info(session_id))
+           end)
   end
 
-  test "finite Z.AI and Kimi runs do not import ambient credentials in replacement mode" do
+  test "ACP finite runs do not import ambient credentials in replacement mode" do
     put_ambient_credentials()
 
     zai_overlay = capture_run_spec(:zai, %{prompt: "test", env_mode: :overlay})
@@ -211,26 +172,26 @@ defmodule Jido.Harness.EnvironmentModeTest do
     assert kimi_unset.env["KIMI_MODEL_API_KEY"] == false
   end
 
-  test "managed Z.AI and Kimi sessions apply the same replacement credential rules" do
+  test "ACP Z.AI and Kimi sessions apply the same replacement credential rules" do
     put_ambient_credentials()
 
-    zai_overlay = capture_managed_turn_spec(:zai, %{env_mode: :overlay})
+    zai_overlay = capture_acp_spec(:zai, %{env_mode: :overlay})
     assert zai_overlay.env["ANTHROPIC_AUTH_TOKEN"] == "ambient-zai"
 
-    kimi_overlay = capture_managed_turn_spec(:kimi, %{env_mode: :overlay})
+    kimi_overlay = capture_acp_spec(:kimi, %{env_mode: :overlay})
     assert kimi_overlay.env["KIMI_MODEL_NAME"] == "ambient-kimi-model"
     assert kimi_overlay.env["KIMI_MODEL_API_KEY"] == "ambient-kimi-key"
 
-    zai_replace = capture_managed_turn_spec(:zai, %{env_mode: :replace})
+    zai_replace = capture_acp_spec(:zai, %{env_mode: :replace})
     assert zai_replace.env["ANTHROPIC_AUTH_TOKEN"] == nil
     assert zai_replace.env["ZAI_API_KEY"] == nil
 
-    kimi_replace = capture_managed_turn_spec(:kimi, %{env_mode: :replace})
+    kimi_replace = capture_acp_spec(:kimi, %{env_mode: :replace})
     refute Map.has_key?(kimi_replace.env, "KIMI_MODEL_NAME")
     refute Map.has_key?(kimi_replace.env, "KIMI_MODEL_API_KEY")
 
     zai_request =
-      capture_managed_turn_spec(:zai, %{
+      capture_acp_spec(:zai, %{
         env_mode: :replace,
         env: %{"ZAI_API_KEY" => "session-zai"}
       })
@@ -238,7 +199,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
     assert zai_request.env["ANTHROPIC_AUTH_TOKEN"] == "session-zai"
 
     kimi_request =
-      capture_managed_turn_spec(:kimi, %{
+      capture_acp_spec(:kimi, %{
         model: "session-kimi-model",
         env_mode: :replace,
         env: %{"KIMI_MODEL_API_KEY" => "session-kimi-key"}
@@ -248,7 +209,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
     assert kimi_request.env["KIMI_MODEL_API_KEY"] == "session-kimi-key"
 
     zai_unset =
-      capture_managed_turn_spec(:zai, %{
+      capture_acp_spec(:zai, %{
         env_mode: :overlay,
         env: %{"ZAI_API_KEY" => nil}
       })
@@ -257,7 +218,7 @@ defmodule Jido.Harness.EnvironmentModeTest do
     assert zai_unset.env["ZAI_API_KEY"] == nil
 
     kimi_unset =
-      capture_managed_turn_spec(:kimi, %{
+      capture_acp_spec(:kimi, %{
         env_mode: :overlay,
         env: %{"KIMI_MODEL_NAME" => false, "KIMI_MODEL_API_KEY" => nil}
       })
@@ -269,18 +230,18 @@ defmodule Jido.Harness.EnvironmentModeTest do
   defp capture_run_spec(provider, request) do
     assert {:ok, run_id} = Jido.Harness.Run.start(provider, request)
     assert_receive {:process_spec, spec}, 1_000
-    assert {:ok, %{status: :completed}} = Jido.Harness.Run.await(run_id, 5_000)
+    assert {:ok, %{status: :failed}} = Jido.Harness.Run.await(run_id, 5_000)
     spec
   end
 
-  defp capture_managed_turn_spec(provider, request) do
-    request = if provider == :kimi, do: Map.put(request, :transport, :managed), else: request
+  defp capture_acp_spec(provider, request) do
+    config = Application.get_env(:jido_harness, :provider_config, %{})
+    provider_config = config |> Map.get(provider, %{}) |> Map.put(:acp_path, "/bin/true")
+    Application.put_env(:jido_harness, :provider_config, Map.put(config, provider, provider_config))
+
     assert {:ok, session_id} = Jido.Harness.Session.start(provider, request)
-    assert eventually(fn -> match?({:ok, %{state: :idle}}, Jido.Harness.Session.info(session_id)) end)
-    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "test")
     assert_receive {:process_spec, spec}, 1_000
-    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 5_000)
-    assert :ok = Jido.Harness.Session.close(session_id)
+    assert eventually(fn -> match?({:ok, %{state: :failed}}, Jido.Harness.Session.info(session_id)) end)
     spec
   end
 

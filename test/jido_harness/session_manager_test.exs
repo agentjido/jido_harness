@@ -11,19 +11,20 @@ defmodule Jido.Harness.SessionManagerTest do
 
   test "runs multiple turns, carries provider identity, and supports replay" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:test)
-    assert {:ok, %{state: :idle, session_id: ^session_id, transport: :managed}} = await_idle(session_id)
+    assert {:ok, %{state: :idle, session_id: ^session_id}} = await_idle(session_id)
 
     assert {:ok, first_turn} = Jido.Harness.Session.send_message(session_id, "first")
     assert {:ok, first} = Jido.Harness.Session.await(session_id, first_turn, 5_000)
     assert first.status == :completed
     assert first.text == "fixture-ok"
-    assert first.provider_session_id == "fixture-session"
+    assert first.provider_session_id == "acp-fixture-session"
 
-    assert {:ok, %{state: :idle, provider_session_id: "fixture-session"}} = Jido.Harness.Session.info(session_id)
+    assert {:ok, %{state: :idle, provider_session_id: "acp-fixture-session"}} =
+             Jido.Harness.Session.info(session_id)
 
     assert {:ok, second_turn} = Jido.Harness.Session.send_message(session_id, "second")
     assert {:ok, second} = Jido.Harness.Session.await(session_id, second_turn, 5_000)
-    assert second.provider_session_id == "fixture-session"
+    assert second.provider_session_id == "acp-fixture-session"
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
     assert hd(events).type == :session_started
@@ -112,7 +113,7 @@ defmodule Jido.Harness.SessionManagerTest do
     assert {:error,
             %Jido.Harness.Error{
               provider: :claude,
-              details: %{field: :reasoning_effort, value: :xhigh}
+              details: %{field: :reasoning_effort}
             }} = Jido.Harness.Session.start(:claude, %{reasoning_effort: :xhigh})
   end
 
@@ -191,15 +192,14 @@ defmodule Jido.Harness.SessionManagerTest do
     assert List.last(events).type == :session_failed
   end
 
-  test "rejects removed experimental transports" do
+  test "rejects the removed transport selection option" do
     Application.put_env(:jido_harness, :providers, %{codex: Jido.Harness.Adapters.Codex})
     Application.put_env(:jido_harness, :provider_config, %{codex: %{}})
 
     assert {:error,
             %Jido.Harness.Error{
-              provider: :codex,
-              message: "unknown session transport",
-              details: %{transport: :app_server}
+              message: "unknown session request option",
+              details: %{key: :transport}
             }} =
              Jido.Harness.Session.start(:codex, %{
                transport: :app_server

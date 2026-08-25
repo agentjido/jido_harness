@@ -5,10 +5,9 @@ defmodule Jido.Harness.Session do
   Sessions own multi-turn conversation state independently of their callers.
   The harness session ID is distinct from a provider's resume token.
 
-  Session transports declare whether multi-turn behavior, interruption,
-  steering, approvals, multimodal input, and configuration are native, managed,
-  process-backed, or unsupported. Unsupported interactions fail before provider
-  dispatch.
+  Each provider declares one ACP agent. Its capabilities state whether it
+  supports loading, interruption, approvals, multimodal input, and dynamic
+  configuration. Unsupported interactions fail before provider dispatch.
 
   See [Interactive sessions](interactive_sessions.html) and
   [Providers and capabilities](providers.html).
@@ -64,7 +63,7 @@ defmodule Jido.Harness.Session do
     end
   end
 
-  @doc "Steers the active turn when the selected transport supports it."
+  @doc "Steers the active turn when the ACP agent supports it."
   @spec steer(String.t(), turn_input(), keyword()) :: Jido.Harness.result(String.t())
   def steer(session_id, input, options \\ []) do
     with {:ok, request} <- prepare_turn(input, options) do

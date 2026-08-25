@@ -1,5 +1,5 @@
 defmodule Jido.Harness.SessionAdapter do
-  @moduledoc "Behaviour for provider transports that back interactive sessions."
+  @moduledoc "Boundary between Harness lifecycle state and its common ACP engine."
 
   alias Jido.Harness.{ApprovalResponse, Event, SessionRequest, TurnRequest}
 

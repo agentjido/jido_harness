@@ -31,7 +31,7 @@ defmodule Jido.Harness.Registry do
         {:error, Error.new(:configuration, "provider is not registered", provider: provider)}
 
       false ->
-        {:error, Error.new(:configuration, "provider adapter does not implement the v2 contract", provider: provider)}
+        {:error, Error.new(:configuration, "provider adapter does not implement the v3 contract", provider: provider)}
     end
   end
 
@@ -73,7 +73,7 @@ defmodule Jido.Harness.Registry do
 
   defp adapter_valid?(adapter) when is_atom(adapter) do
     Code.ensure_loaded?(adapter) and
-      Enum.all?([spec: 0, run: 2, status: 1], fn {name, arity} -> function_exported?(adapter, name, arity) end)
+      Enum.all?([spec: 0, status: 1], fn {name, arity} -> function_exported?(adapter, name, arity) end)
   end
 
   defp adapter_valid?(_adapter), do: false

@@ -1,19 +1,29 @@
 defmodule Jido.Harness.Session.RequestValidator do
   @moduledoc false
 
-  alias Jido.Harness.{Error, InteractionCapabilities, SessionRequest, TurnRequest}
+  alias Jido.Harness.{Error, SessionCapabilities, SessionRequest, TurnRequest}
   alias Jido.Harness.Session.State
 
   @configuration_options [:model, :reasoning_effort, :approval_mode, :sandbox_mode]
   @configuration_option_names Map.new(@configuration_options, &{Atom.to_string(&1), &1})
 
   @doc false
-  @spec unsupported(State.t(), atom()) :: Error.t()
+  @spec unsupported(map(), atom()) :: Error.t()
   def unsupported(state, capability) do
-    Error.validation("session transport does not support capability",
+    Error.validation("ACP agent does not support capability",
       provider: state.provider,
-      details: %{transport: state.transport_spec.name, capability: capability}
+      details: %{protocol: :acp, capability: capability}
     )
+  end
+
+  @doc false
+  @spec require_capability(map(), atom()) :: :ok | {:error, Error.t()}
+  def require_capability(state, capability) do
+    if SessionCapabilities.supported?(state.acp_agent.capabilities, capability) do
+      :ok
+    else
+      {:error, unsupported(state, capability)}
+    end
   end
 
   @doc false
@@ -33,7 +43,7 @@ defmodule Jido.Harness.Session.RequestValidator do
   @doc false
   @spec validate_configuration(State.t(), map()) :: {:ok, SessionRequest.t()} | {:error, Error.t()}
   def validate_configuration(state, changes) do
-    allowed = state.transport_spec.configuration_options
+    allowed = state.acp_agent.configuration_options
 
     case Enum.find(Map.keys(changes), &(&1 not in allowed)) do
       nil ->
@@ -56,32 +66,38 @@ defmodule Jido.Harness.Session.RequestValidator do
   end
 
   @doc false
-  @spec configuration_supported?(Jido.Harness.InteractionCapabilities.t(), map()) :: boolean()
-  def configuration_supported?(capabilities, changes) do
+  @spec require_configuration_capabilities(map(), map()) :: :ok | {:error, Error.t()}
+  def require_configuration_capabilities(state, changes) do
+    capabilities = state.acp_agent.capabilities
     model? = Map.has_key?(changes, :model)
+    other? = map_size(Map.delete(changes, :model)) > 0
 
-    (not model? or InteractionCapabilities.supported?(capabilities, :dynamic_model)) and
-      InteractionCapabilities.supported?(capabilities, :dynamic_configuration)
+    if (not model? or SessionCapabilities.supported?(capabilities, :dynamic_model)) and
+         (not other? or SessionCapabilities.supported?(capabilities, :dynamic_configuration)) do
+      :ok
+    else
+      {:error, unsupported(state, :dynamic_configuration)}
+    end
   end
 
   @doc false
-  @spec validate_turn_request(State.t(), TurnRequest.t()) :: :ok | {:error, Error.t()}
+  @spec validate_turn_request(map(), TurnRequest.t()) :: :ok | {:error, Error.t()}
   def validate_turn_request(state, request) do
-    capabilities = state.transport_spec.capabilities
-    turn_options = transport_options(state.transport_spec.turn_options, state.adapter.spec().normalized_options)
+    capabilities = state.acp_agent.capabilities
+    turn_options = transport_options(state.acp_agent.turn_options, state.adapter.spec().normalized_options)
 
     cond do
-      not is_nil(request.output_schema) and not InteractionCapabilities.supported?(capabilities, :structured_output) ->
+      not is_nil(request.output_schema) and not SessionCapabilities.supported?(capabilities, :structured_output) ->
         {:error, unsupported(state, :structured_output)}
 
-      multimodal?(request) and not InteractionCapabilities.supported?(capabilities, :multimodal) ->
+      multimodal?(request) and not SessionCapabilities.supported?(capabilities, :multimodal) ->
         {:error, unsupported(state, :multimodal)}
 
       field = unsupported_turn_option(request, turn_options) ->
         {:error,
-         Error.validation("session transport does not support turn option",
+         Error.validation("ACP agent does not support turn option",
            provider: state.provider,
-           details: %{transport: state.transport_spec.name, field: field}
+           details: %{protocol: :acp, field: field}
          )}
 
       path = invalid_attachment(state, request) ->
@@ -109,9 +125,9 @@ defmodule Jido.Harness.Session.RequestValidator do
 
     if field do
       {:error,
-       Error.validation("session transport does not support steering option",
+       Error.validation("ACP agent does not support steering option",
          provider: state.provider,
-         details: %{transport: state.transport_spec.name, field: field}
+         details: %{protocol: :acp, field: field}
        )}
     else
       :ok
@@ -124,7 +140,7 @@ defmodule Jido.Harness.Session.RequestValidator do
 
   defp validate_turn_provider_options(state, options) do
     supported =
-      transport_options(state.transport_spec.turn_provider_options, state.adapter.spec().provider_options)
+      transport_options(state.acp_agent.turn_provider_options, state.adapter.spec().provider_options)
 
     supported_strings = Map.new(supported, &{Atom.to_string(&1), &1})
 

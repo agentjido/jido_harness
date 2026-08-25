@@ -1,19 +1,9 @@
 defmodule Jido.Harness.Adapters.Helpers do
   @moduledoc false
 
-  alias Jido.Harness.{Capabilities, Error, Event, ProcessInfo, ProcessManager, ProviderStatus}
+  alias Jido.Harness.{Capabilities, Error, ProcessInfo, ProcessManager, ProviderStatus}
 
   @maximum_timeout_ms 2_147_483_647
-
-  def event(provider, type, provider_session_id, payload, raw \\ nil) do
-    Event.new!(%{
-      type: type,
-      provider: provider,
-      provider_session_id: provider_session_id,
-      payload: stringify_keys(payload),
-      raw: raw
-    })
-  end
 
   def provider_options(options, allowed) when is_map(options) do
     strings = Map.new(allowed, &{Atom.to_string(&1), &1})
@@ -32,21 +22,6 @@ defmodule Jido.Harness.Adapters.Helpers do
 
   def finite_timeout(:infinity), do: @maximum_timeout_ms
   def finite_timeout(timeout) when is_integer(timeout), do: timeout
-
-  def merge_env(request, config, additions \\ %{}) do
-    config
-    |> Map.get(:env, Map.get(config, "env", %{}))
-    |> normalize_env()
-    |> Map.merge(request.env)
-    |> Map.merge(additions)
-  end
-
-  defp normalize_env(env) when is_map(env) or is_list(env), do: Map.new(env)
-  defp normalize_env(_env), do: %{}
-
-  def cli_path(config, default) do
-    Map.get(config, :cli_path) || Map.get(config, "cli_path") || default
-  end
 
   def status(provider, default_executable, auth_env, config, options \\ []) do
     configured = Map.get(config, :cli_path) || Map.get(config, "cli_path")
@@ -124,14 +99,6 @@ defmodule Jido.Harness.Adapters.Helpers do
     end
   end
 
-  def cancel_cli_run(run_id) do
-    ProcessManager.list_processes(states: [:starting, :running, :stopping])
-    |> Enum.filter(&(Map.get(&1.metadata, :run_id) == run_id or Map.get(&1.metadata, "run_id") == run_id))
-    |> Enum.each(&ProcessManager.cancel_process(&1.process_id))
-
-    :ok
-  end
-
   defp probe(path, argv, options) do
     spec = %{
       executable: path,
@@ -164,12 +131,4 @@ defmodule Jido.Harness.Adapters.Helpers do
 
   defp present_env?(name), do: System.get_env(name) not in [nil, ""]
   defp first_line(output), do: output |> String.split("\n", parts: 2) |> List.first() |> String.trim()
-
-  def stringify_keys(%_{} = struct), do: struct |> Map.from_struct() |> stringify_keys()
-
-  def stringify_keys(map) when is_map(map),
-    do: Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
-
-  def stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
-  def stringify_keys(value), do: value
 end

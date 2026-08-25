@@ -1,138 +1,53 @@
 # Adapter contract reference
 
-Every finite-run provider implements `Jido.Harness.Adapter`. Public adapter
-boundaries use normalized Jido.Harness types rather than provider SDK structs or
-arbitrary maps.
+Every provider implements `Jido.Harness.Adapter`. The adapter describes how to
+find the base CLI and how to start one ACP agent. It does not implement the ACP
+protocol or the run lifecycle.
 
 ## Required callbacks
 
 | Callback | Contract |
 | --- | --- |
 | `spec/0` | returns a validated `Jido.Harness.AdapterSpec` |
-| `run/2` | returns `{:ok, enumerable}` of `Jido.Harness.Event` values or `{:error, reason}` |
-| `status/1` | returns normalized `Jido.Harness.ProviderStatus` readiness |
+| `status/1` | returns normalized base-CLI readiness |
 
-`install/2` and native `cancel/2` are optional. Direct CLI adapters normally
-cancel through the harness process manager.
+`install/2` is optional. `acp_env/2` is optional and can map provider
+credentials into the ACP process environment.
+
+`run/2` and `cancel/2` are not adapter callbacks in version 3. Harness opens an
+ACP session, sends prompts through ExMCP, and owns cancellation.
 
 ## Adapter specification
 
-`AdapterSpec` declares:
+`AdapterSpec` declares provider identity, one `ACPAgentSpec`, normalized request
+options, and installation data. `ACPAgentSpec` declares the executable, argv,
+source, package, maturity, supported options, and `SessionCapabilities`.
 
-- provider atom, display name, executable, documentation URL, and installation
-  recipe;
-- finite-run capabilities;
-- supported normalized request fields;
-- accepted values when normalized enum support is narrower;
-- accepted nested `provider_options` keys;
-- adapter-level request defaults;
-- interactive transport specifications.
+Declarations are enforced before Harness starts a run or session. An unknown
+field, value, or provider option returns a validation error.
 
-Declarations are enforced before execution. A non-default normalized field
-that is not declared fails. A normalized value outside `normalized_values`
-fails. Unknown provider options fail. Provider-specific options cannot shadow a
-normalized request field.
+## ACP process boundary
 
-## Run callback context
+Harness resolves the executable and starts it through its process manager.
+Harness owns environment policy, process groups,
+timeouts, signals, IDs, events, replay, retention, approvals, and lifecycle
+state.
 
-`run/2` receives a validated `Jido.Harness.RunRequest` and context:
+ExMCP owns ACP messages, validation, and protocol request correlation. Provider
+adapters must not parse ACP JSON or correlate JSON-RPC IDs.
 
-```elixir
-%{
-  run_id: "run_...",
-  provider: :provider,
-  config: %{},
-  telemetry_context: %{run_id: "run_...", provider: :provider},
-  process_manager: Jido.Harness.ProcessManager,
-  run_owner: owner_pid
-}
-```
+## Status and installation
 
-CLI adapters must start processes through the supplied process manager and bind
-them to `run_owner`. They must not start unmanaged ports, interpolate a shell
-command, or retry billable work.
+`status/1` must not send a model prompt. `Jido.Harness.status/1` adds ACP-agent
+readiness. `ProviderStatus.ready?/1` is true only when both the base CLI and ACP
+executable are ready.
 
-## Event output
-
-The returned enumerable emits `Jido.Harness.Event` structs. Map provider records
-to canonical types only when the semantics are preserved. Unknown or
-loss-sensitive records use `:provider_event` and may retain their original
-value in `raw`.
-
-The run worker attaches stable run identity and monotonic sequence values. Raw
-provider values remain in memory and are not persisted. Structured sensitive
-fields, bearer credentials, and configured credential environment values are
-redacted from journal records.
-
-## Terminal behavior
-
-The run manager guarantees exactly one of:
-
-- `:run_completed`
-- `:run_failed`
-- `:run_cancelled`
-
-If an adapter enumerable ends without a terminal event, the run manager adds a
-terminal event. Events after the first terminal event are ignored.
-
-Adapters must not fabricate success merely because their process exited with
-status zero; they must map the provider protocol's terminal semantics where
-available.
-
-## Status behavior
-
-`status/1` must not send an agent prompt. It should report:
-
-- executable installation;
-- version and compatibility;
-- authentication evidence or `:unknown`;
-- readiness to attempt a smoke run;
-- finite-run capabilities.
-
-Installation guidance belongs in the adapter spec. `install/2` must remain an
-explicit caller action and support preview behavior where the adapter exposes
-an installation recipe.
-
-## Interactive transports
-
-Interactive providers declare one or more `SessionTransportSpec` entries. Each
-entry selects a `Jido.Harness.SessionAdapter` implementing:
-
-- `open/2`
-- `send/3`
-- `interrupt/2`
-- `close/1`
-
-Steering, approval responses, and dynamic configuration are optional callbacks.
-
-Each transport declares session fields, session provider options, turn fields,
-turn provider options, configuration fields, and
-`Jido.Harness.InteractionCapabilities`. Capability values distinguish
-`:native`, `:managed`, `:process`, and unsupported behavior.
-
-The transport declaration is the source of truth. A public session function may
-exist even when a particular provider transport rejects that capability.
-
-## Built-in transport matrix
-
-| Provider | Transport | Execution model |
-| --- | --- | --- |
-| Amp | `:stream_json_resume` | resumed stream-JSON process per turn |
-| Claude | `:stream_json_resume` | resumed stream-JSON process per turn |
-| Codex | `:exec_jsonl_resume` | resumed exec-JSONL process per turn |
-| Gemini | `:stream_json_resume` | resumed stream-JSON process per turn |
-| Grok | `:streaming_json_resume` | resumed streaming-JSON process per turn |
-| Kimi | `:acp` | ExMCP ACP over a persistent Harness-managed process |
-| OpenCode | `:acp` | ExMCP ACP over a persistent Harness-managed process |
-| Pi | `:rpc` | persistent JSONL-RPC process |
-| Z.AI | `:stream_json_resume` | Claude stream JSON with Z.AI environment mapping |
-
-Per-turn transports apply runtime and idle timeouts to the active process.
-Persistent protocol processes may remain idle indefinitely while waiting for
-session input, subject to the configured session idle timeout.
+`Jido.Harness.install/2` installs the base CLI. It also installs the ACP package
+when `ACPAgentSpec.source` is `:adapter`. Installation is an explicit caller
+action and supports `dry_run: true`.
 
 ## Verification
 
-An adapter change should pass deterministic mapper and fake-CLI tests, lifecycle
-and cleanup contracts, affected live integration profiles, documentation
-compilation, static analysis, and package build verification.
+An adapter change must pass deterministic ACP fixtures, lifecycle and cleanup
+tests, affected live integration profiles, documentation compilation, static
+analysis, and package build verification.

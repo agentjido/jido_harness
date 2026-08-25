@@ -1,7 +1,7 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "2.1.0-rc.2"
+  @version "3.0.0-rc.1"
   @source_url "https://github.com/agentjido/jido_harness"
   @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
@@ -50,6 +50,7 @@ defmodule Jido.Harness.MixProject do
           "docs/decisions/exmcp-acp-boundary.md",
           "docs/process_management.md",
           "docs/integration_testing.md",
+          "docs/migration_v3.md",
           "docs/migration_v2.md",
           "docs/structured_output_execution.md",
           "livebooks/01_one_shot_requests.livemd",
@@ -90,6 +91,7 @@ defmodule Jido.Harness.MixProject do
             "docs/telemetry.md",
             "docs/dependency_policy.md",
             "docs/decisions/exmcp-acp-boundary.md",
+            "docs/migration_v3.md",
             "docs/migration_v2.md",
             "docs/structured_output_execution.md"
           ],
@@ -128,11 +130,11 @@ defmodule Jido.Harness.MixProject do
           "Providers and extension contracts": [
             Jido.Harness.ProviderStatus,
             Jido.Harness.Capabilities,
-            Jido.Harness.InteractionCapabilities,
+            Jido.Harness.SessionCapabilities,
+            Jido.Harness.ACPAgentSpec,
             Jido.Harness.Adapter,
             Jido.Harness.AdapterSpec,
             Jido.Harness.SessionAdapter,
-            Jido.Harness.SessionTransportSpec,
             Jido.Harness.Registry
           ],
           "Built-in adapters": [

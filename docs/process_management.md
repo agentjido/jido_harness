@@ -40,7 +40,7 @@ journal.
 Public process workers use temporary restart semantics and survive caller or
 stream-consumer exits. They terminate on application shutdown.
 
-Adapter-owned processes additionally monitor their run or transport owner. An
+ACP processes additionally monitor their run or session owner. An
 abnormal owner exit cancels the CLI process group so tool children are not left
 behind.
 

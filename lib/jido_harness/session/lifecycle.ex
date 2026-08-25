@@ -3,6 +3,7 @@ defmodule Jido.Harness.Session.Lifecycle do
 
   alias Jido.Harness.{ApprovalResponse, Buffer, Error, Event, ID, TurnResult, Waiters}
   alias Jido.Harness.Session.{ActiveTurn, EventStore, State, Timers}
+  alias Jido.Harness.SessionAdapters.ACP
 
   @doc false
   @spec start_turn(State.t(), Jido.Harness.TurnRequest.t(), String.t()) ::
@@ -17,7 +18,7 @@ defmodule Jido.Harness.Session.Lifecycle do
       |> Map.put(:status, :running)
       |> Map.put(:known_turns, MapSet.put(state.known_turns, turn_id))
 
-    case state.session_adapter.send(state.handle, request, turn_id) do
+    case ACP.send(state.handle, request, turn_id) do
       :ok ->
         state =
           state
@@ -134,7 +135,7 @@ defmodule Jido.Harness.Session.Lifecycle do
 
     state =
       if state.active do
-        _ = state.session_adapter.interrupt(state.handle, state.active.id)
+        _ = ACP.interrupt(state.handle, state.active.id)
 
         finish_turn(
           state,
@@ -149,7 +150,7 @@ defmodule Jido.Harness.Session.Lifecycle do
       end
 
     state = cancel_queued(state, Map.get(payload, "reason", "session_closed"))
-    _ = if state.handle, do: state.session_adapter.close(state.handle), else: :ok
+    _ = if state.handle, do: ACP.close(state.handle), else: :ok
 
     event =
       Event.new!(type: type, provider: state.provider, provider_session_id: state.provider_session_id, payload: payload)
@@ -166,7 +167,7 @@ defmodule Jido.Harness.Session.Lifecycle do
     :telemetry.execute([:jido, :harness, :session, :stop], %{count: 1}, %{
       session_id: state.id,
       provider: state.provider,
-      transport: state.transport_spec.name,
+      protocol: :acp,
       status: status
     })
 
@@ -244,9 +245,7 @@ defmodule Jido.Harness.Session.Lifecycle do
           provider_options: %{}
         }
 
-        if state.handle && function_exported?(state.session_adapter, :respond_approval, 3) do
-          _ = state.session_adapter.respond_approval(state.handle, request_id, response)
-        end
+        if state.handle, do: ACP.respond_approval(state.handle, request_id, response)
 
         EventStore.append(
           state,
@@ -269,11 +268,7 @@ defmodule Jido.Harness.Session.Lifecycle do
       provider_options: %{}
     }
 
-    if state.handle && function_exported?(state.session_adapter, :respond_approval, 3) do
-      state.session_adapter.respond_approval(state.handle, request_id, response)
-    else
-      :ok
-    end
+    if state.handle, do: ACP.respond_approval(state.handle, request_id, response), else: :ok
   end
 
   defp normalize_turn_error(_state, nil, _payload, status) when status in [:completed, :interrupted], do: nil

@@ -8,26 +8,26 @@ defmodule Jido.Harness.SessionWorker do
     Event,
     EventLog,
     ID,
-    InteractionCapabilities,
     SessionInfo,
     TurnRequest,
     Waiters
   }
 
   alias Jido.Harness.Session.{EventStore, Lifecycle, RequestValidator, State, Timers}
+  alias Jido.Harness.SessionAdapters.ACP
 
   import EventStore, only: [append: 2, append_queue_changed: 1]
 
-  def start_link({id, provider, request, adapter, session_adapter, transport_spec, config}) do
+  def start_link({id, provider, request, adapter, acp_agent, config}) do
     GenServer.start_link(
       __MODULE__,
-      {id, provider, request, adapter, session_adapter, transport_spec, config},
+      {id, provider, request, adapter, acp_agent, config},
       name: {:via, Registry, {Jido.Harness.SessionRegistry, id}}
     )
   end
 
   @impl true
-  def init({id, provider, request, adapter, session_adapter, transport_spec, config}) do
+  def init({id, provider, request, adapter, acp_agent, config}) do
     Process.flag(:trap_exit, true)
     retention = Map.merge(Map.get(config, :retention, %{}) |> Map.new(), request.retention)
     memory_bytes = Map.get(retention, :memory_bytes, 1_048_576)
@@ -37,9 +37,10 @@ defmodule Jido.Harness.SessionWorker do
       provider: provider,
       owner: self(),
       adapter: adapter,
+      acp_agent: acp_agent,
       config: config,
       process_manager: Jido.Harness.ProcessManager,
-      telemetry_context: %{session_id: id, provider: provider, transport: transport_spec.name}
+      telemetry_context: %{session_id: id, provider: provider, protocol: :acp}
     }
 
     state = %State{
@@ -47,8 +48,7 @@ defmodule Jido.Harness.SessionWorker do
       provider: provider,
       request: request,
       adapter: adapter,
-      session_adapter: session_adapter,
-      transport_spec: transport_spec,
+      acp_agent: acp_agent,
       context: context,
       started_at: timestamp(),
       provider_session_id: request.provider_session_id,
@@ -70,12 +70,12 @@ defmodule Jido.Harness.SessionWorker do
     :telemetry.execute([:jido, :harness, :session, :start], %{system_time: System.system_time()}, %{
       session_id: state.id,
       provider: state.provider,
-      transport: state.transport_spec.name
+      protocol: :acp
     })
 
-    case state.session_adapter.open(state.request, state.context) do
+    case ACP.open(state.request, state.context) do
       {:ok, handle} ->
-        monitor = if is_pid(handle), do: Process.monitor(handle), else: nil
+        monitor = Process.monitor(handle)
 
         state =
           state
@@ -163,37 +163,14 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:follow_up, _input}, _from, state), do: {:reply, {:error, :closed}, state}
 
-  def handle_call({:steer, input}, _from, %{active: active} = state) when not is_nil(active) do
-    capabilities = state.transport_spec.capabilities
-
-    with true <- InteractionCapabilities.supported?(capabilities, :steer),
-         true <- function_exported?(state.session_adapter, :steer, 3),
-         {:ok, request} <- TurnRequest.new(input),
-         :ok <- RequestValidator.validate_turn_request(state, request),
-         :ok <- RequestValidator.validate_steer_request(state, request),
-         request_id = ID.generate("request"),
-         :ok <- state.session_adapter.steer(state.handle, request, request_id) do
-      event =
-        Event.new!(
-          type: :input_accepted,
-          provider: state.provider,
-          turn_id: active.id,
-          request_id: request_id,
-          payload: %{"kind" => "steer"}
-        )
-
-      {:reply, {:ok, request_id}, append(state, event)}
-    else
-      false -> {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
+  def handle_call({:steer, _input}, _from, %{active: active} = state) when not is_nil(active),
+    do: {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
 
   def handle_call({:steer, _input}, _from, state), do: {:reply, {:error, :no_active_turn}, state}
 
   def handle_call({:interrupt, turn_id}, _from, %{active: active} = state) when not is_nil(active) do
     if turn_id in [:active, active.id] do
-      case state.session_adapter.interrupt(state.handle, active.id) do
+      case ACP.interrupt(state.handle, active.id) do
         :ok -> {:reply, :ok, Lifecycle.finish_turn(state, :turn_interrupted, %{"reason" => "interrupted"}, nil)}
         {:error, reason} -> {:reply, {:error, reason}, state}
       end
@@ -206,10 +183,9 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:respond_approval, request_id, response}, _from, state) do
     with {:ok, approval} <- Map.fetch(state.pending_approvals, request_id),
-         true <- InteractionCapabilities.supported?(state.transport_spec.capabilities, :approvals),
-         true <- function_exported?(state.session_adapter, :respond_approval, 3),
+         :ok <- RequestValidator.require_capability(state, :approvals),
          {:ok, response} <- ApprovalResponse.new(response),
-         :ok <- state.session_adapter.respond_approval(state.handle, request_id, response) do
+         :ok <- ACP.respond_approval(state.handle, request_id, response) do
       Timers.cancel(approval.timer)
 
       event =
@@ -226,22 +202,17 @@ defmodule Jido.Harness.SessionWorker do
       {:reply, :ok, %{state | status: status}}
     else
       :error -> {:reply, {:error, :not_found}, state}
-      false -> {:reply, {:error, RequestValidator.unsupported(state, :approvals)}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call({:configure, changes}, _from, state) when is_map(changes) do
-    capabilities = state.transport_spec.capabilities
-
     with {:ok, changes} <- RequestValidator.normalize_configuration(changes),
          {:ok, request} <- RequestValidator.validate_configuration(state, changes),
-         true <- RequestValidator.configuration_supported?(capabilities, changes),
-         true <- function_exported?(state.session_adapter, :configure, 2),
-         :ok <- state.session_adapter.configure(state.handle, changes) do
+         :ok <- RequestValidator.require_configuration_capabilities(state, changes),
+         :ok <- ACP.configure(state.handle, changes) do
       {:reply, :ok, %{state | request: request}}
     else
-      false -> {:reply, {:error, RequestValidator.unsupported(state, :dynamic_configuration)}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   rescue
@@ -323,7 +294,7 @@ defmodule Jido.Harness.SessionWorker do
     if token == expected and state.active do
       error = Error.new(:timeout, "turn #{kind} timeout exceeded", provider: state.provider)
 
-      case state.session_adapter.interrupt(state.handle, state.active.id) do
+      case ACP.interrupt(state.handle, state.active.id) do
         :ok ->
           {:noreply,
            Lifecycle.finish_turn(
@@ -354,7 +325,7 @@ defmodule Jido.Harness.SessionWorker do
           provider_options: %{}
         }
 
-        _ = state.session_adapter.respond_approval(state.handle, request_id, response)
+        _ = ACP.respond_approval(state.handle, request_id, response)
 
         event =
           Event.new!(
@@ -374,7 +345,7 @@ defmodule Jido.Harness.SessionWorker do
     if state.status in [:closed, :failed, :cancelled] do
       {:noreply, state}
     else
-      {:noreply, Lifecycle.fail_session(%{state | handle: nil, handle_monitor: nil}, {:transport_exit, reason})}
+      {:noreply, Lifecycle.fail_session(%{state | handle: nil, handle_monitor: nil}, {:acp_exit, reason})}
     end
   end
 
@@ -408,7 +379,7 @@ defmodule Jido.Harness.SessionWorker do
     Timers.cancel_all(state)
 
     if state.handle do
-      _ = state.session_adapter.close(state.handle)
+      _ = ACP.close(state.handle)
     end
 
     :ok
@@ -416,16 +387,14 @@ defmodule Jido.Harness.SessionWorker do
     _ -> :ok
   end
 
-  defp stale_turn_event?(state, %Event{turn_id: turn_id}) when is_binary(turn_id),
-    do: Map.has_key?(state.results, turn_id)
-
-  defp stale_turn_event?(_state, _event), do: false
+  defp stale_turn_event?(state, %Event{turn_id: turn_id}), do: Map.has_key?(state.results, turn_id)
 
   defp transport_payload(state) do
     %{
-      "transport" => Atom.to_string(state.transport_spec.name),
-      "maturity" => Atom.to_string(state.transport_spec.capabilities.maturity),
-      "process" => Atom.to_string(state.transport_spec.capabilities.process)
+      "protocol" => "acp",
+      "source" => Atom.to_string(state.acp_agent.source),
+      "maturity" => Atom.to_string(state.acp_agent.maturity),
+      "executable" => state.acp_agent.executable
     }
   end
 

@@ -80,6 +80,13 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     end
   end
 
+  def handle_call({:configure, changes}, _from, state) do
+    case apply_configuration(state.client, state.provider_session_id, changes) do
+      :ok -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call(:close, _from, state) do
     state = %{state | closing?: true} |> deny_pending_approvals()
     stop_prompt_task(state.prompt_task)
@@ -196,7 +203,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   defp initialize_session(client, request, state) do
     with {:ok, result} <- open_session(client, request),
-         {:ok, provider_session_id} <- provider_session_id(result, request) do
+         {:ok, provider_session_id} <- provider_session_id(result, request),
+         :ok <- apply_initial_configuration(client, provider_session_id, request, state.context.acp_agent) do
       {:reply, {:ok, provider_session_id}, %{state | client: client, provider_session_id: provider_session_id}}
     else
       {:error, reason} ->
@@ -229,9 +237,13 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp finish_prompt(state, turn_id, {:error, reason}) do
-    emit(state, :turn_failed, %{"error" => inspect(reason)}, turn_id: turn_id)
+    emit(state, :turn_failed, %{"error" => error_message(reason)}, turn_id: turn_id)
     deny_pending_approvals(state)
   end
+
+  defp error_message(%{"message" => message}) when is_binary(message), do: message
+  defp error_message(%{message: message}) when is_binary(message), do: message
+  defp error_message(reason), do: inspect(reason)
 
   defp map_update(%{"sessionUpdate" => type} = update) do
     case type do
@@ -315,39 +327,47 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp process_spec(request, context) do
-    cli_path = option(request.provider_options, :cli_path)
+    acp_agent = context.acp_agent
+    executable = request.acp_path || config_value(context.config, :acp_path) || acp_agent.executable
 
-    with {:ok, executable, argv, env} <- command(context.provider, cli_path, context) do
+    with {:ok, env} <- session_env(request, context) do
       {:ok,
        %{
          executable: executable,
-         argv: argv,
+         argv: acp_agent.argv,
          cwd: request.cwd,
-         env: context.config |> configured_env() |> Map.merge(env) |> Map.merge(request.env),
+         env: env,
          env_mode: request.env_mode,
          stdin: true,
          pty: false,
          runtime_timeout_ms: :infinity,
          idle_timeout_ms: :infinity,
-         metadata: %{session_id: context.session_id, provider: context.provider, transport: :acp}
+         metadata: %{
+           session_id: context.session_id,
+           run_id: Map.get(context, :run_id),
+           provider: context.provider,
+           protocol: :acp,
+           acp_source: acp_agent.source
+         }
        }}
     end
   end
 
-  defp command(:kimi, cli_path, context),
-    do: {:ok, cli_path || configured_cli(context, "kimi"), ["acp"], %{"KIMI_CODE_NO_AUTO_UPDATE" => "1"}}
+  defp session_env(request, context) do
+    base = context.acp_agent.env |> Map.merge(configured_env(context.config)) |> Map.merge(request.env)
 
-  defp command(:opencode, cli_path, context),
-    do: {:ok, cli_path || configured_cli(context, "opencode"), ["acp"], %{}}
-
-  defp command(provider, _cli_path, _context), do: {:error, {:unsupported_acp_provider, provider}}
-
-  defp configured_cli(context, default) do
-    context.config[:cli_path] || context.config["cli_path"] || default
+    if function_exported?(context.adapter, :acp_env, 2) do
+      case context.adapter.acp_env(request, context.config) do
+        {:ok, provider_env} -> {:ok, Map.merge(base, provider_env)}
+        {:error, _reason} = error -> error
+      end
+    else
+      {:ok, base}
+    end
   end
 
   defp configured_env(config), do: config[:env] || config["env"] || %{}
-  defp option(options, key), do: Map.get(options, key) || Map.get(options, Atom.to_string(key))
+  defp config_value(config, key), do: Map.get(config, key) || Map.get(config, Atom.to_string(key))
   defp mcp_servers(nil), do: []
   defp mcp_servers(value) when is_list(value), do: value
   defp mcp_servers(value) when is_map(value), do: Map.values(value)
@@ -384,6 +404,37 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp protocol_timeout(timeout) when is_integer(timeout) do
     min(timeout + @protocol_timeout_margin, @maximum_protocol_timeout)
   end
+
+  defp apply_initial_configuration(client, provider_session_id, request, acp_agent) do
+    changes =
+      acp_agent.configuration_options
+      |> Enum.reduce(%{}, fn field, changes ->
+        case Map.get(request, field) do
+          value when value in [nil, :default] -> changes
+          value -> Map.put(changes, field, value)
+        end
+      end)
+
+    apply_configuration(client, provider_session_id, changes)
+  end
+
+  defp apply_configuration(_client, _provider_session_id, changes) when changes == %{}, do: :ok
+
+  defp apply_configuration(client, provider_session_id, changes) do
+    Enum.reduce_while(changes, :ok, fn
+      {:model, model}, :ok ->
+        continue_configuration(Client.set_model(client, provider_session_id, model))
+
+      {field, value}, :ok ->
+        result = Client.set_config_option(client, provider_session_id, Atom.to_string(field), config_value(value))
+        continue_configuration(result)
+    end)
+  end
+
+  defp continue_configuration({:ok, _result}), do: {:cont, :ok}
+  defp continue_configuration({:error, reason}), do: {:halt, {:error, reason}}
+  defp config_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp config_value(value), do: value
 
   defp stop_prompt_task(nil), do: :ok
   defp stop_prompt_task(task), do: Task.shutdown(task, 1_000)

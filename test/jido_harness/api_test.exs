@@ -40,4 +40,15 @@ defmodule Jido.Harness.APITest do
     assert {:ok, result} = Jido.Harness.run("ok", await_timeout: 5_000)
     assert result.provider == :test
   end
+
+  test "installation includes a required ACP adapter" do
+    assert {:ok,
+            %{
+              status: :dry_run,
+              components: %{
+                cli: %{recipe: %{package: "@openai/codex"}},
+                acp: %{recipe: %{package: "@agentclientprotocol/codex-acp@1.6.2"}}
+              }
+            }} = Jido.Harness.install(:codex, dry_run: true)
+  end
 end

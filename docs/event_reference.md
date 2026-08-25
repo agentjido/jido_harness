@@ -21,7 +21,7 @@ Exactly one run-terminal event is emitted for every terminal run.
 | Event | Meaning |
 | --- | --- |
 | `:session_started` | The harness session worker started |
-| `:session_ready` | The selected transport opened successfully |
+| `:session_ready` | The ACP session opened successfully |
 | `:session_idle` | The session can accept an idle message |
 | `:session_closed` | The session closed gracefully |
 | `:session_failed` | The session failed |
@@ -49,7 +49,7 @@ Every accepted turn receives exactly one turn-terminal event.
 | --- | --- |
 | `:output_text_delta` | Incremental assistant text |
 | `:output_text_final` | Provider-declared final assistant text |
-| `:structured_output` | Schema id and validated JSON value from a successful structured run |
+| `:structured_output` | Reserved structured output value when an ACP agent supports it |
 | `:thinking_delta` | Incremental reasoning/thinking data |
 | `:command_output_delta` | Incremental output from a provider command/tool |
 | `:tool_call` | Normalized tool invocation |
@@ -61,19 +61,16 @@ Every accepted turn receives exactly one turn-terminal event.
 These events are capability-dependent. A provider that cannot supply a
 canonical value does not fabricate it.
 
-For structured runs, `:structured_output` is emitted only after the single
-terminal text has passed the byte ceiling, JSON decoding, and schema
-validation. Its payload is `%{"schema_id" => id, "value" => value}`. Private
-schema paths and resumable provider-session identifiers are omitted.
+No built-in version 3 ACP profile currently advertises structured output.
 
 ## Interaction events
 
 | Event | Meaning |
 | --- | --- |
-| `:approval_requested` | A transport requested an application decision |
+| `:approval_requested` | An ACP agent requested an application decision |
 | `:approval_resolved` | The approval request was resolved |
 
-Approval exchange is available only on transports that declare it.
+Approval exchange is available only on ACP agents that declare it.
 
 ## Provider events and replay gaps
 

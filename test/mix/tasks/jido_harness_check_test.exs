@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.JidoHarness.CheckTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.{AdapterSpec, Capabilities, Event, ProviderStatus}
+  alias Jido.Harness.{AdapterSpec, Capabilities, ProviderStatus}
   alias Mix.Tasks.JidoHarness.Check
 
   defmodule MissingAdapter do
@@ -31,12 +31,6 @@ defmodule Mix.Tasks.JidoHarness.CheckTest do
          smoke_ready: false,
          capabilities: spec().capabilities
        }}
-    end
-
-    @impl true
-    def run(_request, _context) do
-      send(Application.fetch_env!(:jido_harness, :check_task_test_owner), :run_called)
-      {:ok, [Event.new!(provider: :check_missing, type: :output_text_final, payload: %{"text" => "ok"})]}
     end
   end
 

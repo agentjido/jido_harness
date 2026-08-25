@@ -20,7 +20,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert result.provider_session_id == "provider-session"
     assert result.status == :completed
     assert result.text == "fixture-ok"
-    assert result.usage == %{"input_tokens" => 2, "output_tokens" => 1}
+    assert result.usage == %{"size" => 10, "used" => 3}
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
 
     assert {:ok, replayed} = Jido.Harness.Run.replay(run_id, limit: 100)
@@ -54,6 +54,22 @@ defmodule Jido.Harness.RunManagerTest do
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
   end
 
+  test "finite ACP runs resolve approvals without adding run approval state" do
+    assert {:ok, approved} =
+             Jido.Harness.run(:test, %{prompt: "approval", approval_mode: :auto_approve}, await_timeout: 5_000)
+
+    assert approved.status == :completed
+    assert approved.text == "approved"
+    assert Enum.any?(approved.events, &(&1.type == :approval_resolved and &1.payload["decision"] == "approve"))
+
+    assert {:ok, denied} = Jido.Harness.run(:test, "approval", await_timeout: 5_000)
+    assert denied.status == :completed
+    assert denied.text == "denied"
+
+    assert {:error, %Jido.Harness.Error{details: %{field: :approval_mode, protocol: :acp}}} =
+             Jido.Harness.Run.start(:test, %{prompt: "approval", approval_mode: :prompt})
+  end
+
   test "retains a bounded text tail for large results and marks truncation" do
     config = Application.fetch_env!(:jido_harness, :provider_config)
     test_config = config.test
@@ -67,7 +83,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert String.ends_with?(String.duplicate("0123456789", 1_000), result.text)
 
     assert {:ok, events} = Jido.Harness.Run.replay(result.run_id, limit: 100)
-    assert Enum.any?(events, &(&1.type == :output_text_final))
+    assert Enum.any?(events, &(&1.type == :output_text_delta))
   end
 
   test "status exposes smoke readiness and lifecycle capabilities" do
@@ -76,6 +92,16 @@ defmodule Jido.Harness.RunManagerTest do
     assert Jido.Harness.ProviderStatus.ready?(status)
     assert status.capabilities.resume?
     refute status.capabilities.native_cancel?
+  end
+
+  test "readiness requires the ACP executable" do
+    config = Application.fetch_env!(:jido_harness, :provider_config)
+    Application.put_env(:jido_harness, :provider_config, put_in(config.test.acp_path, "missing-acp-fixture"))
+
+    assert {:ok, status} = Jido.Harness.status(:test)
+    assert status.smoke_ready
+    refute status.session_ready
+    refute Jido.Harness.ProviderStatus.ready?(status)
   end
 
   test "emits direct run and adapter lifecycle telemetry without request data" do
@@ -138,21 +164,21 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, %{status: :completed}} = Jido.Harness.Run.await(run_id, 5_000)
   end
 
-  test "an abrupt run-worker crash stops its linked adapter task without retrying" do
+  test "an abrupt run-worker crash stops its linked ACP task without retrying" do
     assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "wait"})
     [{worker, _value}] = Registry.lookup(Jido.Harness.RunRegistry, run_id)
-    %{task: %{pid: adapter_task}} = :sys.get_state(worker)
+    %{task: %{pid: acp_task}} = :sys.get_state(worker)
     worker_monitor = Process.monitor(worker)
-    task_monitor = Process.monitor(adapter_task)
+    task_monitor = Process.monitor(acp_task)
 
     Process.exit(worker, :kill)
 
     assert_receive {:DOWN, ^worker_monitor, :process, ^worker, :killed}, 1_000
-    assert_receive {:DOWN, ^task_monitor, :process, ^adapter_task, :killed}, 1_000
+    assert_receive {:DOWN, ^task_monitor, :process, ^acp_task, :killed}, 1_000
     assert eventually(fn -> Registry.lookup(Jido.Harness.RunRegistry, run_id) == [] end)
   end
 
-  test "an abrupt direct-CLI run-worker crash cancels its owned process" do
+  test "an abrupt ACP run-worker crash cancels its owned agent process" do
     providers = Application.get_env(:jido_harness, :providers, %{})
     Application.put_env(:jido_harness, :providers, Map.put(providers, :owned_cli, Jido.Harness.OwnedCLITestAdapter))
     on_exit(fn -> Application.put_env(:jido_harness, :providers, providers) end)
@@ -166,7 +192,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert eventually(fn -> Registry.lookup(Jido.Harness.RunRegistry, run_id) == [] end)
   end
 
-  test "fallback cancellation stops the adapter worker and emits one terminal event" do
+  test "fallback cancellation stops the ACP worker and emits one terminal event" do
     assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "wait"})
     assert :ok = Jido.Harness.Run.cancel(run_id)
     assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
@@ -175,7 +201,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert List.last(result.events).type == :run_cancelled
   end
 
-  test "run-level runtime and idle timeouts cover adapter streams" do
+  test "run-level runtime and idle timeouts cover ACP streams" do
     assert {:ok, runtime_id} =
              Jido.Harness.Run.start(:test, %{prompt: "wait", runtime_timeout_ms: 30})
 
@@ -231,7 +257,7 @@ defmodule Jido.Harness.RunManagerTest do
             %Jido.Harness.Error{
               category: :validation,
               provider: :opencode,
-              details: %{field: :approval_mode, value: :auto_edit}
+              details: %{field: :approval_mode}
             }} = Jido.Harness.Run.start(:opencode, %{prompt: "unsupported", approval_mode: :auto_edit})
 
     after_ids = Jido.Harness.Run.list() |> Enum.map(& &1.run_id) |> MapSet.new()
@@ -254,7 +280,7 @@ defmodule Jido.Harness.RunManagerTest do
 
   defp await_owned_process(run_id, attempts \\ 100)
 
-  defp await_owned_process(_run_id, 0), do: flunk("owned CLI process did not start")
+  defp await_owned_process(_run_id, 0), do: flunk("owned ACP agent process did not start")
 
   defp await_owned_process(run_id, attempts) do
     case Enum.find(Jido.Harness.Process.list(), &(Map.get(&1.metadata, :run_id) == run_id)) do

@@ -35,6 +35,20 @@ def complete_prompt(request_id, text="fixture-ok", stop_reason="end_turn"):
         },
         fragmented=True,
     )
+    send(
+        {
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": session_id,
+                "update": {
+                    "sessionUpdate": "usage_update",
+                    "used": 3,
+                    "size": 10,
+                },
+            },
+        }
+    )
     send({"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": stop_reason}})
 
 
@@ -92,17 +106,34 @@ for line in sys.stdin:
             for block in message.get("params", {}).get("prompt", [])
             if isinstance(block, dict)
         )
-        if "approval" in text:
+        if text in ["fail", "raise", "terminal-fail"]:
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32000, "message": "fixture terminal failure"},
+                }
+            )
+        elif text == "large":
+            complete_prompt(request_id, text="0123456789" * 1000)
+        elif "approval" in text:
             pending_prompt = request_id
             request_permission()
             if "duplicate" in text:
                 request_permission()
+        elif "wait" in text:
+            pending_prompt = request_id
         elif "invalid" in text:
             sys.stdout.write("{invalid-json}\n")
             sys.stdout.flush()
             complete_prompt(request_id)
+        elif "slow" in text:
+            time.sleep(0.15)
+            complete_prompt(request_id)
         else:
             complete_prompt(request_id)
+    elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")
         pending_prompt = None

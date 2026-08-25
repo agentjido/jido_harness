@@ -4,12 +4,12 @@ GitHub issue `agentjido/jido_harness#61` owns this migration.
 
 ## Decision
 
-Harness uses stable ExMCP 1.x for ACP messages, protocol validation, and
-protocol request correlation. Harness keeps all stateful coding-agent lifecycle
-behavior.
+Harness uses stable ExMCP 1.x for all coding-agent messages, protocol
+validation, and protocol request correlation. Both finite runs and stateful
+sessions use ACP. Harness keeps all stateful coding-agent lifecycle behavior.
 
-The Harness-owned ExMCP transport starts the provider executable through
-`Jido.Harness.ProcessManager`. It gives complete ACP frames to ExMCP and writes
+The Harness-owned ExMCP transport starts the provider executable through the
+Harness process manager. It gives complete ACP frames to ExMCP and writes
 ExMCP frames to the managed process. It does not decode ACP JSON or correlate
 JSON-RPC request IDs.
 
@@ -26,7 +26,7 @@ outcome to ExMCP.
 | initialize | `ExMCP.ACP.Client.start_link/1` | executable, argv, environment policy, process owner |
 | session/new | `ExMCP.ACP.Client.new_session/3` | Harness session ID and retained lifecycle state |
 | session/load | `ExMCP.ACP.Client.load_session/4` | separate provider session ID |
-| session/prompt | `ExMCP.ACP.Client.prompt/4` | Harness turn ID, timers, events, result, and replay |
+| session/prompt | `ExMCP.ACP.Client.prompt/4` | Harness run or turn ID, timers, events, result, and replay |
 | session/cancel | `ExMCP.ACP.Client.cancel/2` | process and turn lifecycle |
 | session/request_permission | `ExMCP.ACP.Client.Handler` callback | approval ID, timeout, stale response, and default denial |
 | session/close | `ExMCP.ACP.Client.end_session/2` | session close state and process cleanup |
@@ -51,6 +51,6 @@ ExMCP now handles two invalid wire cases before Harness lifecycle code:
 - A duplicate outstanding JSON-RPC request ID is rejected by ExMCP and does not
   create a second Harness approval request.
 
-Harness public session, turn, event, replay, retention, approval, and process
-contracts do not otherwise change. Approval request IDs remain opaque strings,
-but Harness now generates them independently from the ACP JSON-RPC ID.
+Version 3 removes transport selection and the direct-CLI adapter execution
+callback. Approval request IDs remain opaque strings, but Harness generates
+them independently from the ACP JSON-RPC ID.

@@ -11,7 +11,19 @@ defmodule Jido.Harness.TestHelpers do
     default = Application.get_env(:jido_harness, :default_provider)
 
     Application.put_env(:jido_harness, :providers, %{test: Jido.Harness.TestAdapter})
-    Application.put_env(:jido_harness, :provider_config, %{test: %{retention: %{journal_dir: context.journal_dir}}})
+    acp_fixture = fixture_path("fake_acp_cli.py")
+
+    Application.put_env(:jido_harness, :provider_config, %{
+      test: %{
+        acp_path: acp_fixture,
+        retention: %{journal_dir: context.journal_dir}
+      },
+      owned_cli: %{acp_path: acp_fixture},
+      limited: %{acp_path: acp_fixture},
+      codex: %{acp_path: acp_fixture},
+      claude: %{acp_path: acp_fixture}
+    })
+
     Application.delete_env(:jido_harness, :default_provider)
 
     ExUnit.Callbacks.on_exit(fn ->

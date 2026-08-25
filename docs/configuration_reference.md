@@ -23,7 +23,7 @@ config :jido_harness,
 ```
 
 The map merges over the nine built-ins. A matching key explicitly overrides a
-built-in adapter. Each value must implement the v2 `Jido.Harness.Adapter`
+built-in adapter. Each value must implement the v3 `Jido.Harness.Adapter`
 contract.
 
 ## `:provider_config`
@@ -32,6 +32,7 @@ contract.
 config :jido_harness,
   provider_config: %{
     codex: %{
+      acp_path: "/opt/acp/bin/codex-acp",
       request_defaults: %{
         sandbox_mode: :workspace_write,
         approval_mode: :prompt
@@ -53,6 +54,7 @@ harness-owned keys:
 
 | Key | Use |
 | --- | --- |
+| `acp_path` | Override the `ACPAgentSpec` executable for runs and sessions |
 | `request_defaults` | Defaults merged into finite `RunRequest` values |
 | `session_defaults` | Defaults merged into `SessionRequest` values |
 | `retention` | Default run and session memory/journal limits |
@@ -67,10 +69,8 @@ Finite request precedence is:
 2. configured `provider_config[provider].request_defaults`;
 3. explicit request values.
 
-For Codex structured runs, provider-config environment entries and request
-defaults cannot weaken the fixed isolation profile. `cli_path` may select the
-installed Codex executable; all behavior remains represented by normalized
-request fields and the reviewed adapter argv.
+`cli_path` selects the base CLI for readiness checks. `acp_path` selects the
+executable that performs model work.
 
 ## `:process_manager`
 

@@ -1,6 +1,10 @@
 # Structured Output Uses Harness-Owned Ephemeral Schema Isolation
 
-Status: accepted on 2026-08-23.
+Status: superseded by the ACP-only version 3 design on 2026-08-25.
+
+Version 3 retains the provider-neutral request types, but no current ACP
+profile advertises structured output. See
+[`migration_v3.md`](../migration_v3.md).
 
 This decision establishes the generic Jido.Harness authority for validating a
 caller-supplied output schema, staging it privately for a finite CLI run, and
