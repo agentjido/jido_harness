@@ -3,7 +3,7 @@ defmodule Jido.Harness.RunRequest do
 
   @approval_modes [:default, :prompt, :auto_edit, :auto_approve]
   @sandbox_modes [:default, :read_only, :workspace_write, :unrestricted]
-  @reasoning_efforts [:low, :medium, :high]
+  @reasoning_efforts [:low, :medium, :high, :xhigh]
   @keys [
     :prompt,
     :provider,

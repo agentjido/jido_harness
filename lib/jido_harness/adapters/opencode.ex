@@ -56,7 +56,10 @@ defmodule Jido.Harness.Adapters.OpenCode do
         }
       ],
       normalized_options: [:model, :provider_session_id, :approval_mode, :attachments, :reasoning_effort],
-      normalized_values: %{approval_mode: [:default, :prompt, :auto_approve]},
+      normalized_values: %{
+        approval_mode: [:default, :prompt, :auto_approve],
+        reasoning_effort: [nil, :low, :medium, :high]
+      },
       provider_options: @provider_options,
       install: %{npm: "opencode-ai"}
     }

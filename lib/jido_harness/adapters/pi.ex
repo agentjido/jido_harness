@@ -173,7 +173,8 @@ defmodule Jido.Harness.Adapters.Pi do
       ],
       normalized_values: %{
         approval_mode: [:default, :auto_approve],
-        sandbox_mode: [:default, :read_only, :unrestricted]
+        sandbox_mode: [:default, :read_only, :unrestricted],
+        reasoning_effort: [nil, :low, :medium, :high]
       },
       provider_options: @provider_options,
       install: %{npm: "@earendil-works/pi-coding-agent", npm_args: ["--ignore-scripts"]}

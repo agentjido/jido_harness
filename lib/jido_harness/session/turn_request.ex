@@ -1,7 +1,7 @@
 defmodule Jido.Harness.TurnRequest do
   @moduledoc "Validated input for one turn in an interactive session."
 
-  @reasoning_efforts [:low, :medium, :high]
+  @reasoning_efforts [:low, :medium, :high, :xhigh]
   @keys [:prompt, :content, :attachments, :reasoning_effort, :output_schema, :metadata, :provider_options]
 
   @schema Zoi.struct(

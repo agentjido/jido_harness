@@ -63,6 +63,7 @@ defmodule Jido.Harness.Adapters.Grok do
         :sandbox_mode,
         :reasoning_effort
       ],
+      normalized_values: %{reasoning_effort: [nil, :low, :medium, :high, :xhigh]},
       provider_options: @provider_options,
       install: %{npm: "@xai-official/grok"}
     }

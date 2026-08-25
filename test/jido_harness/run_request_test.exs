@@ -1,7 +1,18 @@
 defmodule Jido.Harness.RunRequestTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.{Error, RunRequest}
+  alias Jido.Harness.{Error, RunRequest, SessionRequest, TurnRequest}
+
+  test "accepts xhigh in finite, session, and turn request schemas" do
+    assert {:ok, %RunRequest{reasoning_effort: :xhigh}} =
+             RunRequest.new(prompt: "finite", reasoning_effort: :xhigh)
+
+    assert {:ok, %SessionRequest{reasoning_effort: :xhigh}} =
+             SessionRequest.new(reasoning_effort: :xhigh)
+
+    assert {:ok, %TurnRequest{reasoning_effort: :xhigh}} =
+             TurnRequest.new(prompt: "turn", reasoning_effort: :xhigh)
+  end
 
   test "normalizes string keys and validates the existing workspace" do
     assert {:ok, request} =
