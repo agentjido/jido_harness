@@ -130,6 +130,8 @@ for line in sys.stdin:
         elif "slow" in text:
             time.sleep(0.15)
             complete_prompt(request_id)
+        elif "harness-live-soak-" in text:
+            complete_prompt(request_id, text=text.split()[-1])
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
