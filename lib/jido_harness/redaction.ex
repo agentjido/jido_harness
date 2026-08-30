@@ -2,7 +2,7 @@ defmodule Jido.Harness.Redaction do
   @moduledoc false
 
   @redacted "[REDACTED]"
-  @sensitive_key ~r/(^|_)(authorization|credential|password|secret|token|api_?key)($|_)/i
+  @sensitive_key ~r/(^|_)(authorization|cookie|credential|password|secret|token|api_?key)($|_)/i
 
   @spec redact(term(), [String.t()]) :: term()
   def redact(value, extra_secrets \\ []) do

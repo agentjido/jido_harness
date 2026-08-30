@@ -8,14 +8,28 @@ defmodule Jido.Harness.RedactionTest do
 
     value = %{
       "authorization" => "Bearer #{secret}",
-      "nested" => %{"api-key" => secret, "message" => "value=#{secret}"},
+      "nested" => %{
+        "api-key" => secret,
+        "message" => "value=#{secret}",
+        "responseHeaders" => %{
+          "set-cookie" => "session=opaque-cookie-value; HttpOnly",
+          "content-type" => "application/json"
+        }
+      },
       "input_tokens" => 42,
       "header" => "Bearer another-secret"
     }
 
     assert %{
              "authorization" => "[REDACTED]",
-             "nested" => %{"api-key" => "[REDACTED]", "message" => "value=[REDACTED]"},
+             "nested" => %{
+               "api-key" => "[REDACTED]",
+               "message" => "value=[REDACTED]",
+               "responseHeaders" => %{
+                 "set-cookie" => "[REDACTED]",
+                 "content-type" => "application/json"
+               }
+             },
              "input_tokens" => 42,
              "header" => "Bearer [REDACTED]"
            } = Redaction.redact(value, [secret])
