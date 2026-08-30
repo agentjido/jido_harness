@@ -64,6 +64,14 @@ defmodule Jido.Harness.TestAdapter do
       "large" ->
         {:ok, large_stream(request)}
 
+      "provider-start" ->
+        {:ok,
+         [
+           event(:run_started, request, %{"model" => "fixture-effective-model"}),
+           event(:output_text_final, request, %{"text" => "fixture-ok"}),
+           event(:run_completed, request, %{})
+         ]}
+
       _ ->
         {:ok, successful_stream(request)}
     end

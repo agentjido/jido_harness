@@ -29,7 +29,8 @@ defmodule Jido.Harness.AdapterTest do
         sandbox_mode: :workspace_write
       })
 
-    assert {:ok, argv} = Claude.build_argv(request, %{})
+    settings = Jason.encode!(%{"sandbox" => %{"network" => %{"allowedDomains" => ["127.0.0.1"]}}})
+    assert {:ok, argv} = Claude.build_argv(request, %{settings: settings})
 
     assert Enum.take(argv, 6) == [
              "--print",
@@ -43,7 +44,14 @@ defmodule Jido.Harness.AdapterTest do
     assert pairs(argv, "--resume") == ["session-1"]
     assert pairs(argv, "--effort") == ["medium"]
     assert pairs(argv, "--permission-mode") == ["acceptEdits"]
-    assert %{"sandbox" => %{"enabled" => true}} = argv |> pairs("--settings") |> hd() |> Jason.decode!()
+
+    assert %{
+             "sandbox" => %{
+               "enabled" => true,
+               "network" => %{"allowedDomains" => ["127.0.0.1"]}
+             }
+           } = argv |> pairs("--settings") |> hd() |> Jason.decode!()
+
     assert Enum.take(argv, -2) == ["--", "claude"]
   end
 

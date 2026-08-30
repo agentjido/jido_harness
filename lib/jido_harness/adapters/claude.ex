@@ -126,16 +126,20 @@ defmodule Jido.Harness.Adapters.Claude do
 
   defp settings_value(settings, sandbox_mode) do
     with {:ok, base} <- read_settings(settings) do
-      sandbox =
+      mode_settings =
         case sandbox_mode do
           :read_only -> %{"enabled" => true, "filesystem" => %{"allowWrite" => []}}
           :workspace_write -> %{"enabled" => true}
           :unrestricted -> %{"enabled" => false}
         end
 
+      sandbox = base |> Map.get("sandbox", %{}) |> sandbox_settings() |> Map.merge(mode_settings)
       {:ok, Jason.encode!(Map.put(base, "sandbox", sandbox))}
     end
   end
+
+  defp sandbox_settings(settings) when is_map(settings), do: settings
+  defp sandbox_settings(_settings), do: %{}
 
   defp read_settings(nil), do: {:ok, %{}}
 

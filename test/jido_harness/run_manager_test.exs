@@ -54,6 +54,20 @@ defmodule Jido.Harness.RunManagerTest do
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
   end
 
+  test "retains provider start details without emitting a second run start" do
+    assert {:ok, result} = Jido.Harness.run(:test, "provider-start", await_timeout: 5_000)
+
+    assert Enum.count(result.events, &(&1.type == :run_started)) == 1
+
+    assert %{
+             type: :provider_event,
+             payload: %{
+               "kind" => "provider_run_started",
+               "model" => "fixture-effective-model"
+             }
+           } = Enum.find(result.events, &(&1.payload["kind"] == "provider_run_started"))
+  end
+
   test "retains a bounded text tail for large results and marks truncation" do
     config = Application.fetch_env!(:jido_harness, :provider_config)
     test_config = config.test
