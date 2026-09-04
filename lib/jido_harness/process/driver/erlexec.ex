@@ -6,7 +6,8 @@ defmodule Jido.Harness.ProcessDriver.Erlexec do
 
   @impl true
   def start(%ProcessSpec{} = spec, owner) do
-    with {:ok, executable} <- ProcessSpec.resolve_executable(spec.executable) do
+    with :ok <- validate_cwd(spec.cwd),
+         {:ok, executable} <- ProcessSpec.resolve_executable(spec.executable) do
       command = [executable | spec.argv]
 
       options =
@@ -23,6 +24,14 @@ defmodule Jido.Harness.ProcessDriver.Erlexec do
         error ->
           error
       end
+    end
+  end
+
+  defp validate_cwd(cwd) do
+    if File.dir?(cwd) do
+      :ok
+    else
+      {:error, Jido.Harness.Error.validation("cwd must be an existing directory", details: %{cwd: cwd})}
     end
   end
 

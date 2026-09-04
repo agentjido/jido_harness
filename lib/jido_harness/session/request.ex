@@ -74,11 +74,8 @@ defmodule Jido.Harness.SessionRequest do
          {:ok, retention} <- Jido.Harness.RetentionOptions.normalize(Map.get(attrs, :retention, %{})),
          attrs = Map.put(attrs, :retention, retention),
          {:ok, request} <- parse(Map.put_new(attrs, :cwd, File.cwd!())),
-         true <- File.dir?(request.cwd) do
+         :ok <- Jido.Harness.Validation.cwd(request.cwd) do
       {:ok, request}
-    else
-      false -> {:error, Jido.Harness.Error.validation("cwd must be an existing directory")}
-      {:error, _reason} = error -> error
     end
   end
 

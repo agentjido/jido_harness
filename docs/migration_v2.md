@@ -16,7 +16,10 @@ This is a clean breaking API.
 - dependencies on `jido`, `jido_shell`, Sprites, Splode, provider SDKs, and
   generic subprocess wrappers.
 
-`cwd` now means an existing local directory and is validated before execution.
+`cwd` identifies a directory on the execution host. Request constructors validate
+the path. The process driver checks directory existence before execution; the
+default Erlexec driver checks the local host. Custom remote drivers can accept
+directories that do not exist on the caller's host.
 
 ## Choose the new lifecycle API
 
