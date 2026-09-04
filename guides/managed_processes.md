@@ -25,7 +25,7 @@ constructs an interpolated shell command for a normal process spec.
 A `Jido.Harness.ProcessSpec` supports:
 
 - executable and argv;
-- existing working directory;
+- working directory on the execution host, checked by the process driver;
 - environment overlay or full replacement;
 - stdin and optional PTY settings;
 - startup, runtime, and idle timeouts;

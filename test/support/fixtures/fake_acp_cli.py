@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import sys
 import time
 
@@ -30,6 +31,7 @@ def complete_prompt(request_id, text="fixture-ok", stop_reason="end_turn"):
                 "update": {
                     "sessionUpdate": "agent_message_chunk",
                     "content": {"type": "text", "text": text},
+                    "providerExtension": {"trace": "fixture-trace"},
                 },
             },
         },
@@ -96,7 +98,14 @@ for line in sys.stdin:
             }
         )
     elif method == "session/new":
-        send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
+        result = {"sessionId": session_id}
+        if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
+            result["configOptions"] = [{
+                "id": "model", "name": "Model", "category": "model", "type": "select",
+                "currentValue": "fixture-effective-model",
+                "options": [{"value": "fixture-effective-model", "name": "Fixture model"}],
+            }]
+        send({"jsonrpc": "2.0", "id": request_id, "result": result})
     elif method == "session/load":
         session_id = message.get("params", {}).get("sessionId", session_id)
         send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
@@ -135,6 +144,15 @@ for line in sys.stdin:
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
+            send({"jsonrpc": "2.0", "method": "session/update", "params": {
+                "sessionId": session_id,
+                "update": {"sessionUpdate": "config_option_update", "configOptions": [{
+                    "id": "model", "name": "Model", "category": "model", "type": "select",
+                    "currentValue": "fixture-effective-model",
+                    "options": [{"value": "fixture-effective-model", "name": "Fixture model"}],
+                }]},
+            }})
         send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")

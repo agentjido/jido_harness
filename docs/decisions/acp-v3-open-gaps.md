@@ -1,0 +1,58 @@
+# ACP v3 merge blockers
+
+PR #64 contains the implementation for issue #61. It must remain a draft until
+the following dependency gaps are resolved. Harness keeps process and lifecycle
+ownership in both cases.
+
+## Original protocol message
+
+ExMCP 1.2.0 passes only `(session_id, update)` to
+`c:ExMCP.ACP.Client.Handler.handle_session_update/3`. Permission callbacks receive
+the tool call and options, but not the original JSON-RPC envelope. Unknown
+fields in that envelope are therefore unavailable to Harness event mapping.
+
+Harness now keeps the complete received update map in `Event.raw`, including
+fields that are absent from the normalized payload. This is an improvement,
+but it does not restore the full original protocol message. Raw data is kept
+in memory and is not persisted in the event journal.
+
+The required upstream change is an optional callback with original-message
+context for session updates and permission requests. Existing callbacks must
+remain compatible. ExMCP must decode and validate each message once, then carry
+the original decoded envelope through its existing handler queue. The context
+must retain unknown top-level and parameter fields. It must not use a second,
+unbounded observer queue or change request IDs and approval semantics.
+
+Upstream tests must cover unknown fields, fragmented input, malformed messages,
+duplicate request IDs, handler ordering, queue limits, and old callback modules.
+Harness must then test that each normalized event has the correct original
+message and that journal redaction and lifecycle behavior are unchanged. Do not
+construct a partial envelope and describe it as the original message.
+
+Source: [ExMCP 1.2.0 handler contract](https://github.com/azmaveth/ex_mcp/blob/v1.2.0/lib/ex_mcp/acp/client/handler.ex).
+
+## Cowlib audit failure
+
+ExMCP 1.2.0 requires `plug_cowboy`, which brings Cowboy and Cowlib into Harness
+even though Harness uses ACP over managed process streams. Updating the locked
+ExMCP version does not remove these dependencies. The latest Cowlib Hex release
+found during this work is 2.19.0. It remains affected by the three advisories
+reported by `mix hex.audit`.
+
+The preferred upstream path is to make the HTTP server adapter optional, so an
+ACP-only consumer does not depend on Cowboy, Cowlib, or Ranch. Existing
+[ExMCP PR #21](https://github.com/azmaveth/ex_mcp/pull/21) proposes this change.
+Review and test that work rather than add a duplicate implementation. Verify
+that an ACP-only Hex consumer compiles and runs without optional HTTP
+dependencies, and that hosts which select an HTTP adapter still pass their
+transport tests. Use the resulting supported ExMCP release in Harness and run
+`mix hex.audit` again.
+
+A Cowlib update alone is not currently sufficient. Do not hide the advisories
+with an ignore option, an unverified Git revision, or an aggregate CI result.
+No upstream change or dependency release is included in this Harness PR.
+
+Sources: [Cowlib releases](https://hex.pm/packages/cowlib),
+[cookie encoder advisory](https://cna.erlef.org/cves/CVE-2026-43969.html),
+[link encoder advisory](https://cna.erlef.org/cves/CVE-2026-43971.html),
+[structured header advisory](https://cna.erlef.org/cves/CVE-2026-43966.html).

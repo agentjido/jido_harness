@@ -92,6 +92,17 @@ Run and session replay gaps are represented as:
 The optional `raw` field can retain the original provider value in memory. Raw
 provider values are not persisted to the JSONL journal.
 
+For ACP updates, the current ExMCP handler supplies the update map only. The
+complete update is retained in `raw`; it is not the complete JSON-RPC envelope.
+This remaining compatibility gap is described in
+[ACP v3 merge blockers](decisions/acp-v3-open-gaps.md).
+
+`acp_session_configuration` events retain provider session-open configuration
+under `payload["configuration"]`. Their source is `session_open`, before
+requested configuration changes. Later `acp_update` events retain provider
+configuration updates. These records can contain model evidence. A model from
+the caller's request alone is not evidence of the model used by the provider.
+
 ## Event identity
 
 Finite-run events set `run_id`; session events set `session_id` and may also set

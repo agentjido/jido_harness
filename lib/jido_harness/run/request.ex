@@ -79,7 +79,7 @@ defmodule Jido.Harness.RunRequest do
          :ok <- validate_values(normalized),
          {:ok, request} <- parse(Map.put_new(normalized, :cwd, File.cwd!())),
          :ok <- validate_structured_output(request.structured_output),
-         :ok <- validate_cwd(request.cwd) do
+         :ok <- Jido.Harness.Validation.cwd(request.cwd) do
       {:ok, request}
     end
   end
@@ -167,14 +167,6 @@ defmodule Jido.Harness.RunRequest do
 
       {:error, reason} ->
         {:error, Jido.Harness.Error.validation("invalid run request", details: %{reason: inspect(reason)})}
-    end
-  end
-
-  defp validate_cwd(path) do
-    if File.dir?(path) do
-      :ok
-    else
-      {:error, Jido.Harness.Error.validation("cwd must be an existing directory", details: %{cwd: path})}
     end
   end
 

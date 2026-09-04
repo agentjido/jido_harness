@@ -48,11 +48,13 @@ defmodule Jido.Harness.MixProject do
           "docs/telemetry.md",
           "docs/dependency_policy.md",
           "docs/decisions/exmcp-acp-boundary.md",
+          "docs/decisions/acp-v3-open-gaps.md",
           "docs/process_management.md",
           "docs/integration_testing.md",
           "docs/migration_v3.md",
           "docs/migration_v2.md",
           "docs/structured_output_execution.md",
+          "docs/decisions/structured-output-schema-isolation.md",
           "livebooks/01_one_shot_requests.livemd",
           "livebooks/02_detached_runs.livemd",
           "livebooks/03_sessions_and_processes.livemd"
@@ -93,7 +95,8 @@ defmodule Jido.Harness.MixProject do
             "docs/decisions/exmcp-acp-boundary.md",
             "docs/migration_v3.md",
             "docs/migration_v2.md",
-            "docs/structured_output_execution.md"
+            "docs/structured_output_execution.md",
+            "docs/decisions/structured-output-schema-isolation.md"
           ],
           Livebooks: [
             "livebooks/01_one_shot_requests.livemd",
@@ -176,6 +179,7 @@ defmodule Jido.Harness.MixProject do
           "config",
           "docs",
           "guides",
+          "examples",
           "lib",
           "livebooks",
           "mix.exs"

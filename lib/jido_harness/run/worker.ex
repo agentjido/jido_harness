@@ -149,13 +149,10 @@ defmodule Jido.Harness.RunWorker do
         do: %{state | provider_session_id: event.provider_session_id},
         else: state
 
-    if event.type == :run_started do
-      {:noreply, state}
-    else
-      state = append(state, event)
-      state = if Event.terminal?(event), do: %{state | terminal_event: event}, else: state
-      {:noreply, state}
-    end
+    event = provider_start_event(event)
+    state = append(state, event)
+    state = if Event.terminal?(event), do: %{state | terminal_event: event}, else: state
+    {:noreply, state}
   end
 
   def handle_info({:adapter_event, _event}, state), do: {:noreply, state}
@@ -192,6 +189,12 @@ defmodule Jido.Harness.RunWorker do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp provider_start_event(%Event{type: :run_started} = event) do
+    %{event | type: :provider_event, payload: Map.put(event.payload, "kind", "provider_run_started")}
+  end
+
+  defp provider_start_event(%Event{} = event), do: event
 
   @impl true
   def terminate(_reason, state) do

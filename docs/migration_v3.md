@@ -6,6 +6,9 @@ paths.
 
 GitHub issue `agentjido/jido_harness#61` owns this change.
 
+PR #64 remains a draft while the original-message and dependency audit gaps
+listed in [ACP v3 merge blockers](decisions/acp-v3-open-gaps.md) remain open.
+
 ## Execution model
 
 Both public workflows use the same core:
@@ -39,6 +42,19 @@ and process lifecycle.
 - Finite runs reject `approval_mode: :prompt`. Use a stateful session for manual
   approval responses. A finite run approves requests only in `:auto_approve`
   mode and denies them in other modes.
+
+A finite job can still use host policy for approvals. Load
+`examples/policy_job.exs` from the repository and call
+`Jido.Harness.Examples.PolicyJob.run/4`. It uses one session and one bounded turn,
+denies failed or timed-out policy decisions, and closes the session on exit.
+The turn budget begins after startup. This does not add approval callbacks to
+the finite Run API.
+
+Provider configuration from session creation or loading is retained as a
+`provider_event` with kind `acp_session_configuration` and source `session_open`.
+It describes the provider response before requested configuration changes.
+Later configuration updates remain `acp_update` events. Treat a requested model
+as a request; only provider data is evidence of the effective model.
 
 The run, session, event, replay, retention, approval, and process lifecycle
 types remain Harness types.
@@ -77,3 +93,10 @@ The built-in adapter-backed profiles use exact package versions:
 
 Stay on Jido.Harness 2.x when an essential CLI has no usable ACP entry point.
 Version 3 does not fall back to a direct provider protocol.
+
+The tested 2.x maintenance commit is
+`adb3bce52ec97b14547cecc0434660b777e914ac` on `codex/harness-2x-maintenance`. It repairs OpenCode finite resume,
+supports remote working-directory paths, and verifies provider model evidence.
+Use that full commit ID when pinning a dependency. The proposed
+tag is `v2.1.0-rc.2`, matching the source version; no tag or release was created.
+Record the final reviewed commit and create the 2.x reference before merging v3.

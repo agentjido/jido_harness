@@ -54,6 +54,35 @@ defmodule Jido.Harness.RunManagerTest do
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
   end
 
+  test "retains provider model configuration in results, replay, and streams" do
+    assert {:ok, result} =
+             Jido.Harness.run(:test, "provider-start",
+               model: "requested-model",
+               env: %{"HARNESS_FIXTURE_MODEL_STATE" => "1"},
+               await_timeout: 5_000
+             )
+
+    assert Enum.count(result.events, &(&1.type == :run_started)) == 1
+    assert Enum.count(result.events, &Jido.Harness.Event.run_terminal?/1) == 1
+    assert {:ok, replayed} = Jido.Harness.Run.replay(result.run_id, limit: 100)
+    assert {:ok, stream} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 1)
+
+    for events <- [result.events, replayed, Enum.to_list(stream)] do
+      opened = Enum.find(events, &(&1.payload["kind"] == "acp_session_configuration"))
+      assert opened.payload["source"] == "session_open"
+      assert hd(opened.payload["configuration"]["configOptions"])["currentValue"] == "fixture-effective-model"
+      update = Enum.find(events, &(&1.payload["kind"] == "acp_update"))
+      assert hd(update.payload["update"]["configOptions"])["currentValue"] == "fixture-effective-model"
+      refute inspect(Enum.map(events, & &1.payload)) =~ "requested-model"
+    end
+  end
+
+  test "does not report a requested model as provider configuration without evidence" do
+    assert {:ok, result} = Jido.Harness.run(:test, "ok", model: "requested-model", await_timeout: 5_000)
+    refute Enum.any?(result.events, &(&1.payload["kind"] == "acp_session_configuration"))
+    refute inspect(Enum.map(result.events, & &1.payload)) =~ "requested-model"
+  end
+
   test "finite ACP runs resolve approvals without adding run approval state" do
     assert {:ok, approved} =
              Jido.Harness.run(:test, %{prompt: "approval", approval_mode: :auto_approve}, await_timeout: 5_000)

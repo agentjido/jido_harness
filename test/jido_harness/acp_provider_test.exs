@@ -6,7 +6,7 @@ defmodule Jido.Harness.ACPProviderTest do
     original = Application.get_env(:jido_harness, :provider_config, %{})
 
     provider_config =
-      [:amp, :claude, :codex, :gemini, :grok, :zai]
+      [:amp, :claude, :codex, :gemini, :grok, :zai, :opencode]
       |> Map.new(&{&1, %{acp_path: acp_fixture}})
 
     Application.put_env(:jido_harness, :provider_config, Map.merge(original, provider_config))
@@ -18,6 +18,29 @@ defmodule Jido.Harness.ACPProviderTest do
     end)
 
     :ok
+  end
+
+  test "OpenCode resumes finite runs through ACP session loading" do
+    assert {:ok, first} = Jido.Harness.run(:opencode, "first", await_timeout: 5_000)
+
+    assert {:ok, second} =
+             Jido.Harness.run(:opencode, "second", provider_session_id: first.provider_session_id, await_timeout: 5_000)
+
+    assert second.status == :completed
+    assert second.provider_session_id == first.provider_session_id
+
+    assert {:ok, loaded} =
+             Jido.Harness.run(:opencode, "loaded", provider_session_id: "saved-opencode-session", await_timeout: 5_000)
+
+    assert loaded.provider_session_id == "saved-opencode-session"
+  end
+
+  test "normalized output retains unknown fields from the ExMCP update" do
+    assert {:ok, result} = Jido.Harness.run(:grok, "fixture", await_timeout: 5_000)
+    event = Enum.find(result.events, &(&1.type == :output_text_delta))
+    assert event.payload == %{"text" => "fixture-ok"}
+    assert event.raw["sessionUpdate"] == "agent_message_chunk"
+    assert event.raw["providerExtension"] == %{"trace" => "fixture-trace"}
   end
 
   test "all finite provider runs use the same ACP interface" do

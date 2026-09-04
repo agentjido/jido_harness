@@ -112,8 +112,8 @@ defmodule Jido.Harness.ProcessSpec do
       not (is_list(spec.argv) and Enum.all?(spec.argv, &is_binary/1)) ->
         invalid("argv must be a list of strings")
 
-      not is_binary(spec.cwd) or not File.dir?(spec.cwd) ->
-        invalid("cwd must be an existing directory", %{cwd: spec.cwd})
+      Jido.Harness.Validation.cwd(spec.cwd) != :ok ->
+        Jido.Harness.Validation.cwd(spec.cwd)
 
       not is_map(spec.env) or not Enum.all?(spec.env, &valid_env?/1) ->
         invalid("env must use string names and string, false, or nil values")

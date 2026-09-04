@@ -12,7 +12,7 @@ keep their own distinct harness IDs.
 | --- | --- | --- |
 | `executable` | required | command name or explicit path |
 | `argv` | `[]` | list of binary arguments |
-| `cwd` | current directory | existing directory |
+| `cwd` | current directory | non-empty path without null bytes; directory on the execution host |
 | `env` | `%{}` | string keys and string, `false`, or `nil` values |
 | `env_mode` | `:overlay` | `:overlay` or `:replace` |
 | `stdin` | `true` | whether input is available |
@@ -23,8 +23,16 @@ keep their own distinct harness IDs.
 | `metadata` | `%{}` | in-memory application metadata |
 | `retention` | `%{}` | memory and journal overrides |
 
-Unknown fields are rejected. An executable without a path separator is
-resolved through `PATH`; an explicit path is expanded and checked directly.
+Unknown fields are rejected. The local Erlexec driver resolves an executable
+without a path separator through `PATH`. It expands and checks explicit paths.
+
+Process, run, and session request constructors validate the working-directory
+path without checking the caller's filesystem. Each process driver must validate
+the directory on its execution host. Erlexec rejects a missing local directory
+before it starts an OS process. The managed process then reports `:failed` with
+a validation error, and can be pruned. A custom remote driver can accept a path
+that exists only on the remote host. This does not add remote support for local
+attachment reads or provider installation and readiness checks.
 
 ## Environment behavior
 

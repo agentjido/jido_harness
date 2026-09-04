@@ -204,6 +204,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp initialize_session(client, request, state) do
     with {:ok, result} <- open_session(client, request),
          {:ok, provider_session_id} <- provider_session_id(result, request),
+         :ok <- record_session_configuration(state, provider_session_id, result),
          :ok <- apply_initial_configuration(client, provider_session_id, request, state.context.acp_agent) do
       {:reply, {:ok, provider_session_id}, %{state | client: client, provider_session_id: provider_session_id}}
     else
@@ -211,6 +212,20 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         stop_client(client)
         {:reply, {:error, reason}, state}
     end
+  end
+
+  defp record_session_configuration(state, provider_session_id, result) do
+    configuration = Map.drop(result, ["sessionId", "session_id"])
+
+    if map_size(configuration) > 0 do
+      emit(%{state | provider_session_id: provider_session_id}, :provider_event, %{
+        "kind" => "acp_session_configuration",
+        "source" => "session_open",
+        "configuration" => configuration
+      })
+    end
+
+    :ok
   end
 
   defp open_session(client, request) do
@@ -252,20 +267,21 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       "tool_call" -> [event(:tool_call, update)]
       "tool_call_update" -> [event(:tool_result, update)]
       "plan" -> [event(:plan_updated, update)]
-      type when type in ["usage", "usage_update"] -> [event(:usage, Map.drop(update, ["sessionUpdate"]))]
-      _other -> [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
+      type when type in ["usage", "usage_update"] -> [event(:usage, Map.drop(update, ["sessionUpdate"]), update)]
+      _other -> [event(:provider_event, %{"kind" => "acp_update", "update" => update}, update)]
     end
   end
 
-  defp map_update(update), do: [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
+  defp map_update(update), do: [event(:provider_event, %{"kind" => "acp_update", "update" => update}, update)]
 
   defp text_event(type, update) do
     content = update["content"] || %{}
     text = content["text"] || update["text"]
-    if is_binary(text), do: [event(type, %{"text" => text})], else: [event(:provider_event, update)]
+    if is_binary(text), do: [event(type, %{"text" => text}, update)], else: [event(:provider_event, update)]
   end
 
-  defp event(type, payload), do: Event.new!(type: type, provider: :acp, payload: payload, raw: payload)
+  defp event(type, payload), do: event(type, payload, payload)
+  defp event(type, payload, update), do: Event.new!(type: type, provider: :acp, payload: payload, raw: update)
 
   defp emit(state, type, payload, options \\ []) do
     Jido.Harness.SessionAdapter.emit(
