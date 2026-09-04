@@ -7,9 +7,10 @@ paths.
 GitHub issue `agentjido/jido_harness#61` owns this change.
 
 PR #64 uses the ExMCP PR branch `codex/acp-original-message-context` from
-`mikehostetler/ex_mcp` for original ACP message callbacks. The lockfile pins the
-tested commit. The user approved this temporary Git dependency and the current
-Cowlib audit exception. See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
+`mikehostetler/ex_mcp` for original ACP message callbacks. The dependency in
+`mix.exs` and the lockfile pin the tested commit. The user approved this temporary
+Git dependency and the current Cowlib audit exception.
+See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
 The Git dependency prevents a Hex package build until the ExMCP change is
 released. Git-based development and validation use the locked PR commit.
 
@@ -54,6 +55,12 @@ denies failed or timed-out policy decisions, and closes the session on exit.
 The turn budget begins after startup. This does not add approval callbacks to
 the finite Run API.
 
+The example handles permission requests that the provider sends. It does not
+set a provider approval mode. Configure provider permissions to request host
+approval where needed. Provider options passed in `session_options` must be
+supported by that provider; OpenCode, for example, does not accept the normalized
+`approval_mode` option. Session still supports its ACP permission requests.
+
 Provider configuration from session creation or loading is retained as a
 `provider_event` with kind `acp_session_configuration` and source `session_open`.
 It describes the provider response before requested configuration changes.
@@ -64,6 +71,25 @@ The run, session, event, replay, retention, approval, and process lifecycle
 types remain Harness types.
 
 ## Installation
+
+To use PR #64 before a Hex release, add the Git dependency to your application's
+`mix.exs`:
+
+```elixir
+{:jido_harness, github: "agentjido/jido_harness", branch: "codex/acp-only-v3"}
+```
+
+Run `mix deps.get` and commit your application's `mix.lock`. For a fixed Harness
+revision, replace `branch:` with `ref:` and the full reviewed Harness commit ID.
+Harness selects ExMCP commit `4b7b35b945f03a8eca41ea9da4fceceb60d91be2` in its
+dependency declaration. This also pins ExMCP for consumers, which do not use
+the Harness repository's lockfile. A separate ExMCP override is not needed
+when Harness is its only consumer.
+
+If your application already declares ExMCP, align its dependency source and
+revision with this pin. Check other packages that use ExMCP before adding an
+override. Replace the temporary Git dependencies with supported Hex releases
+when they become available, then rerun tests and `mix hex.build`.
 
 Some base CLIs include ACP. Other providers need a separate ACP adapter.
 

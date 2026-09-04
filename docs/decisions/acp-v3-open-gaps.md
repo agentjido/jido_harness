@@ -10,9 +10,11 @@ Harness keeps process and lifecycle ownership.
 The ExMCP Hex 1.2.0 callbacks omit the original JSON-RPC envelope. The temporary
 branch `codex/acp-original-message-context` in `mikehostetler/ex_mcp` adds optional
 `c:ExMCP.ACP.Client.Handler.handle_session_update/4` and
-`c:ExMCP.ACP.Client.Handler.handle_permission_request/5` callbacks. The lockfile
-pins the tested branch commit. Replace this Git dependency with a supported
-Hex release after the upstream change is released.
+`c:ExMCP.ACP.Client.Handler.handle_permission_request/5` callbacks. Both `mix.exs`
+and the lockfile pin the tested branch commit. Consumers resolve their own
+lockfiles, so the source declaration must also select that exact revision.
+Replace this Git dependency with a supported Hex release after the upstream
+change is released.
 
 Upstream change: [ExMCP PR #32](https://github.com/azmaveth/ex_mcp/pull/32),
 tested commit `4b7b35b945f03a8eca41ea9da4fceceb60d91be2`.

@@ -42,6 +42,22 @@ defmodule Jido.Harness.PolicyJobExampleTest do
     assert_closed()
   end
 
+  test "OpenCode policy jobs do not require a provider approval-mode option" do
+    fixture = fixture_path("fake_acp_cli.py")
+
+    for {decision, text} <- [approve: "approved", deny: "denied"] do
+      assert {:ok, %{status: :completed, text: ^text} = result} =
+               PolicyJob.run(:opencode, "request approval", fn _ -> decision end, session_options: %{acp_path: fixture})
+
+      approval = Enum.find(result.events, &(&1.type == :approval_requested))
+      assert approval.raw["method"] == "session/request_permission"
+      assert approval.raw["id"] == 99
+      assert String.starts_with?(approval.request_id, "request_")
+    end
+
+    assert_closed()
+  end
+
   test "a job deadline closes its session even when the provider waits" do
     result = PolicyJob.run(:test, "wait", fn _ -> :deny end, timeout_ms: 50)
     assert match?({:error, :timeout}, result) or match?({:ok, %{status: :failed}}, result)

@@ -6,8 +6,9 @@ GitHub issue `agentjido/jido_harness#61` owns this migration.
 
 Harness uses ExMCP 1.x code for all coding-agent messages, protocol validation,
 and protocol request correlation. It temporarily consumes the original-message
-callback PR branch, pinned by the lockfile. Both finite runs and stateful
-sessions use ACP. Harness keeps all stateful coding-agent lifecycle behavior.
+callback PR branch, pinned in the dependency declaration and lockfile. Both
+finite runs and stateful sessions use ACP. Harness keeps all stateful
+coding-agent lifecycle behavior.
 
 The Harness-owned ExMCP transport starts the provider executable through the
 Harness process manager. It gives complete ACP frames to ExMCP and writes

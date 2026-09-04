@@ -4,6 +4,8 @@ defmodule Jido.Harness.Examples.PolicyJob do
 
   The turn budget begins after session startup. Policy failures, invalid replies,
   and policy timeouts deny access. Load this example with Code.require_file/1.
+  Policy handles permission requests sent by the provider. Configure the provider
+  to request approval for the operations that need host review.
   """
 
   alias Jido.Harness.Session
@@ -19,7 +21,6 @@ defmodule Jido.Harness.Examples.PolicyJob do
       |> Keyword.get(:session_options, %{})
       |> Map.new()
       |> Map.merge(%{
-        approval_mode: :prompt,
         approval_timeout_ms: policy_timeout,
         turn_runtime_timeout_ms: timeout
       })
