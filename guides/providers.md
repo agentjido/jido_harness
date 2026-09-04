@@ -22,7 +22,7 @@ Each entry is a `Jido.Harness.AdapterSpec`.
 | Gemini CLI | `:gemini` | `gemini` | yes | `:stream_json_resume` | process per turn |
 | Grok | `:grok` | `grok` | yes | `:streaming_json_resume` | process per turn |
 | Kimi Code | `:kimi` | `kimi` | yes | `:acp` | persistent process |
-| OpenCode | `:opencode` | `opencode` | no finite-run resume | `:acp` | persistent process |
+| OpenCode | `:opencode` | `opencode` | yes | `:acp` | persistent process |
 | Pi | `:pi` | `pi` | yes | `:rpc` | persistent process |
 | Z.AI | `:zai` | `claude` | yes | `:stream_json_resume` | process per turn |
 

@@ -35,7 +35,7 @@ defmodule Jido.Harness.Adapters.OpenCode do
       name: "OpenCode",
       executable: "opencode",
       docs_url: "https://opencode.ai/docs",
-      capabilities: %Capabilities{streaming?: true, native_cancel?: true},
+      capabilities: %Capabilities{streaming?: true, resume?: true, native_cancel?: true},
       default_session_transport: :acp,
       session_transports: [
         %Jido.Harness.SessionTransportSpec{
