@@ -7,22 +7,24 @@ Harness keeps process and lifecycle ownership.
 
 ## ACP protocol message
 
-The ExMCP Hex 1.2.0 callbacks omit the original JSON-RPC envelope. The temporary
-branch `codex/acp-original-message-context` in `mikehostetler/ex_mcp` adds optional
+The ExMCP Hex 1.2.0 callbacks omit the received JSON-RPC envelope. Merged
+ExMCP PR #32 adds optional
 `c:ExMCP.ACP.Client.Handler.handle_session_update/4` and
 `c:ExMCP.ACP.Client.Handler.handle_permission_request/5` callbacks. Both `mix.exs`
-and the lockfile pin the tested branch commit. Consumers resolve their own
+and the lockfile pin the tested upstream merge commit. Consumers resolve their own
 lockfiles, so the source declaration must also select that exact revision.
 Replace this Git dependency with a supported Hex release after the upstream
 change is released.
 
-Upstream change: [ExMCP PR #32](https://github.com/azmaveth/ex_mcp/pull/32),
-current integration commit `e9be45d8514d95e4d80cfab342d74611374bcde2`.
-The functional callback commit is `4b7b35b`; the later commit clarifies the
-ACP message boundary in its public documentation.
+Upstream change: [merged ExMCP PR #32](https://github.com/azmaveth/ex_mcp/pull/32),
+merge commit `d43ef8e3c996448f5bb75b83165b611b642360fd`.
+Its tree matches the reviewed PR head. The functional callback commit is
+`4b7b35b`; the later PR commit clarifies the ACP message boundary in its public
+documentation.
 
-The branch is usable as a Git dependency. `mix hex.build` rejects the temporary
-ExMCP Git dependency because Hex packages can depend only on Hex packages.
+The upstream merge commit is usable as a Git dependency. `mix hex.build`
+rejects the temporary ExMCP Git dependency because Hex packages can depend
+only on Hex packages.
 The package check remains visible and will require an ExMCP release before
 Harness can be packaged for Hex. No package or release was published.
 

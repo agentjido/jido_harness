@@ -6,13 +6,13 @@ paths.
 
 GitHub issue `agentjido/jido_harness#61` owns this change.
 
-PR #64 uses the ExMCP PR branch `codex/acp-original-message-context` from
-`mikehostetler/ex_mcp` for original ACP message callbacks. The dependency in
-`mix.exs` and the lockfile pin the tested commit. The user approved this temporary
-Git dependency and the current Cowlib audit exception.
+PR #64 uses the official ExMCP PR #32 merge commit for ACP message-context
+callbacks. The dependency in `mix.exs` and the lockfile pin the tested upstream
+commit. The user approved this temporary Git dependency and the current Cowlib
+audit exception.
 See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
 The Git dependency prevents a Hex package build until the ExMCP change is
-released. Git-based development and validation use the locked PR commit.
+released. Git-based development and validation use the locked merge commit.
 
 ## Execution model
 
@@ -88,7 +88,7 @@ To use PR #64 before a Hex release, add the Git dependency to your application's
 
 Run `mix deps.get` and commit your application's `mix.lock`. For a fixed Harness
 revision, replace `branch:` with `ref:` and the full reviewed Harness commit ID.
-Harness selects ExMCP commit `e9be45d8514d95e4d80cfab342d74611374bcde2` in its
+Harness selects ExMCP commit `d43ef8e3c996448f5bb75b83165b611b642360fd` in its
 dependency declaration. This also pins ExMCP for consumers, which do not use
 the Harness repository's lockfile. A separate ExMCP override is not needed
 when Harness is its only consumer.
