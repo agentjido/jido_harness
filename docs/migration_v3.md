@@ -88,7 +88,7 @@ To use PR #64 before a Hex release, add the Git dependency to your application's
 
 Run `mix deps.get` and commit your application's `mix.lock`. For a fixed Harness
 revision, replace `branch:` with `ref:` and the full reviewed Harness commit ID.
-Harness selects ExMCP commit `4b7b35b945f03a8eca41ea9da4fceceb60d91be2` in its
+Harness selects ExMCP commit `e9be45d8514d95e4d80cfab342d74611374bcde2` in its
 dependency declaration. This also pins ExMCP for consumers, which do not use
 the Harness repository's lockfile. A separate ExMCP override is not needed
 when Harness is its only consumer.

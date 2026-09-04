@@ -17,7 +17,9 @@ Replace this Git dependency with a supported Hex release after the upstream
 change is released.
 
 Upstream change: [ExMCP PR #32](https://github.com/azmaveth/ex_mcp/pull/32),
-tested commit `4b7b35b945f03a8eca41ea9da4fceceb60d91be2`.
+current integration commit `e9be45d8514d95e4d80cfab342d74611374bcde2`.
+The functional callback commit is `4b7b35b`; the later commit clarifies the
+ACP message boundary in its public documentation.
 
 The branch is usable as a Git dependency. `mix hex.build` rejects the temporary
 ExMCP Git dependency because Hex packages can depend only on Hex packages.
