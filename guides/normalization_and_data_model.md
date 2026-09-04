@@ -134,11 +134,19 @@ Some provider concepts do not have shared semantics:
 
 - Request-only extensions belong under `provider_options`.
 - Unknown or loss-sensitive output becomes a `:provider_event`.
-- `Event.raw` may retain the original provider value in memory.
+- `Event.raw` may retain the decoded message received at the ACP boundary in
+  memory.
 
 Raw provider values are not persisted to disk journals. Code that consumes
 `provider_options`, `:provider_event`, or `raw` is intentionally provider-aware
 and receives no cross-provider portability guarantee.
+
+For a native ACP provider, `Event.raw` is the decoded ACP message written by
+that provider. For a provider that uses a separate ACP adapter, it is the ACP
+message written by the adapter. An adapter can synthesize that message from a
+different native protocol. Fields that the adapter does not map are not
+available to Harness. `Event.raw` does not promise the provider's unmodified
+native event or the original JSON bytes.
 
 ## Normalization is not equalization
 

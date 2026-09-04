@@ -70,6 +70,13 @@ as a request; only provider data is evidence of the effective model.
 The run, session, event, replay, retention, approval, and process lifecycle
 types remain Harness types.
 
+`Event.raw` now represents the decoded message at the ACP boundary. For a
+native ACP provider, this is the provider's ACP message. For an adapter-backed
+provider, this is the ACP message that the adapter constructed from its native
+protocol. It is not the unmodified native-provider event. A provider field that
+the adapter does not map is unavailable. Applications that used native raw
+fields from a 2.x direct-CLI adapter must review this change.
+
 ## Installation
 
 To use PR #64 before a Hex release, add the Git dependency to your application's

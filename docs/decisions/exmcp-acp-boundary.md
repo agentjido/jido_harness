@@ -66,6 +66,12 @@ The original-message gap found during consumer review is addressed by optional
 ExMCP callbacks: `handle_session_update/4` and `handle_permission_request/5`.
 Harness retains their decoded messages in `Event.raw`. ExMCP still parses and
 validates once, checks session authority, and owns protocol request IDs.
+`Event.raw` is the message at the ACP client boundary. For native ACP
+providers, it is the provider's ACP wire message. For a separate ACP adapter,
+it is the ACP message emitted by that adapter. If an application uses ExMCP's
+`AdapterTransport`, it is the envelope constructed by `AdapterBridge` and the
+selected adapter. It is not a promise to retain the provider's native event.
+Native fields that an adapter does not map are unavailable to Harness.
 The Cowlib audit findings have a temporary, user-approved exception for PR #64.
 See [ACP v3 review status](acp-v3-open-gaps.md).
 

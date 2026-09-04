@@ -4,6 +4,12 @@ Jido.Harness includes nine CLI providers. Every run and session uses ACP through
 ExMCP. A provider can supply ACP in its base CLI or through a separate adapter
 program.
 
+This distinction also controls the source of `Event.raw`. A native ACP provider
+writes the retained ACP message. For an adapter-backed provider, the adapter
+writes it after it translates the provider's native protocol. Native fields
+that the adapter does not include in its ACP message are not available to
+Harness.
+
 Use `Jido.Harness.providers/0` to inspect the declarations.
 
 ## Provider inventory

@@ -5,7 +5,7 @@ callback PR and use of that branch in Harness to resolve the original-message
 gap. The Cowlib audit has a temporary, user-approved exception for this PR.
 Harness keeps process and lifecycle ownership.
 
-## Original protocol message
+## ACP protocol message
 
 The ExMCP Hex 1.2.0 callbacks omit the original JSON-RPC envelope. The temporary
 branch `codex/acp-original-message-context` in `mikehostetler/ex_mcp` adds optional
@@ -24,13 +24,17 @@ ExMCP Git dependency because Hex packages can depend only on Hex packages.
 The package check remains visible and will require an ExMCP release before
 Harness can be packaged for Hex. No package or release was published.
 
-ExMCP decodes and validates each message once and carries the original decoded
+ExMCP decodes and validates each message once and carries the received decoded
 map through its existing handler queue. Unknown top-level and parameter fields
-are retained, and the update queue byte limit counts the retained context.
-Old callback modules continue to work. Only one callback handles each event.
+in that ACP message are retained, and the update queue byte limit counts the
+retained context. Old callback modules continue to work. Only one callback
+handles each event.
 
-Harness stores this original map in `Event.raw` for updates and permission
-requests. Normalized payloads and Harness IDs remain separate. Raw data is kept
+Harness stores this ACP-boundary map in `Event.raw` for updates and permission
+requests. Normalized payloads and Harness IDs remain separate. A native ACP
+provider writes this message. An ACP adapter constructs it from the provider's
+native protocol, so native fields that the adapter does not map are not
+available. Raw data is kept
 in memory and is not persisted in the event journal. No second parser or
 observer queue is added to Harness.
 Run and turn results retain raw data from the bounded memory buffer.
@@ -48,8 +52,8 @@ Source: [ExMCP issue #31](https://github.com/azmaveth/ex_mcp/issues/31).
 The user approved temporarily skipping the Cowlib audit requirement for PR #64.
 The exception covers the three current Cowlib 2.19.0 advisories:
 `EEF-CVE-2026-43969`, `EEF-CVE-2026-43971`, and `EEF-CVE-2026-43966`. These
-findings no longer block this PR. All other required checks and the original
-protocol message requirement still apply.
+findings no longer block this PR. All other required checks and the ACP message
+context requirement still apply.
 
 The audit continues to run and report its findings. A failed audit is recorded
 as an accepted exception, not as a passing check. Recheck the exception when a

@@ -227,7 +227,7 @@ defmodule Jido.Harness.MixProject do
       {:telemetry, "~> 1.3"},
       {:erlexec, "~> 2.3"},
       # ExMCP PR #32: pin the tested revision for consumers with their own lockfiles.
-      {:ex_mcp, github: "mikehostetler/ex_mcp", ref: "4b7b35b945f03a8eca41ea9da4fceceb60d91be2"},
+      {:ex_mcp, github: "mikehostetler/ex_mcp", ref: "e9be45d8514d95e4d80cfab342d74611374bcde2"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
