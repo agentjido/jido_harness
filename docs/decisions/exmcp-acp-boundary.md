@@ -21,6 +21,29 @@ requests. Harness creates the approval ID and applies its approval timer. The
 handler waits for the Harness decision and returns the selected ACP permission
 outcome to ExMCP.
 
+## Removed protocol code
+
+The inventory below compares the
+[2.x ACP transport at `7f04799`](https://github.com/agentjido/jido_harness/blob/7f0479922fc524e051a66ec09035a3d95bfa35eb/lib/jido_harness/session/transports/acp.ex)
+with this migration. The former `Jido.Harness.Protocol.JSONL` module is removed.
+
+| Former Harness code | Replacement | Retained Harness work |
+| --- | --- | --- |
+| `write/2`, `JSONL.encode/1`, and inline JSON-RPC envelopes | ExMCP protocol encoders and client transport writes | Send encoded bytes to the managed process. |
+| `JSONL.push/2` and wire-message clauses of `handle_record/2` | ExMCP protocol parsing, validation, and client dispatch | Split process output into complete frames for the custom transport; no JSON decoding. |
+| `request/4`, `next_id`, and the protocol `pending` map | ExMCP client requests and its internal request store | Track Harness run and turn IDs independently. |
+| `rpc_result/1`, `begin_session/3`, and initialize/open response matching | ExMCP initialization, session creation, and session loading | Record the provider session ID and session-open configuration. |
+| Permission request dispatch and direct JSON-RPC response writes | ExMCP handler callbacks and correlated response encoding | Create approval IDs, apply host decisions and timers, and select a permission option. |
+| Wire-level prompt completion and cancellation envelopes | ExMCP prompt results and cancellation API | Emit Harness terminal events and stop owned processes. |
+
+The managed-process bridge is required because Harness owns the provider
+process. ExMCP's transport interface receives complete frames. The bridge
+retains stream buffering, newline boundaries, a frame-size limit, and process
+exit notification. It does not retain a protocol request map or parser.
+On process exit, it drains complete queued frames before it reports the stop
+reason to ExMCP and the exit details to Harness. The listener receives that
+notification once, whether a receiver was waiting or frames were queued.
+
 ## Function map
 
 | ACP operation | ExMCP function | Harness responsibility |

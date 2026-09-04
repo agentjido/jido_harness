@@ -212,14 +212,14 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   defp stop_for_process_event(%{status: :open} = state, type, data) do
     waiting? = not is_nil(state.waiter)
-    state = close_state(state, {:process_stopped, type}, false)
+    state = close_state(state, {:process_stopped, type, data}, false)
     if waiting?, do: notify_process_stopped(state, type, data), else: state
   end
 
   defp stop_for_process_event(state, _type, _data), do: state
 
   defp close_state(state, reason, clear_frames?) do
-    if state.waiter, do: GenServer.reply(state.waiter, {:error, reason})
+    if state.waiter, do: GenServer.reply(state.waiter, {:error, receive_error(reason)})
 
     %{
       state
@@ -229,6 +229,9 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
         buffer: ""
     }
   end
+
+  defp receive_error({:process_stopped, type, _data}), do: {:process_stopped, type}
+  defp receive_error(reason), do: reason
 
   defp notify_process_stopped(%{stop_notified?: true} = state, _type, _data), do: state
 
