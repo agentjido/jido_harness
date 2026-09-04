@@ -39,7 +39,9 @@ an ExMCP type.
 
 The initial compatibility spike established the lifecycle adapter. The later
 consumer review found an original-message gap in the ExMCP handler contract.
-The dependency audit also remains open. See [ACP v3 merge blockers](acp-v3-open-gaps.md).
+The Cowlib audit findings have a temporary, user-approved exception for PR #64.
+The original-message gap still blocks the PR. See
+[ACP v3 merge blockers](acp-v3-open-gaps.md).
 
 ExMCP requires finite internal request deadlines. Harness sets each ExMCP
 deadline after the related Harness deadline so the Harness timer decides the

@@ -1,8 +1,9 @@
 # ACP v3 merge blockers
 
-PR #64 contains the implementation for issue #61. It must remain a draft until
-the following dependency gaps are resolved. Harness keeps process and lifecycle
-ownership in both cases.
+PR #64 contains the implementation for issue #61. It remains a draft because
+the original protocol message gap is unresolved. The Cowlib audit has a
+temporary, user-approved exception for this PR. Harness keeps process and
+lifecycle ownership.
 
 ## Original protocol message
 
@@ -31,7 +32,18 @@ construct a partial envelope and describe it as the original message.
 
 Source: [ExMCP 1.2.0 handler contract](https://github.com/azmaveth/ex_mcp/blob/v1.2.0/lib/ex_mcp/acp/client/handler.ex).
 
-## Cowlib audit failure
+## Temporary Cowlib audit exception for PR #64
+
+The user approved temporarily skipping the Cowlib audit requirement for PR #64.
+The exception covers the three current Cowlib 2.19.0 advisories:
+`EEF-CVE-2026-43969`, `EEF-CVE-2026-43971`, and `EEF-CVE-2026-43966`. These
+findings no longer block this PR. All other required checks and the original
+protocol message requirement still apply.
+
+The audit continues to run and report its findings. A failed audit is recorded
+as an accepted exception, not as a passing check. Recheck the exception when a
+supported dependency fix becomes available. Removing HTTP dependencies is
+follow-up work and is not required to complete this PR under the exception.
 
 ExMCP 1.2.0 requires `plug_cowboy`, which brings Cowboy and Cowlib into Harness
 even though Harness uses ACP over managed process streams. Updating the locked
