@@ -39,20 +39,33 @@ ExMCP version does not remove these dependencies. The latest Cowlib Hex release
 found during this work is 2.19.0. It remains affected by the three advisories
 reported by `mix hex.audit`.
 
-The preferred upstream path is to make the HTTP server adapter optional, so an
-ACP-only consumer does not depend on Cowboy, Cowlib, or Ranch. Existing
-[ExMCP PR #21](https://github.com/azmaveth/ex_mcp/pull/21) proposes this change.
-Review and test that work rather than add a duplicate implementation. Verify
-that an ACP-only Hex consumer compiles and runs without optional HTTP
-dependencies, and that hosts which select an HTTP adapter still pass their
-transport tests. Use the resulting supported ExMCP release in Harness and run
-`mix hex.audit` again.
+ExMCP PR #21 does not remove this dependency. Despite its title, the reviewed
+head `5aead0f3f4399047647ba000a3586b95feb6d069` keeps `plug_cowboy` required and
+makes only Bandit optional. The maintainer requires Cowboy in ExMCP 1.x to
+preserve the legacy SSE handler. The maintainer identified optional HTTP
+adapters as work for ExMCP 2.0. The PR also has merge conflicts and no reported
+CI checks. Completing that PR as specified will not clear the Harness audit.
+
+There are two possible paths. Keep supported ExMCP 1.x and wait for a fixed
+Cowlib release, then update the lockfile and repeat the audit. Or prepare a
+separate ExMCP 2.x change that makes all HTTP adapters optional, followed by a
+Harness dependency migration. The second path needs a scope decision and a
+supported upstream release. It is not a lockfile repair within this PR.
+
+For an optional-adapter release, verify that an ACP-only Hex consumer compiles
+and runs without Cowboy, Cowlib, or Ranch. Hosts that select an HTTP adapter
+must retain their listener APIs, startup error handling, and JSON and SSE
+behavior. Test both adapters over HTTP/1.1 and real TLS/HTTP2, including legacy
+SSE process ownership, startup, duplicate listeners, and shutdown. Then update
+Harness to the supported release and run `mix hex.audit` again.
 
 A Cowlib update alone is not currently sufficient. Do not hide the advisories
 with an ignore option, an unverified Git revision, or an aggregate CI result.
 No upstream change or dependency release is included in this Harness PR.
 
 Sources: [Cowlib releases](https://hex.pm/packages/cowlib),
+[ExMCP PR #21 reviewed dependency declaration](https://github.com/azmaveth/ex_mcp/blob/5aead0f3f4399047647ba000a3586b95feb6d069/mix.exs#L100),
+[ExMCP maintainer's 1.x and 2.0 requirements](https://github.com/azmaveth/ex_mcp/pull/21#issuecomment-5383877790),
 [cookie encoder advisory](https://cna.erlef.org/cves/CVE-2026-43969.html),
 [link encoder advisory](https://cna.erlef.org/cves/CVE-2026-43971.html),
 [structured header advisory](https://cna.erlef.org/cves/CVE-2026-43966.html).
