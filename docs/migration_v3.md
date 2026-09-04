@@ -6,9 +6,12 @@ paths.
 
 GitHub issue `agentjido/jido_harness#61` owns this change.
 
-PR #64 remains a draft while the original-message gap is open. Its current
-Cowlib audit findings have a temporary, user-approved exception. See
-[ACP v3 merge blockers](decisions/acp-v3-open-gaps.md).
+PR #64 uses the ExMCP PR branch `codex/acp-original-message-context` from
+`mikehostetler/ex_mcp` for original ACP message callbacks. The lockfile pins the
+tested commit. The user approved this temporary Git dependency and the current
+Cowlib audit exception. See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
+The Git dependency prevents a Hex package build until the ExMCP change is
+released. Git-based development and validation use the locked PR commit.
 
 ## Execution model
 

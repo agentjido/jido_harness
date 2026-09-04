@@ -1,36 +1,45 @@
-# ACP v3 merge blockers
+# ACP v3 review status
 
-PR #64 contains the implementation for issue #61. It remains a draft because
-the original protocol message gap is unresolved. The Cowlib audit has a
-temporary, user-approved exception for this PR. Harness keeps process and
-lifecycle ownership.
+PR #64 contains the implementation for issue #61. The user approved an ExMCP
+callback PR and use of that branch in Harness to resolve the original-message
+gap. The Cowlib audit has a temporary, user-approved exception for this PR.
+Harness keeps process and lifecycle ownership.
 
 ## Original protocol message
 
-ExMCP 1.2.0 passes only `(session_id, update)` to
-`c:ExMCP.ACP.Client.Handler.handle_session_update/3`. Permission callbacks receive
-the tool call and options, but not the original JSON-RPC envelope. Unknown
-fields in that envelope are therefore unavailable to Harness event mapping.
+The ExMCP Hex 1.2.0 callbacks omit the original JSON-RPC envelope. The temporary
+branch `codex/acp-original-message-context` in `mikehostetler/ex_mcp` adds optional
+`c:ExMCP.ACP.Client.Handler.handle_session_update/4` and
+`c:ExMCP.ACP.Client.Handler.handle_permission_request/5` callbacks. The lockfile
+pins the tested branch commit. Replace this Git dependency with a supported
+Hex release after the upstream change is released.
 
-Harness now keeps the complete received update map in `Event.raw`, including
-fields that are absent from the normalized payload. This is an improvement,
-but it does not restore the full original protocol message. Raw data is kept
-in memory and is not persisted in the event journal.
+Upstream change: [ExMCP PR #32](https://github.com/azmaveth/ex_mcp/pull/32),
+tested commit `4b7b35b945f03a8eca41ea9da4fceceb60d91be2`.
 
-The required upstream change is an optional callback with original-message
-context for session updates and permission requests. Existing callbacks must
-remain compatible. ExMCP must decode and validate each message once, then carry
-the original decoded envelope through its existing handler queue. The context
-must retain unknown top-level and parameter fields. It must not use a second,
-unbounded observer queue or change request IDs and approval semantics.
+The branch is usable as a Git dependency. `mix hex.build` rejects the temporary
+ExMCP Git dependency because Hex packages can depend only on Hex packages.
+The package check remains visible and will require an ExMCP release before
+Harness can be packaged for Hex. No package or release was published.
 
-Upstream tests must cover unknown fields, fragmented input, malformed messages,
-duplicate request IDs, handler ordering, queue limits, and old callback modules.
-Harness must then test that each normalized event has the correct original
-message and that journal redaction and lifecycle behavior are unchanged. Do not
-construct a partial envelope and describe it as the original message.
+ExMCP decodes and validates each message once and carries the original decoded
+map through its existing handler queue. Unknown top-level and parameter fields
+are retained, and the update queue byte limit counts the retained context.
+Old callback modules continue to work. Only one callback handles each event.
 
-Source: [ExMCP 1.2.0 handler contract](https://github.com/azmaveth/ex_mcp/blob/v1.2.0/lib/ex_mcp/acp/client/handler.ex).
+Harness stores this original map in `Event.raw` for updates and permission
+requests. Normalized payloads and Harness IDs remain separate. Raw data is kept
+in memory and is not persisted in the event journal. No second parser or
+observer queue is added to Harness.
+Run and turn results retain raw data from the bounded memory buffer.
+Journal-backed replay and streams still omit it.
+
+ExMCP tests cover unknown fields, malformed messages, session authority,
+duplicate request IDs, callback ordering, queue limits, timeouts, and old
+handlers. Harness tests cover fragmented input, results, replay, streaming,
+turn and approval correlation, journal omission, and lifecycle cleanup.
+
+Source: [ExMCP issue #31](https://github.com/azmaveth/ex_mcp/issues/31).
 
 ## Temporary Cowlib audit exception for PR #64
 
@@ -73,7 +82,7 @@ Harness to the supported release and run `mix hex.audit` again.
 
 A Cowlib update alone is not currently sufficient. Do not hide the advisories
 with an ignore option, an unverified Git revision, or an aggregate CI result.
-No upstream change or dependency release is included in this Harness PR.
+No HTTP-adapter change or dependency release is included in this Harness PR.
 
 Sources: [Cowlib releases](https://hex.pm/packages/cowlib),
 [ExMCP PR #21 reviewed dependency declaration](https://github.com/azmaveth/ex_mcp/blob/5aead0f3f4399047647ba000a3586b95feb6d069/mix.exs#L100),

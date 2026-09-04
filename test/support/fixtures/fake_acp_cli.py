@@ -26,8 +26,11 @@ def complete_prompt(request_id, text="fixture-ok", stop_reason="end_turn"):
         {
             "jsonrpc": "2.0",
             "method": "session/update",
+            "providerEnvelope": {"trace": "fixture-envelope", "secret": "raw-only-secret"},
+            "fixturePromptId": request_id,
             "params": {
                 "sessionId": session_id,
+                "providerParameter": "fixture-parameter",
                 "update": {
                     "sessionUpdate": "agent_message_chunk",
                     "content": {"type": "text", "text": text},
@@ -60,8 +63,10 @@ def request_permission():
             "jsonrpc": "2.0",
             "id": 99,
             "method": "session/request_permission",
+            "providerEnvelope": {"trace": "permission-envelope"},
             "params": {
                 "sessionId": session_id,
+                "providerParameter": "permission-parameter",
                 "toolCall": {"toolCallId": "tool-1", "title": "Fixture tool"},
                 "options": [
                     {"optionId": "allow-once", "name": "Allow once", "kind": "allow_once"},

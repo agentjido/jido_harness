@@ -226,7 +226,7 @@ defmodule Jido.Harness.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:erlexec, "~> 2.3"},
-      {:ex_mcp, "~> 1.0"},
+      {:ex_mcp, github: "mikehostetler/ex_mcp", branch: "codex/acp-original-message-context"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

@@ -35,12 +35,25 @@ defmodule Jido.Harness.ACPProviderTest do
     assert loaded.provider_session_id == "saved-opencode-session"
   end
 
-  test "normalized output retains unknown fields from the ExMCP update" do
+  test "results retain original ACP messages while journal replay and streams omit raw data" do
     assert {:ok, result} = Jido.Harness.run(:grok, "fixture", await_timeout: 5_000)
     event = Enum.find(result.events, &(&1.type == :output_text_delta))
     assert event.payload == %{"text" => "fixture-ok"}
-    assert event.raw["sessionUpdate"] == "agent_message_chunk"
-    assert event.raw["providerExtension"] == %{"trace" => "fixture-trace"}
+    assert event.raw["jsonrpc"] == "2.0"
+    assert event.raw["method"] == "session/update"
+    assert event.raw["providerEnvelope"]["trace"] == "fixture-envelope"
+    assert event.raw["params"]["sessionId"] == result.provider_session_id
+    assert event.raw["params"]["providerParameter"] == "fixture-parameter"
+    assert event.raw["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+    assert event.raw["params"]["update"]["providerExtension"] == %{"trace" => "fixture-trace"}
+    assert {:ok, replay} = Jido.Harness.Run.replay(result.run_id, limit: 100)
+    replayed = Enum.find(replay, &(&1.sequence == event.sequence))
+    assert replayed.payload == event.payload
+    assert replayed.raw == nil
+    assert {:ok, stream} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 1)
+    streamed = Enum.find(stream, &(&1.sequence == event.sequence))
+    assert streamed.payload == event.payload
+    assert streamed.raw == nil
   end
 
   test "all finite provider runs use the same ACP interface" do

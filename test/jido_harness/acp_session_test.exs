@@ -21,10 +21,12 @@ defmodule Jido.Harness.ACPSessionTest do
       File.rm_rf!(journal_dir)
     end)
 
-    :ok
+    {:ok, journal_dir: journal_dir}
   end
 
-  test "ExMCP correlates fragmented responses while Harness owns process and event identity" do
+  test "ExMCP correlates fragmented responses while Harness owns process and event identity", %{
+    journal_dir: journal_dir
+  } do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, %{provider_session_id: "acp-fixture-session"}} = await_ready(session_id)
 
@@ -36,14 +38,29 @@ defmodule Jido.Harness.ACPSessionTest do
     assert %{state: :running, metadata: %{provider: :kimi}} = process
 
     assert {:ok, first_id} = Jido.Harness.Session.send_message(session_id, "first")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Jido.Harness.Session.await(session_id, first_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"} = first_result} =
+             Jido.Harness.Session.await(session_id, first_id, 2_000)
 
     assert {:ok, second_id} = Jido.Harness.Session.send_message(session_id, "invalid frame")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Jido.Harness.Session.await(session_id, second_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"} = second_result} =
+             Jido.Harness.Session.await(session_id, second_id, 2_000)
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
     assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
     refute Enum.any?(events, &(&1.payload["kind"] == "decode_error"))
+    assert Enum.all?(events, &is_nil(&1.raw))
+    output = Enum.filter(first_result.events ++ second_result.events, &(&1.type == :output_text_delta))
+    assert Enum.map(output, & &1.turn_id) == [first_id, second_id]
+    assert length(Enum.uniq(Enum.map(output, & &1.raw["fixturePromptId"]))) == 2
+    assert Enum.all?(output, &(&1.raw["method"] == "session/update"))
+    assert Enum.all?(output, &(&1.raw["providerEnvelope"]["secret"] == "raw-only-secret"))
+
+    journal_files = Path.wildcard(Path.join([journal_dir, "**", "*.jsonl"]))
+    assert journal_files != []
+    journal = Enum.map_join(journal_files, "\n", &File.read!/1)
+    refute journal =~ "raw-only-secret"
     assert :ok = Jido.Harness.Session.close(session_id)
     assert {:ok, %{state: state}} = Jido.Harness.Process.await(process.process_id, 2_000)
     assert state in [:cancelled, :exited]
@@ -67,12 +84,25 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    request_id = Enum.find(events, &(&1.type == :approval_requested)).request_id
+    approval = Enum.find(events, &(&1.type == :approval_requested))
+    request_id = approval.request_id
+    assert approval.turn_id == turn_id
+    assert approval.raw == nil
     assert String.starts_with?(request_id, "request_")
     refute request_id == "99"
     assert :ok = Jido.Harness.Session.respond_approval(session_id, request_id, :approve)
     assert {:error, :not_found} = Jido.Harness.Session.respond_approval(session_id, request_id, :deny)
-    assert {:ok, %{status: :completed, text: "approved"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "approved"} = result} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    approval = Enum.find(result.events, &(&1.type == :approval_requested))
+    assert approval.request_id == request_id
+    assert approval.raw["id"] == 99
+    assert approval.raw["method"] == "session/request_permission"
+    assert approval.raw["providerEnvelope"] == %{"trace" => "permission-envelope"}
+    assert approval.raw["params"]["providerParameter"] == "permission-parameter"
+    assert approval.raw["params"]["toolCall"] == approval.payload["tool_call"]
   end
 
   test "approval timeouts deny the provider request without closing the session" do

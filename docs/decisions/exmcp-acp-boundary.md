@@ -4,8 +4,9 @@ GitHub issue `agentjido/jido_harness#61` owns this migration.
 
 ## Decision
 
-Harness uses stable ExMCP 1.x for all coding-agent messages, protocol
-validation, and protocol request correlation. Both finite runs and stateful
+Harness uses ExMCP 1.x code for all coding-agent messages, protocol validation,
+and protocol request correlation. It temporarily consumes the original-message
+callback PR branch, pinned by the lockfile. Both finite runs and stateful
 sessions use ACP. Harness keeps all stateful coding-agent lifecycle behavior.
 
 The Harness-owned ExMCP transport starts the provider executable through the
@@ -37,11 +38,12 @@ an ExMCP type.
 
 ## Compatibility result
 
-The initial compatibility spike established the lifecycle adapter. The later
-consumer review found an original-message gap in the ExMCP handler contract.
+The original-message gap found during consumer review is addressed by optional
+ExMCP callbacks: `handle_session_update/4` and `handle_permission_request/5`.
+Harness retains their decoded messages in `Event.raw`. ExMCP still parses and
+validates once, checks session authority, and owns protocol request IDs.
 The Cowlib audit findings have a temporary, user-approved exception for PR #64.
-The original-message gap still blocks the PR. See
-[ACP v3 merge blockers](acp-v3-open-gaps.md).
+See [ACP v3 review status](acp-v3-open-gaps.md).
 
 ExMCP requires finite internal request deadlines. Harness sets each ExMCP
 deadline after the related Harness deadline so the Harness timer decides the

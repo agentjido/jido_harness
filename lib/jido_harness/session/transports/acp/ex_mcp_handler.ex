@@ -7,17 +7,27 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPHandler do
 
   @impl true
   def handle_session_update(session_id, update, state) do
-    send(state.transport, {:acp_session_update, session_id, update})
+    handle_session_update(session_id, update, nil, state)
+  end
+
+  @impl true
+  def handle_session_update(session_id, update, message, state) do
+    send(state.transport, {:acp_session_update, session_id, update, message})
     {:ok, state}
   end
 
   @impl true
   def handle_permission_request(session_id, tool_call, options, state) do
+    handle_permission_request(session_id, tool_call, options, nil, state)
+  end
+
+  @impl true
+  def handle_permission_request(session_id, tool_call, options, message, state) do
     ref = make_ref()
 
     send(
       state.transport,
-      {:acp_permission_request, self(), ref, session_id, tool_call, options}
+      {:acp_permission_request, self(), ref, session_id, tool_call, options, message}
     )
 
     receive do

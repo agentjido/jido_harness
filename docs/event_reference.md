@@ -91,11 +91,15 @@ Run and session replay gaps are represented as:
 
 The optional `raw` field can retain the original provider value in memory. Raw
 provider values are not persisted to the JSONL journal.
+Run and turn results can contain raw data while their events remain in the
+memory buffer. Journal-backed replay and streams return `raw: nil`.
 
-For ACP updates, the current ExMCP handler supplies the update map only. The
-complete update is retained in `raw`; it is not the complete JSON-RPC envelope.
-This remaining compatibility gap is described in
-[ACP v3 merge blockers](decisions/acp-v3-open-gaps.md).
+For ACP updates and permission requests, `raw` contains the complete original
+decoded JSON-RPC message from ExMCP. It retains unknown top-level, parameter,
+and update fields. This is the decoded map, not the original JSON bytes.
+Permission events keep their Harness `request_id`; the provider request ID
+remains in `raw["id"]`. The temporary ExMCP PR dependency is described in
+[ACP v3 review status](decisions/acp-v3-open-gaps.md).
 
 `acp_session_configuration` events retain provider session-open configuration
 under `payload["configuration"]`. Their source is `session_open`, before
