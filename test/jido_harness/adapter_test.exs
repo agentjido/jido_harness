@@ -4,6 +4,17 @@ defmodule Jido.Harness.AdapterTest do
   alias Jido.Harness.Adapters.{Amp, Claude, CLIMapper, Codex, Gemini, Grok, JSONMapper, Kimi, OpenCode, Pi, Zai}
   alias Jido.Harness.{Error, Event, RequestResolver, RunRequest}
 
+  test "Claude and Gemini start records retain provider model evidence" do
+    claude = %{"type" => "system", "subtype" => "init", "session_id" => "claude-session", "model" => "claude-effective"}
+    gemini = %{"type" => "init", "session_id" => "gemini-session", "model" => "gemini-effective"}
+
+    assert [%Event{type: :run_started, payload: %{"model" => "claude-effective"}, raw: ^claude}] =
+             CLIMapper.claude(claude)
+
+    assert {[%Event{type: :run_started, payload: %{"model" => "gemini-effective"}, raw: ^gemini}], "gemini-session"} =
+             CLIMapper.gemini(gemini, nil)
+  end
+
   test "Amp builds execute-mode streaming argv with resume and MCP options" do
     request =
       RunRequest.new!(%{

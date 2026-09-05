@@ -5,7 +5,7 @@ defmodule Jido.Harness.Adapters.JSONMapper do
 
   def map(provider, raw) when is_map(raw) do
     type = value(raw, [:type, :event_type, :kind], "") |> to_string() |> String.downcase()
-    session_id = value(raw, [:session_id, :sessionId, :thread_id, :threadId])
+    session_id = value(raw, [:session_id, :sessionId, :sessionID, :thread_id, :threadId])
     text = text(raw)
 
     cond do

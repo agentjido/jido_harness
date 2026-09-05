@@ -52,10 +52,20 @@ defmodule Jido.Harness.RunRequestTest do
              RunRequest.new(prompt: "hello", provider_options: %{model: "shadow"})
   end
 
-  test "rejects invalid workspaces and timeouts before execution" do
-    assert {:error, %Error{category: :validation}} =
-             RunRequest.new(prompt: "hello", cwd: Path.join(System.tmp_dir!(), "missing-jido-harness-cwd"))
+  test "accepts remote workspace paths and rejects malformed paths" do
+    cwd = Path.join(System.tmp_dir!(), "missing-harness-#{System.unique_integer([:positive])}")
+    refute File.exists?(cwd)
+    assert {:ok, %RunRequest{cwd: ^cwd}} = RunRequest.new(prompt: "hello", cwd: cwd)
+    assert {:ok, %SessionRequest{cwd: ^cwd}} = SessionRequest.new(cwd: cwd)
 
+    for path <- ["", nil, "/tmp/invalid\0path"] do
+      assert {:error, %Error{category: :validation}} = RunRequest.new(prompt: "hello", cwd: path)
+      assert {:error, %Error{category: :validation}} = SessionRequest.new(cwd: path)
+      assert {:error, %Error{category: :validation}} = Jido.Harness.ProcessSpec.new(executable: "fixture", cwd: path)
+    end
+  end
+
+  test "rejects invalid timeouts before execution" do
     assert {:error, %Error{category: :validation}} =
              RunRequest.new(prompt: "hello", runtime_timeout_ms: 0)
 

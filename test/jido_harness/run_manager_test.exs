@@ -55,7 +55,8 @@ defmodule Jido.Harness.RunManagerTest do
   end
 
   test "retains provider start details without emitting a second run start" do
-    assert {:ok, result} = Jido.Harness.run(:test, "provider-start", await_timeout: 5_000)
+    assert {:ok, result} =
+             Jido.Harness.run(:test, "provider-start", model: "requested-model", await_timeout: 5_000)
 
     assert Enum.count(result.events, &(&1.type == :run_started)) == 1
 
@@ -66,6 +67,18 @@ defmodule Jido.Harness.RunManagerTest do
                "model" => "fixture-effective-model"
              }
            } = Enum.find(result.events, &(&1.payload["kind"] == "provider_run_started"))
+
+    assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+    assert {:ok, replayed} = Jido.Harness.Run.replay(result.run_id, limit: 100)
+    assert {:ok, stream} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 1)
+    assert replayed == result.events
+    assert Enum.to_list(stream) == replayed
+    refute Enum.any?(replayed, &(&1.payload["model"] == "requested-model"))
+  end
+
+  test "does not report the requested model as provider evidence when the provider omits it" do
+    assert {:ok, result} = Jido.Harness.run(:test, "ok", model: "requested-model", await_timeout: 5_000)
+    refute Enum.any?(result.events, &Map.has_key?(&1.payload, "model"))
   end
 
   test "retains a bounded text tail for large results and marks truncation" do

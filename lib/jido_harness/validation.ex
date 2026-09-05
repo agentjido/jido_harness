@@ -3,6 +3,15 @@ defmodule Jido.Harness.Validation do
 
   alias Jido.Harness.Error
 
+  @spec cwd(term()) :: :ok | {:error, Error.t()}
+  def cwd(path) do
+    if is_binary(path) and byte_size(path) > 0 and not String.contains?(path, <<0>>) do
+      :ok
+    else
+      {:error, Error.validation("cwd must be a non-empty path without null bytes", details: %{cwd: path})}
+    end
+  end
+
   @spec await_timeout(term()) :: :ok | {:error, Error.t()}
   def await_timeout(:infinity), do: :ok
   def await_timeout(timeout) when is_integer(timeout) and timeout >= 0, do: :ok
