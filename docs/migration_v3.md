@@ -6,13 +6,10 @@ paths.
 
 GitHub issue `agentjido/jido_harness#61` owns this change.
 
-PR #64 uses the official ExMCP PR #32 merge commit for ACP message-context
-callbacks. The dependency in `mix.exs` and the lockfile pin the tested upstream
-commit. The user approved this temporary Git dependency and the current Cowlib
-audit exception.
+PR #64 uses ExMCP 1.3 for ACP message-context callbacks. ExMCP 1.3 contains the
+reviewed PR #32 change and passed its release qualification workflow. The
+current Cowlib audit exception remains in effect.
 See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
-The Git dependency prevents a Hex package build until the ExMCP change is
-released. Git-based development and validation use the locked merge commit.
 
 ## Execution model
 
@@ -79,8 +76,8 @@ fields from a 2.x direct-CLI adapter must review this change.
 
 ## Installation
 
-To use PR #64 before a Hex release, add the Git dependency to your application's
-`mix.exs`:
+To test PR #64 before its Harness release, add the Git dependency to your
+application's `mix.exs`:
 
 ```elixir
 {:jido_harness, github: "agentjido/jido_harness", branch: "codex/acp-only-v3"}
@@ -88,15 +85,11 @@ To use PR #64 before a Hex release, add the Git dependency to your application's
 
 Run `mix deps.get` and commit your application's `mix.lock`. For a fixed Harness
 revision, replace `branch:` with `ref:` and the full reviewed Harness commit ID.
-Harness selects ExMCP commit `d43ef8e3c996448f5bb75b83165b611b642360fd` in its
-dependency declaration. This also pins ExMCP for consumers, which do not use
-the Harness repository's lockfile. A separate ExMCP override is not needed
+Harness selects ExMCP `~> 1.3` from Hex. A separate ExMCP override is not needed
 when Harness is its only consumer.
 
-If your application already declares ExMCP, align its dependency source and
-revision with this pin. Check other packages that use ExMCP before adding an
-override. Replace the temporary Git dependencies with supported Hex releases
-when they become available, then rerun tests and `mix hex.build`.
+If your application already declares ExMCP, use a compatible Hex requirement.
+Check other packages that use ExMCP before adding an override.
 
 Some base CLIs include ACP. Other providers need a separate ACP adapter.
 
