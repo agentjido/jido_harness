@@ -53,7 +53,9 @@ jobs:
       operation: ${{ inputs.operation || 'auto' }}
       tag_name: ${{ inputs.tag_name || '' }}
       dry_run: ${{ inputs.dry_run || false }}
-      hex_dry_run: ${{ inputs.hex_dry_run || false }}
+      # A tag creates a supported Git reference. Hex publication requires an
+      # explicit workflow dispatch.
+      hex_dry_run: ${{ github.event_name == 'push' || inputs.hex_dry_run || false }}
       skip_tests: ${{ inputs.skip_tests || false }}
       version_override: ${{ inputs.version_override || '' }}
     secrets: inherit
