@@ -1,7 +1,7 @@
 defmodule Jido.Harness.Adapter do
   @moduledoc "Behaviour implemented by built-in and custom harness providers."
 
-  alias Jido.Harness.{AdapterSpec, Event, ProviderStatus, RunRequest}
+  alias Jido.Harness.{AdapterSpec, ProviderStatus, SessionRequest}
 
   @type context :: %{
           required(:run_id) => String.t(),
@@ -13,10 +13,9 @@ defmodule Jido.Harness.Adapter do
         }
 
   @callback spec() :: AdapterSpec.t()
-  @callback run(RunRequest.t(), context()) :: {:ok, Enumerable.t(Event.t())} | {:error, term()}
   @callback status(map()) :: {:ok, ProviderStatus.t()} | {:error, term()}
   @callback install(map(), keyword()) :: {:ok, map()} | {:error, term()}
-  @callback cancel(String.t(), context()) :: :ok | {:error, term()}
+  @callback acp_env(SessionRequest.t(), map()) :: {:ok, map()} | {:error, term()}
 
-  @optional_callbacks install: 2, cancel: 2
+  @optional_callbacks install: 2, acp_env: 2
 end

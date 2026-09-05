@@ -9,12 +9,15 @@ one of those boundaries without duplicating the package's core responsibility.
 | Dependency | Purpose |
 | --- | --- |
 | `erlexec` | monitored subprocesses, stdin, PTY, process groups, and signals |
+| `ex_mcp` | ACP messages, protocol validation, and request correlation |
 | `telemetry` | direct runtime observation boundary |
 | `zoi` | validation and construction of normalized public structs |
-| `jason` | provider JSON/JSONL decoding and journal encoding |
+| `jason` | journal encoding and non-ACP local data |
 
-Every built-in provider uses its official CLI through the Jido.Harness process
-manager. Z.AI uses its officially supported Claude Code environment mapping.
+Every built-in provider uses an ACP agent through the Jido.Harness process
+manager. ExMCP owns ACP protocol behavior. Harness keeps process ownership and
+lifecycle state. Z.AI uses its officially supported Claude Code environment
+mapping.
 The public Zoi schemas are kept compatible across the 0.17 and 0.18 lines so a
 consumer can share the validation runtime already selected by Jido 2.x.
 
@@ -29,7 +32,7 @@ The runtime does not depend on:
 
 Provider SDKs and subprocess wrappers would duplicate responsibilities already
 owned here: option validation, supervision, process groups, timeouts,
-cancellation, JSONL mapping, normalized events, and retention. Adding one
+cancellation, normalized events, and retention. Adding one
 requires a demonstrated capability that the provider's official headless CLI
 cannot express.
 
@@ -50,6 +53,6 @@ protocol compatibility fix. Each provider-related dependency change must pass:
 3. opt-in live tests for affected providers;
 4. documentation, package build, static analysis, and the full unit suite.
 
-Provider-specific records without a canonical mapping remain
-`:provider_event` values. CLI arguments remain structured executable-plus-argv
-data and are never interpolated into a shell command.
+ACP records without a canonical mapping remain `:provider_event` values. CLI
+arguments remain structured executable-plus-argv data and are never
+interpolated into a shell command.

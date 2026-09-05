@@ -3,11 +3,11 @@ defmodule Jido.Harness.ProviderStatus do
   Normalized installation, compatibility, authentication, and readiness status.
 
   Authentication may be `:unknown` when a CLI uses cached login that cannot be
-  proven without a live request. `session_transports` describes the available
-  interactive protocols and their capabilities.
+  proven without a live request. `acp_agent` describes the provider's common
+  interactive ACP entry point.
   """
 
-  alias Jido.Harness.{Capabilities, SessionTransportSpec}
+  alias Jido.Harness.{ACPAgentSpec, Capabilities}
 
   @schema Zoi.struct(
             __MODULE__,
@@ -18,7 +18,8 @@ defmodule Jido.Harness.ProviderStatus do
               authenticated: Zoi.union([Zoi.boolean(), Zoi.literal(:unknown)]) |> Zoi.default(:unknown),
               smoke_ready: Zoi.boolean() |> Zoi.default(false),
               capabilities: Capabilities.schema() |> Zoi.default(%Capabilities{}),
-              session_transports: Zoi.array(SessionTransportSpec.schema()) |> Zoi.default([]),
+              acp_agent: ACPAgentSpec.schema() |> Zoi.nullish(),
+              session_ready: Zoi.boolean() |> Zoi.default(false),
               version: Zoi.string() |> Zoi.nullish(),
               executable: Zoi.string() |> Zoi.nullish(),
               error: Zoi.any() |> Zoi.nullish(),
@@ -57,8 +58,9 @@ defmodule Jido.Harness.ProviderStatus do
   end
 
   @spec ready?(t()) :: boolean()
-  @doc "Returns whether the provider is installed, compatible, and not known to be unauthenticated."
-  def ready?(%__MODULE__{smoke_ready: ready}), do: ready
+  @doc "Returns whether both the provider CLI and its ACP agent are ready."
+  def ready?(%__MODULE__{smoke_ready: smoke_ready, session_ready: session_ready}),
+    do: smoke_ready and session_ready
 
   @doc false
   def finalize(%__MODULE__{} = status) do

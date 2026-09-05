@@ -126,7 +126,7 @@ Some canonical data exists only when the provider supplies it reliably:
 - approval exchange, steering, and dynamic configuration.
 
 Absence is not replaced with invented values. Capability declarations tell a
-caller what the adapter or selected session transport can represent.
+caller what the selected ACP agent can represent.
 
 ### Provider-specific escape hatch
 
@@ -134,22 +134,28 @@ Some provider concepts do not have shared semantics:
 
 - Request-only extensions belong under `provider_options`.
 - Unknown or loss-sensitive output becomes a `:provider_event`.
-- `Event.raw` may retain the original provider value in memory.
+- `Event.raw` may retain the decoded message received at the ACP boundary in
+  memory.
 
 Raw provider values are not persisted to disk journals. Code that consumes
 `provider_options`, `:provider_event`, or `raw` is intentionally provider-aware
 and receives no cross-provider portability guarantee.
 
+For a native ACP provider, `Event.raw` is the decoded ACP message written by
+that provider. For a provider that uses a separate ACP adapter, it is the ACP
+message written by the adapter. An adapter can synthesize that message from a
+different native protocol. Fields that the adapter does not map are not
+available to Harness. `Event.raw` does not promise the provider's unmodified
+native event or the original JSON bytes.
+
 ## Normalization is not equalization
 
-A managed session that resumes a new CLI process per turn is not labeled as a
-native persistent session. A provider that cannot enforce workspace-only writes
-does not advertise that sandbox value. An adapter that cannot extract reliable
-usage does not fabricate token counts.
+A provider that cannot enforce workspace-only writes does not advertise that
+sandbox value. An ACP agent that cannot report reliable usage does not
+fabricate token counts.
 
-`AdapterSpec`, `Capabilities`, `SessionTransportSpec`, and
-`InteractionCapabilities` make these differences part of the API rather than
-leaving them as documentation footnotes.
+`AdapterSpec`, `ACPAgentSpec`, and `SessionCapabilities` make these differences
+part of the API rather than leaving them as documentation footnotes.
 
 ## Errors at the boundary
 

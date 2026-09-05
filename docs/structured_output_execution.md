@@ -1,5 +1,9 @@
 # Structured Output Execution Contract
 
+> Version 3 status: unavailable. Current ACP profiles do not advertise
+> structured output. This document records the version 2.1 direct-Codex
+> contract. See [`migration_v3.md`](migration_v3.md).
+
 This contract defines the implemented provider-neutral request, ephemeral schema
 lifecycle, isolation, Codex subscription execution, normalized result, and
 failure behavior for finite schema-constrained Jido.Harness runs. The initial

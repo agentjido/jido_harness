@@ -7,7 +7,7 @@ provider-specific JSON.
 
 The package has two complementary responsibilities:
 
-1. **Normalize provider protocols.** Provider requests and records become
+1. **Normalize ACP activity.** Agent requests and records become
    validated Jido.Harness requests, events, results, statuses, capabilities,
    and errors.
 2. **Own runtime resources.** Runs, sessions, and local processes live under
@@ -42,7 +42,7 @@ provider selection and normalized request
  RunRequest / SessionRequest / TurnRequest
                     │
                     ▼
-       adapter + supervised CLI process
+        ExMCP + supervised ACP process
                     │
                     ▼
        ordered Jido.Harness.Event values
@@ -56,11 +56,9 @@ present only when a provider can supply it. Input escape hatches live under
 `provider_options`; output without a safe canonical mapping uses
 `:provider_event` and `Event.raw`.
 
-This is normalization, not forced equivalence. Jido.Harness does not claim that
-managed follow-up turns are native protocol turns, that unavailable usage is
-zero, or that all sandbox modes mean the same thing on every CLI. Capability
-metadata makes those differences visible and unsupported options fail before
-provider dispatch.
+This is normalization, not forced equivalence. ACP agents can expose different
+capabilities. Capability metadata makes those differences visible, and
+unsupported options fail before provider dispatch.
 
 Read [Normalization and the data model](normalization_and_data_model.md) for
 the stability boundary.

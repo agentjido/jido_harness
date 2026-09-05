@@ -10,6 +10,9 @@ defmodule Jido.Harness.IntegrationCase do
   """
 
   @watchdog_ms 7_200_000
+  @default_live_soak_duration_ms 600_000
+  @default_live_soak_interval_ms 60_000
+  @default_live_soak_turn_timeout_ms 600_000
   @artifact_root "jido_harness_integration_failures"
   @credential_env_names [
     "AI_GATEWAY_API_KEY",
@@ -55,9 +58,10 @@ defmodule Jido.Harness.IntegrationCase do
 
   defmacro __using__(options) do
     provider = Keyword.fetch!(options, :provider)
+    async? = profile() == :soak
 
     quote do
-      use ExUnit.Case, async: false
+      use ExUnit.Case, async: unquote(async?)
       import Jido.Harness.IntegrationCase, only: [harness_contract_tests: 0]
       @jido_harness_provider unquote(provider)
       @moduletag :integration
@@ -226,6 +230,23 @@ defmodule Jido.Harness.IntegrationCase do
           end
         end)
       end
+
+      @tag skip: Jido.Harness.IntegrationCase.skip_reason(@jido_harness_provider, :soak)
+      test "#{@jido_harness_provider} keeps one live ACP session healthy under soak" do
+        provider = @jido_harness_provider
+
+        Jido.Harness.IntegrationCase.with_ready_provider(provider, fn _spec ->
+          case Jido.Harness.IntegrationCase.live_soak!(provider) do
+            nil ->
+              :ok
+
+            summary ->
+              assert summary.turns > 0
+              assert summary.provider_session_id
+              assert summary.protocol == :acp
+          end
+        end)
+      end
     end
   end
 
@@ -263,6 +284,9 @@ defmodule Jido.Harness.IntegrationCase do
 
       kind == :interactive and profile() != :interactive ->
         "interactive profile not selected"
+
+      kind == :soak and profile() != :soak ->
+        "live soak profile not selected"
 
       strict?() ->
         false
@@ -366,7 +390,43 @@ defmodule Jido.Harness.IntegrationCase do
   @doc false
   def await_session_ready(provider, session_id, timeout) do
     started = System.monotonic_time(:millisecond)
-    do_await_session_ready(provider, session_id, timeout, started)
+
+    case do_await_session_ready(session_id, timeout, started) do
+      {:ok, _info} = result -> result
+      {:error, reason} -> failure!(provider, nil, {:session_open_failed, reason})
+    end
+  end
+
+  @doc false
+  def live_soak!(provider) do
+    duration_ms = integer_env!(provider, "JIDO_HARNESS_LIVE_SOAK_DURATION_MS", @default_live_soak_duration_ms, 1)
+    interval_ms = integer_env!(provider, "JIDO_HARNESS_LIVE_SOAK_INTERVAL_MS", @default_live_soak_interval_ms, 0)
+
+    turn_timeout_ms =
+      integer_env!(
+        provider,
+        "JIDO_HARNESS_LIVE_SOAK_TURN_TIMEOUT_MS",
+        @default_live_soak_turn_timeout_ms,
+        1
+      )
+
+    max_turns = optional_integer_env!(provider, "JIDO_HARNESS_LIVE_SOAK_MAX_TURNS", 1)
+
+    request = %{
+      metadata: %{integration_profile: "live_acp_soak"},
+      session_idle_timeout_ms: :infinity,
+      turn_runtime_timeout_ms: turn_timeout_ms,
+      turn_idle_timeout_ms: turn_timeout_ms,
+      approval_timeout_ms: min(turn_timeout_ms, 60_000)
+    }
+
+    case Jido.Harness.Session.start(provider, request) do
+      {:ok, session_id} ->
+        live_soak_session(provider, session_id, duration_ms, interval_ms, turn_timeout_ms, max_turns)
+
+      {:error, reason} ->
+        live_unavailable_or_fail(provider, {:session_start_failed, reason})
+    end
   end
 
   @doc false
@@ -441,23 +501,203 @@ defmodule Jido.Harness.IntegrationCase do
     end
   end
 
-  defp do_await_session_ready(provider, session_id, timeout, started) do
+  defp live_soak_session(provider, session_id, duration_ms, interval_ms, turn_timeout_ms, max_turns) do
+    started = System.monotonic_time(:millisecond)
+
+    try do
+      case do_await_session_ready(session_id, turn_timeout_ms, started) do
+        {:ok, _info} ->
+          process_identity = live_agent_process!(provider, session_id)
+          deadline = System.monotonic_time(:millisecond) + duration_ms
+
+          live_soak_turns(
+            provider,
+            session_id,
+            process_identity,
+            deadline,
+            interval_ms,
+            turn_timeout_ms,
+            max_turns,
+            0,
+            nil
+          )
+
+        {:error, reason} ->
+          live_unavailable_or_fail(provider, {:session_open_failed, reason})
+      end
+    after
+      _ = Jido.Harness.Session.close(session_id)
+    end
+  end
+
+  defp live_soak_turns(
+         provider,
+         session_id,
+         process_identity,
+         deadline,
+         interval_ms,
+         turn_timeout_ms,
+         max_turns,
+         completed_turns,
+         provider_session_id
+       ) do
+    number = completed_turns + 1
+    token = "harness-live-soak-#{provider}-#{number}-#{System.unique_integer([:positive])}"
+
+    with {:ok, turn_id} <- Jido.Harness.Session.send_message(session_id, "Reply with exactly: #{token}"),
+         {:ok, result} <- Jido.Harness.Session.await(session_id, turn_id, turn_timeout_ms) do
+      case validate_live_soak_turn(provider, process_identity, result, token, provider_session_id) do
+        {:ok, provider_session_id} ->
+          IO.puts("Live ACP soak #{provider}: turn #{number} completed")
+
+          if live_soak_complete?(number, max_turns, deadline) do
+            live_soak_summary!(provider, session_id, number, provider_session_id)
+          else
+            remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+            Process.sleep(min(interval_ms, remaining))
+
+            if System.monotonic_time(:millisecond) >= deadline do
+              live_soak_summary!(provider, session_id, number, provider_session_id)
+            else
+              live_soak_turns(
+                provider,
+                session_id,
+                process_identity,
+                deadline,
+                interval_ms,
+                turn_timeout_ms,
+                max_turns,
+                number,
+                provider_session_id
+              )
+            end
+          end
+
+        :unavailable ->
+          nil
+      end
+    else
+      {:error, reason} -> live_unavailable_or_fail(provider, {:live_soak_turn_failed, reason})
+    end
+  end
+
+  defp validate_live_soak_turn(provider, process_identity, result, token, expected_session_id) do
+    cond do
+      result.status == :failed and not strict?() and auth_failure?(result.error) ->
+        unavailable!(provider, :credentials_unavailable)
+        :unavailable
+
+      result.status != :completed ->
+        failure!(provider, nil, {:live_soak_turn_status, result.status, result.error})
+
+      not is_binary(result.text) or not String.contains?(result.text, token) ->
+        failure!(provider, nil, {:live_soak_response_mismatch, result.text})
+
+      not is_binary(result.provider_session_id) ->
+        failure!(provider, nil, :live_soak_session_id_missing)
+
+      is_binary(expected_session_id) and result.provider_session_id != expected_session_id ->
+        failure!(provider, nil, :live_soak_session_id_changed)
+
+      not live_agent_running?(process_identity) ->
+        failure!(provider, nil, :live_soak_agent_process_stopped)
+
+      true ->
+        {:ok, expected_session_id || result.provider_session_id}
+    end
+  end
+
+  defp live_soak_complete?(turns, max_turns, deadline) do
+    (is_integer(max_turns) and turns >= max_turns) or System.monotonic_time(:millisecond) >= deadline
+  end
+
+  defp live_soak_summary!(provider, session_id, turns, provider_session_id) do
+    case Jido.Harness.Session.replay(session_id, limit: 10_000) do
+      {:ok, events} ->
+        sequences = Enum.map(events, & &1.sequence)
+        completed = Enum.count(events, &(&1.type == :turn_completed))
+        acp_ready? = Enum.any?(events, &match?(%{type: :session_ready, payload: %{"protocol" => "acp"}}, &1))
+
+        cond do
+          sequences != Enum.sort(sequences) -> failure!(provider, nil, :live_soak_event_order)
+          completed < turns -> failure!(provider, nil, :live_soak_missing_turn_events)
+          not acp_ready? -> failure!(provider, nil, :live_soak_not_acp)
+          true -> %{provider: provider, protocol: :acp, turns: turns, provider_session_id: provider_session_id}
+        end
+
+      {:error, reason} ->
+        failure!(provider, nil, {:live_soak_replay_failed, reason})
+    end
+  end
+
+  defp live_agent_process!(provider, session_id) do
+    case Enum.find(Jido.Harness.Process.list(), fn info ->
+           Map.get(info.metadata, :session_id) == session_id or Map.get(info.metadata, "session_id") == session_id
+         end) do
+      nil -> failure!(provider, nil, :live_soak_agent_process_missing)
+      info -> %{process_id: info.process_id, os_pid: info.os_pid, started_at: info.started_at}
+    end
+  end
+
+  defp live_agent_running?(identity) do
+    case Jido.Harness.Process.info(identity.process_id) do
+      {:ok, info} ->
+        info.state == :running and info.os_pid == identity.os_pid and info.started_at == identity.started_at
+
+      _error ->
+        false
+    end
+  end
+
+  defp live_unavailable_or_fail(provider, reason) do
+    if not strict?() and auth_failure?(reason) do
+      unavailable!(provider, :credentials_unavailable)
+      nil
+    else
+      failure!(provider, nil, reason)
+    end
+  end
+
+  defp integer_env!(provider, name, default, minimum) do
+    case System.get_env(name) do
+      nil -> default
+      "" -> default
+      value -> parse_integer_env!(provider, name, value, minimum)
+    end
+  end
+
+  defp optional_integer_env!(provider, name, minimum) do
+    case System.get_env(name) do
+      nil -> :infinity
+      "" -> :infinity
+      value -> parse_integer_env!(provider, name, value, minimum)
+    end
+  end
+
+  defp parse_integer_env!(provider, name, value, minimum) do
+    case Integer.parse(value) do
+      {number, ""} when number >= minimum -> number
+      _invalid -> failure!(provider, nil, {:invalid_integration_environment, name})
+    end
+  end
+
+  defp do_await_session_ready(session_id, timeout, started) do
     case Jido.Harness.Session.info(session_id) do
       {:ok, %{state: :idle}} = result ->
         result
 
       {:ok, %{state: state, error: error}} when state in [:failed, :closed, :cancelled] ->
-        failure!(provider, nil, {:session_open_failed, error || state})
+        {:error, error || state}
 
       {:error, reason} ->
-        failure!(provider, nil, {:session_open_failed, reason})
+        {:error, reason}
 
       _pending ->
         if System.monotonic_time(:millisecond) - started >= timeout do
-          failure!(provider, nil, {:session_open_timeout, timeout})
+          {:error, {:session_open_timeout, timeout}}
         else
           Process.sleep(25)
-          do_await_session_ready(provider, session_id, timeout, started)
+          do_await_session_ready(session_id, timeout, started)
         end
     end
   end

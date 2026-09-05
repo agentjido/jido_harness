@@ -1,28 +1,17 @@
 defmodule Jido.Harness.Adapters.Zai do
-  @moduledoc "Z.AI GLM Coding Plan adapter using its officially supported Claude Code integration."
+  @moduledoc "Z.AI provider profile using the Claude Code ACP adapter."
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{
     AdapterSpec,
-    Adapters.Claude,
     Adapters.Helpers,
     Capabilities,
     Error,
-    ProviderStatus,
-    RunRequest
+    ProviderStatus
   }
 
   @base_url "https://api.z.ai/api/anthropic"
-  @provider_options [
-    :cli_path,
-    :fallback_model,
-    :max_budget_usd,
-    :fork_session,
-    :settings,
-    :betas,
-    :base_url,
-    :api_timeout_ms
-  ]
+  @provider_options [:base_url, :api_timeout_ms]
 
   @impl true
   def spec do
@@ -39,44 +28,27 @@ defmodule Jido.Harness.Adapters.Zai do
         resume?: true,
         usage?: true
       },
-      default_session_transport: :stream_json_resume,
-      session_transports: [Jido.Harness.SessionTransportSpec.managed(:stream_json_resume)],
+      acp_agent:
+        Jido.Harness.ACPAgentSpec.adapter(
+          "claude-agent-acp",
+          "@agentclientprotocol/claude-agent-acp@0.70.0",
+          %{
+            maturity: :experimental,
+            capabilities: %{load_session: true, multimodal: true, dynamic_model: true, usage: true},
+            turn_options: [:attachments, :content],
+            session_provider_options: :adapter,
+            configuration_options: [:model]
+          }
+        ),
       normalized_options: [
         :model,
         :provider_session_id,
-        :max_turns,
-        :system_prompt,
-        :allowed_tools,
-        :disallowed_tools,
-        :add_dirs,
         :mcp_config,
-        :approval_mode,
-        :sandbox_mode,
-        :reasoning_effort
+        :attachments
       ],
-      normalized_values: %{reasoning_effort: [nil, :low, :medium, :high]},
       provider_options: @provider_options,
       install: %{npm: "@anthropic-ai/claude-code"}
     }
-  end
-
-  @impl true
-  def run(%RunRequest{} = request, context) do
-    options = Helpers.provider_options(request.provider_options, @provider_options)
-
-    with {:ok, env} <- resolve_env(request, context.config, options) do
-      request = %{request | env: env}
-      claude_config = context.config |> Map.put(:env, %{}) |> Map.delete("env")
-      context = %{context | config: claude_config}
-
-      case Claude.run(request, context) do
-        {:ok, stream} ->
-          {:ok, Stream.map(stream, &remap_event/1)}
-
-        {:error, %Error{} = error} ->
-          {:error, %{error | provider: :zai}}
-      end
-    end
   end
 
   @impl true
@@ -96,6 +68,12 @@ defmodule Jido.Harness.Adapters.Zai do
 
   @impl true
   def install(_config, options), do: Helpers.install_npm(:zai, "@anthropic-ai/claude-code", options)
+
+  @impl true
+  def acp_env(request, config) do
+    options = Helpers.provider_options(request.provider_options, @provider_options)
+    resolve_env(request, config, options)
+  end
 
   @doc false
   def resolve_env(request, config, options) when is_struct(request) do
@@ -130,8 +108,6 @@ defmodule Jido.Harness.Adapters.Zai do
       {:ok, env}
     end
   end
-
-  defp remap_event(%Jido.Harness.Event{} = event), do: %{event | provider: :zai}
 
   defp validate_base_url(value) when is_binary(value) do
     if String.trim(value) == "" do

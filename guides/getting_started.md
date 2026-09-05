@@ -8,7 +8,7 @@ prompt, and makes one live normalized request.
 ```elixir
 def deps do
   [
-    {:jido_harness, "~> 2.0"}
+    {:jido_harness, "~> 3.0"}
   ]
 end
 ```
@@ -26,9 +26,15 @@ registration.
 
 ## Install and authenticate a provider CLI
 
-Provider CLIs remain responsible for their own authentication. Install and log
-in to at least one supported CLI, then ask Jido.Harness for a non-billable
-status report:
+Provider CLIs remain responsible for authentication. Each provider also needs
+an ACP entry point. Some CLIs include it. Other providers use a separate ACP
+adapter. Preview the required installation:
+
+```elixir
+Jido.Harness.install(:codex, dry_run: true)
+```
+
+Then ask Jido.Harness for a non-billable status report:
 
 ```console
 mix jido_harness.check --providers codex
@@ -39,7 +45,8 @@ The report distinguishes:
 - whether the executable is installed;
 - whether its version is compatible;
 - whether authentication is known, unknown, or unavailable;
-- whether the adapter is ready to attempt a smoke request.
+- whether the ACP executable is present;
+- whether both parts are ready for a request.
 
 Cached-login CLIs may report authentication as `unknown`. This means status
 inspection cannot prove the login state; it does not mean authentication

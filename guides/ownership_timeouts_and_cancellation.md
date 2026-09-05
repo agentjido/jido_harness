@@ -22,7 +22,7 @@ new BEAM instance.
 
 ## Provider-owned processes
 
-The OS process beneath an adapter is owned by its run or session transport.
+The OS process beneath an ACP agent is owned by its run or session lifecycle.
 Abnormal owner termination therefore cancels the complete CLI process group.
 This is different from a public `Jido.Harness.Process`, which remains
 caller-independent until explicitly stopped or pruned.
@@ -68,7 +68,7 @@ turn receives `:turn_interrupted`; the session can accept later input.
 
 `Jido.Harness.Session.close/1` is graceful and produces a closed lifecycle.
 `Jido.Harness.Session.kill/1`
-forcibly cancels the session and transport. Both leave a terminal resource that
+forcibly cancels the session and ACP process. Both leave a terminal resource that
 can be replayed and pruned.
 
 ## Process cancellation escalation

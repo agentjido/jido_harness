@@ -23,13 +23,9 @@ sandbox_modes = [:default, :read_only, :workspace_write, :unrestricted]
 ```
 
 These are requested semantics, not a universal operating-system sandbox.
-Adapters declare which values they can represent. A provider may reject a mode
-or enforce it differently according to its own CLI. Unsupported values fail
-before execution.
-
-For example, Pi can expose a read-only tool set or unrestricted execution but
-cannot enforce workspace-only writes. Its approval behavior also differs from
-providers that display approval prompts.
+ACP profiles declare which values they can represent. A provider may reject a
+mode or enforce it differently in its ACP agent. Unsupported values fail before
+execution.
 
 ## Credentials
 
@@ -47,30 +43,16 @@ Use `false` or `nil` to remove inherited variables when constructing a child
 environment.
 
 For hard isolation, set `env_mode: :replace` on every run or session and provide
-only the minimal environment required by that provider. Replacement mode is
-preserved by finite runs, managed-session turns, ACP sessions, and Pi RPC
-sessions; it prevents ambient host variables from reaching provider
+only the minimal environment required by that provider. Runs and sessions use
+the same ACP process path, so replacement mode has the same meaning in both
+workflows. It prevents ambient host variables from reaching provider
 descendants.
-
-Codex structured runs always replace the child environment with a minimal
-allowlist containing only executable, cached-login location, temporary-file,
-locale, and TLS-certificate variables. API-key and access-token variables are
-not inherited. The CLI reads its ordinary cached subscription authentication;
-the harness does not inspect or copy the credential files.
 
 ## Structured-output isolation
 
-Selecting `structured_output` activates the fixed `:ephemeral_read_only`
-profile. Harness creates a fresh empty working directory, stages the JSON
-Schema in a separate owner-only path, disables session persistence, ignores
-user config and project rules, disables project instruction discovery, uses a
-read-only Codex sandbox with approval policy `never`, and removes the workspace
-after every terminal path.
-
-Structured requests reject session or resume identifiers, extra directories,
-attachments, request environment entries, writable or unrestricted sandboxes,
-interactive approval modes, and provider behavior switches. There is no API,
-alternate-provider, offline, or session fallback.
+No built-in version 3 ACP profile advertises structured output. Harness rejects
+`structured_output` before it starts the agent. Stay on version 2 when the old
+direct-Codex structured-output contract is required.
 
 ## Redaction
 
@@ -92,9 +74,7 @@ must follow the application's data-retention policy.
 ## Provider extensions and project trust
 
 Provider-local settings, MCP servers, extensions, skills, and context files can
-execute or influence provider behavior. Enable them deliberately. Pi in
-particular separates `project_trust` from sandbox mode because project
-extensions execute with full process access.
+execute or influence provider behavior. Enable them deliberately.
 
 ## Additional directories
 

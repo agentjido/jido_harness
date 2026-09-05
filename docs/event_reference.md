@@ -3,7 +3,7 @@
 `Jido.Harness.Event` is the normalized provider-event envelope used by finite
 runs and interactive sessions. Each event contains provider identity, stable
 harness identity, sequence, timestamp, a string-keyed payload, and optional raw
-provider data.
+ACP message data.
 
 ## Run lifecycle
 
@@ -21,7 +21,7 @@ Exactly one run-terminal event is emitted for every terminal run.
 | Event | Meaning |
 | --- | --- |
 | `:session_started` | The harness session worker started |
-| `:session_ready` | The selected transport opened successfully |
+| `:session_ready` | The ACP session opened successfully |
 | `:session_idle` | The session can accept an idle message |
 | `:session_closed` | The session closed gracefully |
 | `:session_failed` | The session failed |
@@ -49,7 +49,7 @@ Every accepted turn receives exactly one turn-terminal event.
 | --- | --- |
 | `:output_text_delta` | Incremental assistant text |
 | `:output_text_final` | Provider-declared final assistant text |
-| `:structured_output` | Schema id and validated JSON value from a successful structured run |
+| `:structured_output` | Reserved structured output value when an ACP agent supports it |
 | `:thinking_delta` | Incremental reasoning/thinking data |
 | `:command_output_delta` | Incremental output from a provider command/tool |
 | `:tool_call` | Normalized tool invocation |
@@ -61,19 +61,16 @@ Every accepted turn receives exactly one turn-terminal event.
 These events are capability-dependent. A provider that cannot supply a
 canonical value does not fabricate it.
 
-For structured runs, `:structured_output` is emitted only after the single
-terminal text has passed the byte ceiling, JSON decoding, and schema
-validation. Its payload is `%{"schema_id" => id, "value" => value}`. Private
-schema paths and resumable provider-session identifiers are omitted.
+No built-in version 3 ACP profile currently advertises structured output.
 
 ## Interaction events
 
 | Event | Meaning |
 | --- | --- |
-| `:approval_requested` | A transport requested an application decision |
+| `:approval_requested` | An ACP agent requested an application decision |
 | `:approval_resolved` | The approval request was resolved |
 
-Approval exchange is available only on transports that declare it.
+Approval exchange is available only on ACP agents that declare it.
 
 ## Provider events and replay gaps
 
@@ -92,8 +89,26 @@ Run and session replay gaps are represented as:
 }
 ```
 
-The optional `raw` field can retain the original provider value in memory. Raw
-provider values are not persisted to the JSONL journal.
+The optional `raw` field can retain the decoded ACP message in memory. Raw
+messages are not persisted to the JSONL journal.
+Run and turn results can contain raw data while their events remain in the
+memory buffer. Journal-backed replay and streams return `raw: nil`.
+
+For ACP updates and permission requests, `raw` contains the complete decoded
+JSON-RPC message received by the ExMCP client. It retains unknown top-level,
+parameter, and update fields from that message. This is the decoded map, not
+the original JSON bytes. For an adapter-backed provider, the adapter constructs
+the ACP message. Provider-native fields that the adapter does not map are not
+present.
+Permission events keep their Harness `request_id`; the provider request ID
+remains in `raw["id"]`. The ExMCP release boundary is described in
+[ACP v3 review status](decisions/acp-v3-open-gaps.md).
+
+`acp_session_configuration` events retain provider session-open configuration
+under `payload["configuration"]`. Their source is `session_open`, before
+requested configuration changes. Later `acp_update` events retain provider
+configuration updates. These records can contain model evidence. A model from
+the caller's request alone is not evidence of the model used by the provider.
 
 ## Event identity
 

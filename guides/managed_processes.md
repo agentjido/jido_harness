@@ -97,7 +97,7 @@ possible.
 Public managed processes survive caller and stream-consumer exits. They remain
 addressable until explicitly pruned or removed by the terminal-resource TTL.
 Provider-owned process workers additionally bind to their owning run or
-transport so an abnormal owner failure cleans up the CLI process group.
+session so an abnormal owner failure cleans up the CLI process group.
 
 See the exact [process management reference](../docs/process_management.md) and
 [Streaming, replay, and retention](streaming_replay_and_retention.md).

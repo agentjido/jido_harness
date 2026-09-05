@@ -2,10 +2,11 @@ defmodule Jido.Harness do
   @moduledoc """
   Normalized, supervised runtime for coding-agent CLIs.
 
-  Jido.Harness translates provider-specific CLI protocols into validated Elixir
-  requests, ordered events, terminal results, readiness information,
-  capabilities, and errors. Built-in adapters cover Amp, Claude Code, Codex,
-  Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI.
+  Jido.Harness runs coding-agent CLIs through one ACP interface and translates
+  ACP activity into validated Elixir requests, ordered events, terminal
+  results, readiness information, capabilities, and errors. Built-in adapters
+  cover Amp, Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and
+  Z.AI.
 
   `run/3` is the simplest entry point. It starts one supervised finite run,
   waits for completion, and returns a `Jido.Harness.RunResult`.
@@ -34,7 +35,7 @@ defmodule Jido.Harness do
 
   alias Jido.Harness.{AdapterSpec, Error, ProviderStatus, Registry, Run, RunRequest, RunResult, Validation}
 
-  @version "2.1.0-rc.2"
+  @version "3.0.0-rc.1"
 
   @type provider :: atom()
   @type request :: String.t() | map() | keyword() | RunRequest.t()
@@ -88,27 +89,48 @@ defmodule Jido.Harness do
     execute(fn run_options -> Run.start(provider, request, run_options) end, options)
   end
 
-  @doc "Returns normalized installation, compatibility, authentication, and session-transport status."
+  @doc "Returns normalized installation, compatibility, authentication, and ACP session status."
   @spec status(provider()) :: result(ProviderStatus.t())
   def status(provider) do
     with {:ok, adapter} <- Registry.lookup(provider),
          {:ok, spec} <- Registry.spec(provider),
-         {:ok, status} <- adapter.status(Registry.provider_config(provider)) do
-      {:ok, %{status | session_transports: spec.session_transports}}
+         config = Registry.provider_config(provider),
+         {:ok, status} <- adapter.status(config) do
+      acp_agent = spec.acp_agent
+      acp_path = config[:acp_path] || config["acp_path"] || (acp_agent && acp_agent.executable)
+      session_ready = not is_nil(acp_agent) and executable_available?(acp_path)
+      {:ok, %{status | acp_agent: acp_agent, session_ready: session_ready}}
     end
   end
 
-  @doc "Performs or previews a provider adapter's explicit installation recipe."
+  @doc "Performs or previews the provider CLI and required ACP adapter installation recipes."
   @spec install(provider(), keyword()) :: result(term())
   def install(provider, options \\ []) do
-    with {:ok, adapter} <- Registry.lookup(provider) do
-      if function_exported?(adapter, :install, 2) do
-        adapter.install(Registry.provider_config(provider), options)
-      else
-        {:error, Error.new(:provider, "provider does not expose an installation recipe", provider: provider)}
+    with {:ok, adapter} <- Registry.lookup(provider),
+         {:ok, spec} <- Registry.spec(provider),
+         {:ok, cli_result} <- install_cli(provider, adapter, options),
+         {:ok, acp_result} <- install_acp_agent(provider, spec.acp_agent, options) do
+      case acp_result do
+        nil -> {:ok, cli_result}
+        result -> {:ok, %{provider: provider, status: result.status, components: %{cli: cli_result, acp: result}}}
       end
     end
   end
+
+  defp install_cli(provider, adapter, options) do
+    if function_exported?(adapter, :install, 2) do
+      adapter.install(Registry.provider_config(provider), options)
+    else
+      {:error, Error.new(:provider, "provider does not expose an installation recipe", provider: provider)}
+    end
+  end
+
+  defp install_acp_agent(_provider, %Jido.Harness.ACPAgentSpec{source: :native}, _options), do: {:ok, nil}
+
+  defp install_acp_agent(provider, %Jido.Harness.ACPAgentSpec{source: :adapter, package: package}, options),
+    do: Jido.Harness.Adapters.Helpers.install_npm(provider, package, options)
+
+  defp install_acp_agent(_provider, nil, _options), do: {:ok, nil}
 
   defp execute(start_run, options) do
     with {:ok, options} <- Validation.keyword_options(options),
@@ -118,4 +140,10 @@ defmodule Jido.Harness do
       Run.await(run_id, await_timeout)
     end
   end
+
+  defp executable_available?(path) when is_binary(path) do
+    (Path.type(path) == :absolute and File.regular?(path)) or not is_nil(System.find_executable(path))
+  end
+
+  defp executable_available?(_path), do: false
 end

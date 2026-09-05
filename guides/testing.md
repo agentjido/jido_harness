@@ -8,7 +8,7 @@ requests during ordinary package startup or default unit tests.
 
 Use deterministic executable fixtures to test:
 
-- JSON/JSONL mapping;
+- ACP framing and normalized update mapping;
 - event ordering and terminal uniqueness;
 - timeouts and cancellation;
 - caller and consumer death;
@@ -72,15 +72,32 @@ Profiles are:
 | `smoke` | readiness and one minimal run |
 | `contract` | canonical events, results, replay, and reattachment |
 | `lifecycle` | caller death, resume, cancellation, and cleanup |
-| `interactive` | live two-turn context through the selected session transport |
+| `interactive` | live two-turn context through the provider ACP entry point |
+| `soak` | one long-lived live ACP session per selected provider |
 
 Set `JIDO_HARNESS_INTEGRATION_STRICT=true` to fail rather than skip when a
 selected provider is unavailable.
 
 ## Soak testing
 
-The deterministic soak profile runs for 65 minutes without contacting a
-provider:
+Run the opt-in live ACP soak for selected providers:
+
+```console
+JIDO_HARNESS_INTEGRATION_PROFILE=soak \
+JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
+mix test --include integration test/integration/providers_test.exs \
+  --timeout 7200000
+```
+
+The default live soak keeps each ACP session open for 10 minutes and sends one
+small turn every minute. Selected provider modules run concurrently. Set
+`JIDO_HARNESS_LIVE_SOAK_DURATION_MS`,
+`JIDO_HARNESS_LIVE_SOAK_INTERVAL_MS`, or
+`JIDO_HARNESS_LIVE_SOAK_MAX_TURNS` for a shorter bounded run. This profile can
+consume paid usage.
+
+The separate deterministic process soak runs for 65 minutes without contacting
+a provider:
 
 ```console
 mix test --include soak test/integration/soak_test.exs --timeout 7200000
@@ -95,7 +112,7 @@ Before releasing an adapter change:
 
 1. run deterministic unit and fixture contracts;
 2. run the live smoke profile for the affected providers;
-3. run lifecycle and interactive profiles when their transports changed;
+3. run lifecycle and interactive profiles when their ACP entry points changed;
 4. run `mix quality`, `mix test`, `mix docs`, and `mix hex.build`.
 
 See the exact [integration testing reference](../docs/integration_testing.md).

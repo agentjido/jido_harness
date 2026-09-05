@@ -11,9 +11,9 @@ not wrap telemetry in Jido Actions or Signals.
 | `[:jido, :harness, :run, :start]` | `system_time` | `run_id`, `provider` |
 | `[:jido, :harness, :run, :event]` | `count` | `run_id`, `provider`, `type` |
 | `[:jido, :harness, :run, :stop]` | `count` | `run_id`, `provider`, `status` |
-| `[:jido, :harness, :session, :start]` | `system_time` | `session_id`, `provider`, `transport` |
+| `[:jido, :harness, :session, :start]` | `system_time` | `session_id`, `provider`, `protocol` |
 | `[:jido, :harness, :session, :event]` | `count` | `session_id`, `provider`, `type` |
-| `[:jido, :harness, :session, :stop]` | `count` | `session_id`, `provider`, `transport`, `status` |
+| `[:jido, :harness, :session, :stop]` | `count` | `session_id`, `provider`, `protocol`, `status` |
 | `[:jido, :harness, :adapter, :start]` | `system_time` | `run_id`, `provider`, `adapter` |
 | `[:jido, :harness, :adapter, :stop]` | native `duration` | `run_id`, `provider`, `adapter`, `status` |
 | `[:jido, :harness, :journal, :error]` | `count` | failure `reason` and sometimes `owner_id` |

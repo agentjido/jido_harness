@@ -29,15 +29,17 @@ from `config :jido_harness, default_provider: ...`.
 `RunRequest` defines the provider-neutral vocabulary:
 
 - prompt, working directory, model, and provider resume ID;
-- maximum turns and runtime/idle timeouts;
+- runtime, idle, and approval timeouts;
 - system prompt, allowed/disallowed tools, additional directories, and MCP
   configuration;
 - approval mode, sandbox mode, attachments, and reasoning effort;
 - child environment plus `env_mode: :overlay | :replace`, in-memory metadata,
   and nested `provider_options`.
 
-The selected adapter declares which non-default fields it supports. Validation
-fails before the CLI starts when a field or value cannot be represented.
+The selected `ACPAgentSpec` declares which non-default fields it supports.
+Validation fails before the ACP process starts when a field or value cannot be
+represented. A finite run sends exactly one ACP turn. `max_turns` is not
+supported in version 3.
 
 ```elixir
 request = %{

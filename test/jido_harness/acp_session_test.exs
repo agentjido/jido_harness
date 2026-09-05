@@ -10,7 +10,7 @@ defmodule Jido.Harness.ACPSessionTest do
     Application.put_env(:jido_harness, :providers, %{kimi: Jido.Harness.Adapters.Kimi})
 
     Application.put_env(:jido_harness, :provider_config, %{
-      kimi: %{cli_path: fixture, retention: %{journal_dir: journal_dir}}
+      kimi: %{acp_path: fixture, retention: %{journal_dir: journal_dir}}
     })
 
     on_exit(fn ->
@@ -21,22 +21,88 @@ defmodule Jido.Harness.ACPSessionTest do
       File.rm_rf!(journal_dir)
     end)
 
-    :ok
+    {:ok, journal_dir: journal_dir}
   end
 
-  test "ACP correlates fragmented JSONL responses and preserves context identity" do
+  test "ExMCP correlates fragmented responses while Harness owns process and event identity", %{
+    journal_dir: journal_dir
+  } do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
-    assert {:ok, %{provider_session_id: "acp-fixture-session", transport: :acp}} = await_ready(session_id)
+    assert {:ok, %{provider_session_id: "acp-fixture-session"}} = await_ready(session_id)
+
+    process =
+      Enum.find(Jido.Harness.Process.list(), fn process ->
+        process.metadata[:session_id] == session_id and process.metadata[:protocol] == :acp
+      end)
+
+    assert %{state: :running, metadata: %{provider: :kimi}} = process
 
     assert {:ok, first_id} = Jido.Harness.Session.send_message(session_id, "first")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Jido.Harness.Session.await(session_id, first_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"} = first_result} =
+             Jido.Harness.Session.await(session_id, first_id, 2_000)
 
     assert {:ok, second_id} = Jido.Harness.Session.send_message(session_id, "invalid frame")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Jido.Harness.Session.await(session_id, second_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"} = second_result} =
+             Jido.Harness.Session.await(session_id, second_id, 2_000)
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.any?(events, &(&1.payload["kind"] == "decode_error"))
+    assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
+    refute Enum.any?(events, &(&1.payload["kind"] == "decode_error"))
+    assert Enum.all?(events, &is_nil(&1.raw))
+    output = Enum.filter(first_result.events ++ second_result.events, &(&1.type == :output_text_delta))
+    assert Enum.map(output, & &1.turn_id) == [first_id, second_id]
+    assert length(Enum.uniq(Enum.map(output, & &1.raw["fixturePromptId"]))) == 2
+    assert Enum.all?(output, &(&1.raw["method"] == "session/update"))
+    assert Enum.all?(output, &(&1.raw["providerEnvelope"]["secret"] == "raw-only-secret"))
+
+    journal_files = Path.wildcard(Path.join([journal_dir, "**", "*.jsonl"]))
+    assert journal_files != []
+    journal = Enum.map_join(journal_files, "\n", &File.read!/1)
+    refute journal =~ "raw-only-secret"
     assert :ok = Jido.Harness.Session.close(session_id)
+    assert {:ok, %{state: state}} = Jido.Harness.Process.await(process.process_id, 2_000)
+    assert state in [:cancelled, :exited]
+  end
+
+  test "ACP loads an existing provider session through ExMCP" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{provider_session_id: "saved-provider-session"})
+
+    assert {:ok, %{provider_session_id: "saved-provider-session"}} = await_ready(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "loaded")
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+  end
+
+  test "turn completion waits for queued ExMCP update callbacks" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_ready(session_id)
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.SessionRegistry, session_id)
+    transport = :sys.get_state(worker).handle
+    client = :sys.get_state(transport).client
+    handler = :sys.get_state(client).handler_pid
+    assert :ok = :sys.suspend(handler)
+
+    on_exit(fn ->
+      if Process.alive?(handler), do: :sys.resume(handler)
+    end)
+
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "fixture")
+
+    assert eventually(fn ->
+             match?(%{pending_prompt_result: {^turn_id, _result}}, :sys.get_state(transport))
+           end)
+
+    assert :ok = :sys.resume(handler)
+
+    assert {:ok, result} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    assert result.status == :completed
+    assert result.text == "fixture-ok"
+    assert result.usage == %{"size" => 10, "used" => 3}
   end
 
   test "ACP translates permission requests and rejects stale responses" do
@@ -46,10 +112,25 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    request_id = Enum.find(events, &(&1.type == :approval_requested)).request_id
+    approval = Enum.find(events, &(&1.type == :approval_requested))
+    request_id = approval.request_id
+    assert approval.turn_id == turn_id
+    assert approval.raw == nil
+    assert String.starts_with?(request_id, "request_")
+    refute request_id == "99"
     assert :ok = Jido.Harness.Session.respond_approval(session_id, request_id, :approve)
     assert {:error, :not_found} = Jido.Harness.Session.respond_approval(session_id, request_id, :deny)
-    assert {:ok, %{status: :completed, text: "approved"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    assert {:ok, %{status: :completed, text: "approved"} = result} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    approval = Enum.find(result.events, &(&1.type == :approval_requested))
+    assert approval.request_id == request_id
+    assert approval.raw["id"] == 99
+    assert approval.raw["method"] == "session/request_permission"
+    assert approval.raw["providerEnvelope"] == %{"trace" => "permission-envelope"}
+    assert approval.raw["params"]["providerParameter"] == "permission-parameter"
+    assert approval.raw["params"]["toolCall"] == approval.payload["tool_call"]
   end
 
   test "approval timeouts deny the provider request without closing the session" do
@@ -63,7 +144,18 @@ defmodule Jido.Harness.ACPSessionTest do
     assert Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["reason"] == "timeout"))
   end
 
-  test "duplicate approval notifications replace their timer without racing the response" do
+  test "ACP cancellation keeps turn and approval lifecycle in Harness" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_ready(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "request approval")
+    assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
+
+    assert :ok = Jido.Harness.Session.interrupt(session_id, turn_id)
+    assert {:ok, %{status: :interrupted}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
+  end
+
+  test "ExMCP rejects a duplicate provider request ID before Harness creates a second approval" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{approval_timeout_ms: 500})
     assert {:ok, _info} = await_ready(session_id)
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "duplicate approval")
@@ -71,18 +163,21 @@ defmodule Jido.Harness.ACPSessionTest do
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
     approvals = Enum.filter(events, &(&1.type == :approval_requested))
-    assert length(approvals) == 2
-    assert Enum.uniq_by(approvals, & &1.request_id) |> length() == 1
+    assert length(approvals) == 1
 
     assert :ok = Jido.Harness.Session.respond_approval(session_id, hd(approvals).request_id, :approve)
-    assert {:ok, %{status: :completed, text: "approved"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
-    Process.sleep(550)
+    assert {:ok, %{status: :completed, text: "denied"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    Process.sleep(50)
+
+    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    approvals = Enum.filter(events, &(&1.type == :approval_requested))
+    assert length(approvals) == 1
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
   end
 
-  test "ACP rejects ignored session and turn options before dispatch" do
-    assert {:error, %Jido.Harness.Error{details: %{field: :model}}} =
-             Jido.Harness.Session.start(:kimi, %{model: "ignored"})
+  test "ACP accepts launch configuration and rejects unsupported turn options" do
+    assert {:ok, configured_id} = Jido.Harness.Session.start(:kimi, %{model: "fixture-model"})
+    assert {:ok, _info} = await_ready(configured_id)
 
     assert {:error, %Jido.Harness.Error{message: "unknown provider option"}} =
              Jido.Harness.Session.start(:kimi, %{provider_options: %{extra_args: ["--unsafe"]}})
@@ -119,6 +214,18 @@ defmodule Jido.Harness.ACPSessionTest do
       _ ->
         Process.sleep(20)
         await_approval(session_id, attempts - 1)
+    end
+  end
+
+  defp eventually(condition, attempts \\ 100)
+  defp eventually(_condition, 0), do: false
+
+  defp eventually(condition, attempts) do
+    if condition.() do
+      true
+    else
+      Process.sleep(10)
+      eventually(condition, attempts - 1)
     end
   end
 

@@ -9,10 +9,12 @@ defmodule Jido.Harness.RequestResolver do
     :cwd,
     :runtime_timeout_ms,
     :idle_timeout_ms,
+    :approval_timeout_ms,
     :env,
     :env_mode,
     :metadata,
-    :provider_options
+    :provider_options,
+    :acp_path
   ]
   @empty_values [nil, [], %{}, :default]
 

@@ -50,11 +50,9 @@ context:
 {:ok, turn} = Jido.Harness.Session.await(session_id, turn_id, 600_000)
 ```
 
-Session transports vary. Some maintain one native persistent protocol process;
-others provide managed multi-turn behavior by resuming a provider session in a
-new supervised process for each turn. Inspect the selected transport's
-capabilities before depending on steering, approvals, attachments, or dynamic
-configuration.
+All sessions use one persistent ACP process. Inspect the provider's
+`ACPAgentSpec.capabilities` before you depend on steering, approvals,
+attachments, or dynamic configuration.
 
 ## Managed local process
 

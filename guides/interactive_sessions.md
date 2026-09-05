@@ -51,10 +51,7 @@ stable across event streaming and later lookup.
   )
 ```
 
-Follow-ups are processed FIFO. A transport may provide native multi-turn
-context or the harness may manage it by resuming the provider between turns.
-Inspect `SessionInfo.transport` and the provider's `SessionTransportSpec` when
-the distinction matters.
+Follow-ups are processed FIFO through the same ACP session.
 
 ## Inspect, stream, and replay
 
@@ -79,7 +76,7 @@ and output events in one ordered sequence.
 ```
 
 Interrupt ends the active turn while preserving a healthy session when the
-transport supports it. The turn receives one `:turn_interrupted` terminal
+ACP agent supports it. The turn receives one `:turn_interrupted` terminal
 event.
 
 ## Steering, approvals, and configuration
@@ -94,7 +91,7 @@ Jido.Harness.Session.configure(session_id, %{model: "new-model"})
 
 Unsupported interactions return a normalized capability error before provider
 dispatch. Do not infer native support from the existence of a public function.
-The selected transport's `InteractionCapabilities` is authoritative.
+The selected `ACPAgentSpec.capabilities` value is authoritative.
 
 ## Close, kill, and prune
 
@@ -104,7 +101,7 @@ The selected transport's `InteractionCapabilities` is authoritative.
 ```
 
 `close/1` is graceful: it resolves pending approvals as denied, stops the
-transport, and emits one terminal session event. `kill/1` forcibly cancels the
+ACP process, and emits one terminal session event. `kill/1` forcibly cancels the
 session. Only terminal sessions can be pruned.
 
 ## Timeouts

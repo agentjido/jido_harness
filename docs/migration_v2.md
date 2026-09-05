@@ -6,11 +6,10 @@ CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI through direct CLI adapters.
 
 This is a clean breaking API.
 
-Jido.Harness is not published on Hex. Before version 3 replaces this line on
-`main`, the reviewed version 2 commit will receive the annotated Git tag
-`v2.1.0-rc.2`. This tag is the supported version 2 reference for Git consumers.
-Use the tested commit `d7aa2a5891907250616726994d17454ba4f8c65e` until the
-tag exists. A version 2 Hex package is not part of this transition plan.
+Jido.Harness is not published on Hex. The annotated Git tag `v2.1.0-rc.2`
+points to merge commit `cea12d9132f0cf954deb329ec81a0e187332edb6`. This tag
+is the supported version 2 reference for Git consumers. A version 2 Hex package
+is not part of this transition plan.
 
 ## Removed boundaries
 

@@ -3,17 +3,18 @@ defmodule Jido.Harness.RunWorker do
   use GenServer, restart: :temporary
 
   alias Jido.Harness.{Buffer, Error, Event, EventLog, RunInfo, RunResult, TextTail, Waiters}
+  alias Jido.Harness.Run.ACP
 
-  def start_link({id, provider, request, adapter, config}) do
+  def start_link({id, provider, request, adapter, acp_agent, session_request, turn_request, config}) do
     GenServer.start_link(
       __MODULE__,
-      {id, provider, request, adapter, config},
+      {id, provider, request, adapter, acp_agent, session_request, turn_request, config},
       name: {:via, Registry, {Jido.Harness.RunRegistry, id}}
     )
   end
 
   @impl true
-  def init({id, provider, request, adapter, config}) do
+  def init({id, provider, request, adapter, acp_agent, session_request, turn_request, config}) do
     Process.flag(:trap_exit, true)
     retention = Map.get(config, :retention, %{}) |> Map.new()
     memory_bytes = Map.get(retention, :memory_bytes, 1_048_576)
@@ -25,7 +26,9 @@ defmodule Jido.Harness.RunWorker do
       config: config,
       telemetry_context: %{run_id: id, provider: provider},
       process_manager: Jido.Harness.ProcessManager,
-      run_owner: self()
+      run_owner: self(),
+      adapter: adapter,
+      acp_agent: acp_agent
     }
 
     state = %{
@@ -33,6 +36,9 @@ defmodule Jido.Harness.RunWorker do
       provider: provider,
       request: request,
       adapter: adapter,
+      acp_agent: acp_agent,
+      session_request: session_request,
+      turn_request: turn_request,
       context: context,
       status: :starting,
       started_at: timestamp(),
@@ -81,7 +87,7 @@ defmodule Jido.Harness.RunWorker do
 
     task =
       Task.Supervisor.async(Jido.Harness.AdapterTaskSupervisor, fn ->
-        invoke_adapter(state.adapter, state.request, state.context, owner)
+        invoke_acp(state.session_request, state.turn_request, state.context, owner)
       end)
 
     {:noreply, state |> Map.put(:task, task) |> schedule_runtime() |> schedule_idle()}
@@ -196,9 +202,9 @@ defmodule Jido.Harness.RunWorker do
     :ok
   end
 
-  defp invoke_adapter(adapter, request, context, owner) do
+  defp invoke_acp(session_request, turn_request, context, owner) do
     try do
-      case adapter.run(request, context) do
+      case ACP.stream(session_request, turn_request, context) do
         {:ok, stream} ->
           if Enumerable.impl_for(stream) do
             Enum.each(stream, fn
@@ -208,7 +214,7 @@ defmodule Jido.Harness.RunWorker do
 
             :ok
           else
-            {:error, Error.execution("adapter run/2 did not return an enumerable", provider: context.provider)}
+            {:error, Error.execution("ACP run did not return an enumerable", provider: context.provider)}
           end
 
         {:error, reason} ->
@@ -216,7 +222,7 @@ defmodule Jido.Harness.RunWorker do
 
         other ->
           {:error,
-           Error.execution("adapter returned an invalid result",
+           Error.execution("ACP run returned an invalid result",
              provider: context.provider,
              details: %{value: inspect(other)}
            )}
@@ -224,14 +230,14 @@ defmodule Jido.Harness.RunWorker do
     rescue
       exception ->
         {:error,
-         Error.execution("adapter execution raised",
+         Error.execution("ACP run raised",
            provider: context.provider,
            cause: exception,
            details: %{message: Exception.message(exception)}
          )}
     catch
       kind, reason ->
-        {:error, Error.execution("adapter execution terminated", provider: context.provider, cause: {kind, reason})}
+        {:error, Error.execution("ACP run terminated", provider: context.provider, cause: {kind, reason})}
     end
   end
 
@@ -354,16 +360,7 @@ defmodule Jido.Harness.RunWorker do
   defp normalize_error(state, reason),
     do: Error.execution("provider run failed", provider: state.provider, run_id: state.id, cause: reason)
 
-  defp maybe_native_cancel(state) do
-    if function_exported?(state.adapter, :cancel, 2) do
-      _ = state.adapter.cancel(state.id, state.context)
-    end
-  rescue
-    _ -> :ok
-  end
-
   defp stop_adapter(state) do
-    maybe_native_cancel(state)
     if state.task, do: Task.shutdown(state.task, 5_000)
     %{state | task: nil}
   end

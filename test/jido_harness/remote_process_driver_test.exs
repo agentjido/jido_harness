@@ -59,14 +59,11 @@ defmodule Jido.Harness.RemoteProcessDriverTest do
   test "finite runs pass remote workspace paths to the driver", %{cwd: cwd} do
     Application.put_env(:jido_harness, :process_driver, RemoteDriver)
     Application.put_env(:jido_harness, :providers, %{opencode: Jido.Harness.Adapters.OpenCode})
-    argv_path = Path.join(System.tmp_dir!(), "harness-argv-#{System.unique_integer([:positive])}.json")
-    on_exit(fn -> File.rm(argv_path) end)
 
-    assert {:ok, %{status: :completed, provider_session_id: "ses_fixture"}} =
+    assert {:ok, %{status: :completed, provider_session_id: "acp-fixture-session"}} =
              Jido.Harness.run(:opencode, "remote",
                cwd: cwd,
-               env: %{"HARNESS_FIXTURE_ARGV" => argv_path},
-               provider_options: %{cli_path: fixture_path("fake_opencode_run.py")},
+               acp_path: fixture_path("fake_acp_cli.py"),
                await_timeout: 5_000
              )
 
@@ -76,7 +73,7 @@ defmodule Jido.Harness.RemoteProcessDriverTest do
   test "ACP sessions pass remote workspace paths to the driver", %{cwd: cwd} do
     Application.put_env(:jido_harness, :process_driver, RemoteDriver)
     Application.put_env(:jido_harness, :providers, %{kimi: Jido.Harness.Adapters.Kimi})
-    Application.put_env(:jido_harness, :provider_config, %{kimi: %{cli_path: fixture_path("fake_acp_cli.py")}})
+    Application.put_env(:jido_harness, :provider_config, %{kimi: %{acp_path: fixture_path("fake_acp_cli.py")}})
 
     assert {:ok, id} = Jido.Harness.Session.start(:kimi, %{cwd: cwd})
     assert_receive {:remote_spec, %ProcessSpec{cwd: ^cwd}}, 1_000

@@ -76,7 +76,7 @@ defmodule Mix.Tasks.JidoHarness.Check do
   end
 
   defp print_report(rows) do
-    Mix.shell().info("provider    installed compatible auth     ready version")
+    Mix.shell().info("provider    installed compatible auth     acp   ready version")
 
     Enum.each(rows, fn
       %{spec: spec, result: {:ok, %ProviderStatus{} = status}} ->
@@ -87,14 +87,15 @@ defmodule Mix.Tasks.JidoHarness.Check do
               status.installed |> answer() |> String.pad_trailing(10),
               status.compatible |> answer() |> String.pad_trailing(11),
               status.authenticated |> answer() |> String.pad_trailing(8),
-              status.smoke_ready |> answer() |> String.pad_trailing(5),
+              status.session_ready |> answer() |> String.pad_trailing(5),
+              ProviderStatus.ready?(status) |> answer() |> String.pad_trailing(5),
               status.version || "-"
             ],
             " "
           )
         )
 
-        unless status.smoke_ready, do: print_install(spec)
+        unless ProviderStatus.ready?(status), do: print_install(spec)
 
       %{spec: spec, result: result} ->
         Mix.shell().error("#{spec.provider}: #{format_error(result)}")
@@ -108,7 +109,11 @@ defmodule Mix.Tasks.JidoHarness.Check do
 
   defp print_install(%AdapterSpec{} = spec) do
     guidance = install_command(spec) || spec.docs_url || "see provider documentation"
-    Mix.shell().info("  install #{spec.provider}: #{guidance}")
+    Mix.shell().info("  install #{spec.provider} CLI: #{guidance}")
+
+    if spec.acp_agent && spec.acp_agent.source == :adapter do
+      Mix.shell().info("  install #{spec.provider} ACP: npm install --global #{spec.acp_agent.package}")
+    end
   end
 
   defp install_command(%AdapterSpec{install: %{npm: package, npm_args: args}})
@@ -129,9 +134,12 @@ defmodule Mix.Tasks.JidoHarness.Check do
             installed: status.installed,
             compatible: status.compatible,
             authenticated: status.authenticated,
-            ready: status.smoke_ready,
+            acp_ready: status.session_ready,
+            ready: ProviderStatus.ready?(status),
             version: status.version,
-            executable: status.executable
+            executable: status.executable,
+            acp_executable: status.acp_agent && status.acp_agent.executable,
+            acp_source: status.acp_agent && status.acp_agent.source
           }
 
         %{spec: spec, result: result} ->
@@ -146,7 +154,7 @@ defmodule Mix.Tasks.JidoHarness.Check do
     if failures != [], do: Mix.raise("harness check failed: #{Enum.join(failures, ",")}")
   end
 
-  defp ready?(%{result: {:ok, %ProviderStatus{smoke_ready: true}}}), do: true
+  defp ready?(%{result: {:ok, %ProviderStatus{} = status}}), do: ProviderStatus.ready?(status)
   defp ready?(_row), do: false
   defp unknown_auth?(%{result: {:ok, %ProviderStatus{authenticated: :unknown}}}), do: true
   defp unknown_auth?(_row), do: false

@@ -2,78 +2,47 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{ApprovalResponse, Event, ProcessEvent, Protocol.JSONL, TurnRequest}
+  alias ExMCP.ACP.Client
+  alias Jido.Harness.{ApprovalResponse, Event, ID, TurnRequest}
+  alias Jido.Harness.SessionAdapters.ACP.{ExMCPHandler, ExMCPTransport}
+
+  @startup_timeout 30_000
+  @handler_flush_timeout 1_000
+  @max_pending_update_markers 32
+  @protocol_timeout_margin 5_000
+  @maximum_protocol_timeout 4_294_967_295
 
   def start_link({request, context}), do: GenServer.start_link(__MODULE__, {request, context})
 
   @impl true
   def init({request, context}) do
-    with {:ok, executable, argv, env} <- command(request, context),
-         {:ok, process_id} <-
-           context.process_manager.start_owned_process(
-             %{
-               executable: executable,
-               argv: argv,
-               cwd: request.cwd,
-               env: context.config |> configured_env() |> Map.merge(env) |> Map.merge(request.env),
-               env_mode: request.env_mode,
-               stdin: true,
-               pty: false,
-               runtime_timeout_ms: :infinity,
-               idle_timeout_ms: :infinity,
-               metadata: %{session_id: context.session_id, provider: context.provider, transport: :acp}
-             },
-             context.owner
-           ),
-         {:ok, stream} <- context.process_manager.stream_process(process_id) do
-      {:ok,
-       %{
-         request: request,
-         context: context,
-         owner: context.owner,
-         provider: context.provider,
-         process_id: process_id,
-         stream: stream,
-         reader: nil,
-         buffer: "",
-         next_id: 1,
-         pending: %{},
-         approvals: %{},
-         provider_session_id: request.provider_session_id,
-         active_turn_id: nil,
-         interrupted_turns: MapSet.new(),
-         closing?: false
-       }, {:continue, :start_reader}}
-    else
-      {:error, reason} -> {:stop, reason}
-    end
+    Process.flag(:trap_exit, true)
+
+    {:ok,
+     %{
+       request: request,
+       context: context,
+       owner: context.owner,
+       provider: context.provider,
+       client: nil,
+       provider_session_id: request.provider_session_id,
+       active_turn_id: nil,
+       prompt_task: nil,
+       pending_updates: :queue.new(),
+       pending_prompt_result: nil,
+       handler_flush_timer: nil,
+       approvals: %{},
+       closing?: false
+     }}
   end
 
   @impl true
-  def handle_continue(:start_reader, state) do
-    parent = self()
-
-    reader =
-      Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
-        Enum.each(state.stream, &send(parent, {:acp_process_event, &1}))
-      end)
-
-    {:noreply, %{state | reader: reader}}
-  end
-
-  @impl true
-  def handle_call({:initialize, request}, from, state) do
-    params = %{
-      "protocolVersion" => 1,
-      "clientCapabilities" => %{
-        "fs" => %{"readTextFile" => false, "writeTextFile" => false},
-        "terminal" => false
-      },
-      "clientInfo" => %{"name" => "jido_harness", "title" => "Jido Harness", "version" => Jido.Harness.version()}
-    }
-
-    with {:ok, state} <- request(state, "initialize", params, {:initialize, from, request}) do
-      {:noreply, state}
+  def handle_call({:initialize, request}, _from, state) do
+    with {:ok, process_spec} <- process_spec(request, state.context) do
+      case start_client(state, process_spec) do
+        {:ok, client} -> initialize_session(client, request, state)
+        {:error, reason} -> {:reply, {:error, reason}, state}
+      end
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -83,29 +52,24 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     do: {:reply, {:error, :busy}, state}
 
   def handle_call({:send, %TurnRequest{} = turn, turn_id}, _from, state) do
-    params = %{"sessionId" => state.provider_session_id, "prompt" => prompt_blocks(turn, state.request.cwd)}
+    client = state.client
+    provider_session_id = state.provider_session_id
+    prompt = prompt_blocks(turn, state.request.cwd)
 
-    case request(state, "session/prompt", params, {:turn, turn_id}) do
-      {:ok, state} -> {:reply, :ok, %{state | active_turn_id: turn_id}}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+    task =
+      Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
+        Client.prompt(client, provider_session_id, prompt, timeout: :infinity)
+      end)
+
+    {:reply, :ok, %{state | active_turn_id: turn_id, prompt_task: task}}
   end
 
   def handle_call({:interrupt, requested}, _from, %{active_turn_id: turn_id} = state)
       when requested in [:active, turn_id] and not is_nil(turn_id) do
-    notification = %{
-      "jsonrpc" => "2.0",
-      "method" => "session/cancel",
-      "params" => %{"sessionId" => state.provider_session_id}
-    }
-
-    case write(state, notification) do
-      :ok ->
-        {:reply, :ok, %{state | active_turn_id: nil, interrupted_turns: MapSet.put(state.interrupted_turns, turn_id)}}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
+    state = state |> deny_pending_approvals() |> cancel_prompt_wait()
+    :ok = Client.cancel(state.client, state.provider_session_id)
+    stop_prompt_task(state.prompt_task)
+    {:reply, :ok, %{state | active_turn_id: nil, prompt_task: nil}}
   end
 
   def handle_call({:interrupt, _turn_id}, _from, state), do: {:reply, {:error, :not_active}, state}
@@ -115,234 +79,330 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       {nil, _approvals} ->
         {:reply, {:error, :unknown_request}, state}
 
-      {%{id: id, params: params}, approvals} ->
-        result = permission_result(params, response)
-        reply = write(state, %{"jsonrpc" => "2.0", "id" => id, "result" => result})
-        {:reply, reply, %{state | approvals: approvals}}
+      {%{handler: handler, ref: ref, options: options}, approvals} ->
+        send(handler, {:jido_harness_approval_response, ref, permission_outcome(options, response)})
+        {:reply, :ok, %{state | approvals: approvals}}
+    end
+  end
+
+  def handle_call({:configure, changes}, _from, state) do
+    case apply_configuration(state.client, state.provider_session_id, changes) do
+      :ok -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call(:close, _from, state) do
-    state = %{state | closing?: true}
-    state = deny_pending_approvals(state)
-
-    if state.provider_session_id && state.active_turn_id do
-      _ =
-        write(state, %{
-          "jsonrpc" => "2.0",
-          "method" => "session/cancel",
-          "params" => %{"sessionId" => state.provider_session_id}
-        })
-    end
-
-    _ = state.context.process_manager.cancel_process(state.process_id)
-    if state.reader, do: Task.shutdown(state.reader, 5_000)
-    {:stop, :normal, :ok, state}
+    state = %{state | closing?: true} |> deny_pending_approvals() |> cancel_prompt_wait()
+    stop_prompt_task(state.prompt_task)
+    stop_client(state.client, state.provider_session_id)
+    {:stop, :normal, :ok, %{state | client: nil, prompt_task: nil, active_turn_id: nil}}
   end
 
   @impl true
-  def handle_info({:acp_process_event, %ProcessEvent{type: :stdout, data: data}}, state) do
-    {records, buffer} = JSONL.push(state.buffer, data)
-    state = Enum.reduce(records, %{state | buffer: buffer}, &handle_record/2)
-    {:noreply, state}
+  def handle_info({:acp_session_update, provider_session_id, update}, state) do
+    pending_update = {provider_session_id, update, state.active_turn_id}
+    {:noreply, %{state | pending_updates: enqueue_pending_update(state.pending_updates, pending_update)}}
   end
 
-  def handle_info({:acp_process_event, %ProcessEvent{type: :stderr, data: data}}, state) do
+  def handle_info({:acp_session_update, provider_session_id, update, message}, state) do
+    {turn_id, pending_updates} =
+      take_pending_update(state.pending_updates, provider_session_id, update, state.active_turn_id)
+
+    update
+    |> map_update()
+    |> Enum.each(fn event ->
+      event = %{
+        event
+        | provider: state.provider,
+          provider_session_id: provider_session_id,
+          turn_id: event.turn_id || turn_id,
+          raw: message
+      }
+
+      Jido.Harness.SessionAdapter.emit(state.owner, event)
+    end)
+
+    {:noreply, state |> Map.put(:pending_updates, pending_updates) |> maybe_finish_prompt()}
+  end
+
+  def handle_info(
+        {:acp_permission_request, handler, ref, _provider_session_id, tool_call, options, message},
+        state
+      ) do
+    request_id = ID.generate("request")
+
+    emit(state, :approval_requested, permission_payload(tool_call, options),
+      request_id: request_id,
+      turn_id: state.active_turn_id,
+      raw: message
+    )
+
+    approval = %{handler: handler, ref: ref, options: options}
+
+    {:noreply,
+     %{
+       state
+       | approvals: Map.put(state.approvals, request_id, approval)
+     }}
+  end
+
+  def handle_info({:acp_process_stderr, data}, state) do
     emit(state, :provider_event, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
     {:noreply, state}
   end
 
-  def handle_info({:acp_process_event, %ProcessEvent{type: type, data: data}}, state)
-      when type in [:failed, :timed_out] do
+  def handle_info({:acp_process_stopped, type, data}, %{closing?: false} = state) do
     if state.active_turn_id do
       emit(state, :turn_failed, %{"error" => inspect(data || type)}, turn_id: state.active_turn_id)
     end
 
-    {:stop, {:process_failed, type}, state}
+    {:stop, {:process_stopped, type}, state}
   end
 
-  def handle_info({:acp_process_event, %ProcessEvent{type: type}}, state) when type in [:exited, :cancelled] do
-    if state.closing?, do: {:noreply, state}, else: {:stop, {:process_exited, type}, state}
-  end
+  def handle_info({:acp_process_stopped, _type, _data}, state), do: {:noreply, state}
 
-  def handle_info({ref, _result}, %{reader: %{ref: ref}} = state) do
+  def handle_info({ref, result}, %{prompt_task: %{ref: ref}, active_turn_id: turn_id} = state) do
     Process.demonitor(ref, [:flush])
-    {:noreply, %{state | reader: nil}}
+    {:noreply, queue_or_finish_prompt(%{state | prompt_task: nil}, turn_id, result)}
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, reason}, %{reader: %{ref: ref}} = state) do
-    if state.closing?, do: {:noreply, %{state | reader: nil}}, else: {:stop, {:reader_exit, reason}, state}
+  def handle_info(
+        {:acp_handler_flush_timeout, token},
+        %{handler_flush_timer: {token, _timer}, pending_prompt_result: {turn_id, result}} = state
+      ) do
+    pending_updates = drop_pending_updates(state.pending_updates, turn_id)
+    {:noreply, complete_prompt(%{state | pending_updates: pending_updates}, turn_id, result)}
   end
 
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{prompt_task: %{ref: ref}, active_turn_id: turn_id} = state) do
+    emit(state, :turn_failed, %{"error" => "ACP prompt worker exited: #{inspect(reason)}"}, turn_id: turn_id)
+    state = cancel_prompt_wait(state)
+    {:noreply, %{state | prompt_task: nil, active_turn_id: nil}}
+  end
+
+  def handle_info({:EXIT, client, reason}, %{client: client, closing?: false} = state) when is_pid(client),
+    do: {:stop, {:ex_mcp_client_exit, reason}, %{state | client: nil}}
+
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
   def handle_info(_message, state), do: {:noreply, state}
 
   @impl true
   def terminate(_reason, state) do
-    if state.process_id, do: state.context.process_manager.cancel_process(state.process_id)
+    state = state |> deny_pending_approvals() |> cancel_prompt_wait()
+    stop_prompt_task(state.prompt_task)
+    stop_client(state.client, state.provider_session_id)
     :ok
   rescue
-    _ -> :ok
+    _exception -> :ok
   end
 
-  defp handle_record({:ok, %{"id" => id} = message}, state) when not is_nil(id) and not is_map_key(message, "method") do
-    case Map.pop(state.pending, id) do
-      {nil, _pending} ->
-        emit(state, :provider_event, %{"kind" => "uncorrelated_response", "message" => message})
-        state
-
-      {{:initialize, from, request}, pending} ->
-        state = %{state | pending: pending}
-
-        case rpc_result(message) do
-          {:ok, _result} -> begin_session(state, from, request)
-          {:error, reason} -> reply_error(state, from, reason)
-        end
-
-      {{:open, from}, pending} ->
-        state = %{state | pending: pending}
-
-        case rpc_result(message) do
-          {:ok, result} ->
-            provider_session_id = result["sessionId"] || result["session_id"]
-
-            if is_binary(provider_session_id) do
-              GenServer.reply(from, {:ok, provider_session_id})
-              %{state | provider_session_id: provider_session_id}
-            else
-              reply_error(state, from, {:invalid_session_response, result})
-            end
-
-          {:error, reason} ->
-            reply_error(state, from, reason)
-        end
-
-      {{:turn, turn_id}, pending} ->
-        state = %{state | pending: pending}
-        finish_prompt(state, turn_id, message)
-    end
-  end
-
-  defp handle_record({:ok, %{"method" => "session/update", "params" => params} = raw}, state) do
-    update = params["update"] || %{}
-    turn_id = state.active_turn_id
-
-    update
-    |> map_update(raw)
-    |> Enum.each(fn event ->
-      event = %{event | provider_session_id: state.provider_session_id, turn_id: event.turn_id || turn_id}
-      Jido.Harness.SessionAdapter.emit(state.owner, event)
-    end)
-
-    state
-  end
-
-  defp handle_record({:ok, %{"method" => "session/request_permission", "id" => id, "params" => params}}, state) do
-    request_id = to_string(id)
-
-    emit(state, :approval_requested, permission_payload(params),
-      request_id: request_id,
-      turn_id: state.active_turn_id
+  defp start_client(state, process_spec) do
+    Client.start_link(
+      transport_mod: ExMCPTransport,
+      harness_transport: [
+        process_manager: state.context.process_manager,
+        process_owner: state.context.owner,
+        process_spec: process_spec,
+        listener: self()
+      ],
+      handler: ExMCPHandler,
+      handler_opts: [transport: self()],
+      client_info: %{
+        "name" => "jido_harness",
+        "title" => "Jido Harness",
+        "version" => Jido.Harness.version()
+      },
+      capabilities: %{
+        "fs" => %{"readTextFile" => false, "writeTextFile" => false},
+        "terminal" => false
+      },
+      event_listener: self(),
+      protocol_version: 1,
+      initialize_timeout: @startup_timeout,
+      pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
+      handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)
     )
-
-    %{state | approvals: Map.put(state.approvals, request_id, %{id: id, params: params})}
   end
 
-  defp handle_record({:ok, %{"method" => method} = raw}, state) do
-    emit(state, :provider_event, %{"kind" => "acp_notification", "method" => method, "message" => raw})
-    state
-  end
-
-  defp handle_record({:ok, raw}, state) do
-    emit(state, :provider_event, %{"kind" => "acp_message", "message" => raw})
-    state
-  end
-
-  defp handle_record({:error, line, reason}, state) do
-    emit(state, :provider_event, %{
-      "kind" => "decode_error",
-      "line" => line,
-      "error" => Exception.message(reason)
-    })
-
-    state
-  end
-
-  defp begin_session(state, from, request) do
-    params = %{"cwd" => request.cwd, "mcpServers" => mcp_servers(request.mcp_config)}
-
-    {method, params} =
-      if is_binary(request.provider_session_id) do
-        {"session/load", Map.put(params, "sessionId", request.provider_session_id)}
-      else
-        {"session/new", params}
-      end
-
-    case request(state, method, params, {:open, from}) do
-      {:ok, state} -> state
-      {:error, reason} -> reply_error(state, from, reason)
-    end
-  end
-
-  defp finish_prompt(state, turn_id, message) do
-    interrupted? = MapSet.member?(state.interrupted_turns, turn_id)
-
-    case rpc_result(message) do
-      {:ok, result} ->
-        type = if interrupted? or result["stopReason"] == "cancelled", do: :turn_interrupted, else: :turn_completed
-        emit(state, type, %{"stop_reason" => result["stopReason"]}, turn_id: turn_id)
-
+  defp initialize_session(client, request, state) do
+    with {:ok, result} <- open_session(client, request),
+         {:ok, provider_session_id} <- provider_session_id(result, request),
+         :ok <- record_session_configuration(state, provider_session_id, result),
+         :ok <- apply_initial_configuration(client, provider_session_id, request, state.context.acp_agent) do
+      {:reply, {:ok, provider_session_id}, %{state | client: client, provider_session_id: provider_session_id}}
+    else
       {:error, reason} ->
-        type = if interrupted?, do: :turn_interrupted, else: :turn_failed
-        emit(state, type, %{"error" => inspect(reason)}, turn_id: turn_id)
+        stop_client(client)
+        {:reply, {:error, reason}, state}
     end
+  end
+
+  defp record_session_configuration(state, provider_session_id, result) do
+    configuration = Map.drop(result, ["sessionId", "session_id"])
+
+    if map_size(configuration) > 0 do
+      emit(%{state | provider_session_id: provider_session_id}, :provider_event, %{
+        "kind" => "acp_session_configuration",
+        "source" => "session_open",
+        "configuration" => configuration
+      })
+    end
+
+    :ok
+  end
+
+  defp open_session(client, request) do
+    options = [mcp_servers: mcp_servers(request.mcp_config)]
+
+    if is_binary(request.provider_session_id) do
+      Client.load_session(client, request.provider_session_id, request.cwd, options)
+    else
+      Client.new_session(client, request.cwd, options)
+    end
+  end
+
+  defp provider_session_id(result, request) do
+    case result["sessionId"] || result["session_id"] || request.provider_session_id do
+      provider_session_id when is_binary(provider_session_id) -> {:ok, provider_session_id}
+      _invalid -> {:error, {:invalid_session_response, result}}
+    end
+  end
+
+  defp finish_prompt(state, turn_id, {:ok, result}) do
+    type = if result["stopReason"] == "cancelled", do: :turn_interrupted, else: :turn_completed
+    emit(state, type, %{"stop_reason" => result["stopReason"]}, turn_id: turn_id)
+    deny_pending_approvals(state)
+  end
+
+  defp finish_prompt(state, turn_id, {:error, reason}) do
+    emit(state, :turn_failed, %{"error" => error_message(reason)}, turn_id: turn_id)
+    deny_pending_approvals(state)
+  end
+
+  defp queue_or_finish_prompt(state, turn_id, result) do
+    if pending_update?(state.pending_updates, turn_id) do
+      token = make_ref()
+      timer = Process.send_after(self(), {:acp_handler_flush_timeout, token}, @handler_flush_timeout)
+
+      %{
+        state
+        | pending_prompt_result: {turn_id, result},
+          handler_flush_timer: {token, timer}
+      }
+    else
+      complete_prompt(state, turn_id, result)
+    end
+  end
+
+  defp maybe_finish_prompt(%{pending_prompt_result: nil} = state), do: state
+
+  defp maybe_finish_prompt(%{pending_prompt_result: {turn_id, result}} = state) do
+    if pending_update?(state.pending_updates, turn_id) do
+      state
+    else
+      complete_prompt(state, turn_id, result)
+    end
+  end
+
+  defp complete_prompt(state, turn_id, result) do
+    cancel_handler_flush_timer(state.handler_flush_timer)
+    state = finish_prompt(state, turn_id, result)
 
     %{
       state
-      | active_turn_id: if(state.active_turn_id == turn_id, do: nil, else: state.active_turn_id),
-        interrupted_turns: MapSet.delete(state.interrupted_turns, turn_id)
+      | active_turn_id: nil,
+        pending_prompt_result: nil,
+        handler_flush_timer: nil
     }
   end
 
-  defp request(state, method, params, pending_value) do
-    id = state.next_id
-    message = %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}
+  defp take_pending_update(queue, provider_session_id, update, fallback_turn_id) do
+    {before, matched_and_after} =
+      queue
+      |> :queue.to_list()
+      |> Enum.split_while(fn {session_id, queued_update, _turn_id} ->
+        session_id != provider_session_id or queued_update != update
+      end)
 
-    case write(state, message) do
-      :ok -> {:ok, %{state | next_id: id + 1, pending: Map.put(state.pending, id, pending_value)}}
-      {:error, reason} -> {:error, reason}
+    case matched_and_after do
+      [{_session_id, _update, turn_id} | after_match] ->
+        {turn_id, :queue.from_list(before ++ after_match)}
+
+      [] ->
+        {fallback_turn_id, queue}
     end
   end
 
-  defp rpc_result(%{"error" => error}), do: {:error, error}
-  defp rpc_result(%{"result" => result}), do: {:ok, result || %{}}
-  defp rpc_result(message), do: {:error, {:invalid_rpc_response, message}}
+  defp enqueue_pending_update(queue, pending_update) do
+    queue = :queue.in(pending_update, queue)
 
-  defp reply_error(state, from, reason) do
-    GenServer.reply(from, {:error, reason})
-    state
+    if :queue.len(queue) > @max_pending_update_markers do
+      {{:value, _oldest}, queue} = :queue.out(queue)
+      queue
+    else
+      queue
+    end
   end
 
-  defp map_update(%{"sessionUpdate" => type} = update, raw) do
+  defp pending_update?(queue, turn_id) do
+    Enum.any?(:queue.to_list(queue), fn {_session_id, _update, queued_turn_id} ->
+      queued_turn_id == turn_id
+    end)
+  end
+
+  defp drop_pending_updates(queue, turn_id) do
+    queue
+    |> :queue.to_list()
+    |> Enum.reject(fn {_session_id, _update, queued_turn_id} -> queued_turn_id == turn_id end)
+    |> :queue.from_list()
+  end
+
+  defp cancel_handler_flush_timer(nil), do: :ok
+
+  defp cancel_handler_flush_timer({_token, timer}) do
+    Process.cancel_timer(timer, async: true, info: false)
+    :ok
+  end
+
+  defp cancel_prompt_wait(state) do
+    cancel_handler_flush_timer(state.handler_flush_timer)
+
+    pending_updates =
+      if state.active_turn_id do
+        drop_pending_updates(state.pending_updates, state.active_turn_id)
+      else
+        state.pending_updates
+      end
+
+    %{state | pending_updates: pending_updates, pending_prompt_result: nil, handler_flush_timer: nil}
+  end
+
+  defp error_message(%{"message" => message}) when is_binary(message), do: message
+  defp error_message(%{message: message}) when is_binary(message), do: message
+  defp error_message(reason), do: inspect(reason)
+
+  defp map_update(%{"sessionUpdate" => type} = update) do
     case type do
-      "agent_message_chunk" -> text_event(:output_text_delta, update, raw)
-      "agent_thought_chunk" -> text_event(:thinking_delta, update, raw)
-      "tool_call" -> [event(:tool_call, update, raw)]
-      "tool_call_update" -> [event(:tool_result, update, raw)]
-      "plan" -> [event(:plan_updated, update, raw)]
-      "usage_update" -> [event(:usage, Map.drop(update, ["sessionUpdate"]), raw)]
-      _ -> [event(:provider_event, %{"kind" => "acp_update", "update" => update}, raw)]
+      "agent_message_chunk" -> text_event(:output_text_delta, update)
+      "agent_thought_chunk" -> text_event(:thinking_delta, update)
+      "tool_call" -> [event(:tool_call, update)]
+      "tool_call_update" -> [event(:tool_result, update)]
+      "plan" -> [event(:plan_updated, update)]
+      type when type in ["usage", "usage_update"] -> [event(:usage, Map.drop(update, ["sessionUpdate"]))]
+      _other -> [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
     end
   end
 
-  defp map_update(update, raw), do: [event(:provider_event, %{"kind" => "acp_update", "update" => update}, raw)]
+  defp map_update(update), do: [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
 
-  defp text_event(type, update, raw) do
+  defp text_event(type, update) do
     content = update["content"] || %{}
     text = content["text"] || update["text"]
-    if is_binary(text), do: [event(type, %{"text" => text}, raw)], else: [event(:provider_event, update, raw)]
+    if is_binary(text), do: [event(type, %{"text" => text})], else: [event(:provider_event, update)]
   end
 
-  defp event(type, payload, raw), do: Event.new!(type: type, provider: :acp, payload: payload, raw: raw)
+  defp event(type, payload), do: Event.new!(type: type, provider: :acp, payload: payload)
 
   defp emit(state, type, payload, options \\ []) do
     Jido.Harness.SessionAdapter.emit(
@@ -353,41 +413,18 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         provider_session_id: state.provider_session_id,
         turn_id: Keyword.get(options, :turn_id),
         request_id: Keyword.get(options, :request_id),
-        payload: payload
+        payload: payload,
+        raw: Keyword.get(options, :raw)
       )
     )
   end
 
-  defp prompt_blocks(%TurnRequest{} = request, cwd) do
-    blocks =
-      if request.content == [] do
-        [%{"type" => "text", "text" => TurnRequest.text(request)}]
-      else
-        Enum.map(request.content, &stringify_keys/1)
-      end
+  defp permission_payload(tool_call, options), do: %{"tool_call" => tool_call, "options" => options}
 
-    blocks ++
-      Enum.map(request.attachments, fn path ->
-        path = Path.expand(path, cwd)
-        %{"type" => "resource_link", "uri" => file_uri(path), "name" => Path.basename(path)}
-      end)
-  end
-
-  defp permission_payload(params) do
-    %{
-      "tool_call" => params["toolCall"] || params["tool_call"],
-      "options" => params["options"] || []
-    }
-  end
-
-  defp permission_result(params, response) do
-    options = params["options"] || []
-    option = select_permission_option(options, response)
-
-    if option do
-      %{"outcome" => %{"outcome" => "selected", "optionId" => option["optionId"] || option["option_id"]}}
-    else
-      %{"outcome" => %{"outcome" => "cancelled"}}
+  defp permission_outcome(options, response) do
+    case select_permission_option(options, response) do
+      nil -> %{"outcome" => "cancelled"}
+      option -> %{"outcome" => "selected", "optionId" => option["optionId"] || option["option_id"]}
     end
   end
 
@@ -416,41 +453,78 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp deny_pending_approvals(state) do
-    response = %ApprovalResponse{decision: :deny, scope: :once, reason: "session closed", provider_options: %{}}
-
-    Enum.each(state.approvals, fn {_request_id, %{id: id, params: params}} ->
-      _ = write(state, %{"jsonrpc" => "2.0", "id" => id, "result" => permission_result(params, response)})
+    Enum.each(state.approvals, fn {_request_id, approval} ->
+      send(approval.handler, {
+        :jido_harness_approval_response,
+        approval.ref,
+        %{"outcome" => "cancelled"}
+      })
     end)
 
     %{state | approvals: %{}}
   end
 
-  defp command(request, context) do
-    cli_path = option(request.provider_options, :cli_path)
+  defp process_spec(request, context) do
+    acp_agent = context.acp_agent
+    executable = request.acp_path || config_value(context.config, :acp_path) || acp_agent.executable
 
-    case context.provider do
-      :kimi -> {:ok, cli_path || configured_cli(context, "kimi"), ["acp"], %{"KIMI_CODE_NO_AUTO_UPDATE" => "1"}}
-      :opencode -> {:ok, cli_path || configured_cli(context, "opencode"), ["acp"], %{}}
-      provider -> {:error, {:unsupported_acp_provider, provider}}
+    with {:ok, env} <- session_env(request, context) do
+      {:ok,
+       %{
+         executable: executable,
+         argv: acp_agent.argv,
+         cwd: request.cwd,
+         env: env,
+         env_mode: request.env_mode,
+         stdin: true,
+         pty: false,
+         runtime_timeout_ms: :infinity,
+         idle_timeout_ms: :infinity,
+         metadata: %{
+           session_id: context.session_id,
+           run_id: Map.get(context, :run_id),
+           provider: context.provider,
+           protocol: :acp,
+           acp_source: acp_agent.source
+         }
+       }}
     end
   end
 
-  defp configured_cli(context, default) do
-    config = context.config
-    config[:cli_path] || config["cli_path"] || default
+  defp session_env(request, context) do
+    base = context.acp_agent.env |> Map.merge(configured_env(context.config)) |> Map.merge(request.env)
+
+    if function_exported?(context.adapter, :acp_env, 2) do
+      case context.adapter.acp_env(request, context.config) do
+        {:ok, provider_env} -> {:ok, Map.merge(base, provider_env)}
+        {:error, _reason} = error -> error
+      end
+    else
+      {:ok, base}
+    end
   end
 
-  defp configured_env(config) do
-    config[:env] || config["env"] || %{}
-  end
-
-  defp option(options, key), do: Map.get(options, key) || Map.get(options, Atom.to_string(key))
+  defp configured_env(config), do: config[:env] || config["env"] || %{}
+  defp config_value(config, key), do: Map.get(config, key) || Map.get(config, Atom.to_string(key))
   defp mcp_servers(nil), do: []
   defp mcp_servers(value) when is_list(value), do: value
   defp mcp_servers(value) when is_map(value), do: Map.values(value)
   defp mcp_servers(_value), do: []
 
-  defp write(state, value), do: state.context.process_manager.send_input(state.process_id, JSONL.encode(value))
+  defp prompt_blocks(%TurnRequest{} = request, cwd) do
+    blocks =
+      if request.content == [] do
+        [%{"type" => "text", "text" => TurnRequest.text(request)}]
+      else
+        Enum.map(request.content, &stringify_keys/1)
+      end
+
+    blocks ++
+      Enum.map(request.attachments, fn path ->
+        path = Path.expand(path, cwd)
+        %{"type" => "resource_link", "uri" => file_uri(path), "name" => Path.basename(path)}
+      end)
+  end
 
   defp stringify_keys(map) when is_map(map),
     do: Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
@@ -461,5 +535,67 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp file_uri(path) do
     path = Path.expand(path)
     "file://" <> URI.encode(path)
+  end
+
+  defp protocol_timeout(:infinity), do: @maximum_protocol_timeout
+
+  defp protocol_timeout(timeout) when is_integer(timeout) do
+    min(timeout + @protocol_timeout_margin, @maximum_protocol_timeout)
+  end
+
+  defp apply_initial_configuration(client, provider_session_id, request, acp_agent) do
+    changes =
+      acp_agent.configuration_options
+      |> Enum.reduce(%{}, fn field, changes ->
+        case Map.get(request, field) do
+          value when value in [nil, :default] -> changes
+          value -> Map.put(changes, field, value)
+        end
+      end)
+
+    apply_configuration(client, provider_session_id, changes)
+  end
+
+  defp apply_configuration(_client, _provider_session_id, changes) when changes == %{}, do: :ok
+
+  defp apply_configuration(client, provider_session_id, changes) do
+    Enum.reduce_while(changes, :ok, fn
+      {:model, model}, :ok ->
+        continue_configuration(Client.set_model(client, provider_session_id, model))
+
+      {field, value}, :ok ->
+        result = Client.set_config_option(client, provider_session_id, Atom.to_string(field), config_value(value))
+        continue_configuration(result)
+    end)
+  end
+
+  defp continue_configuration({:ok, _result}), do: {:cont, :ok}
+  defp continue_configuration({:error, reason}), do: {:halt, {:error, reason}}
+  defp config_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp config_value(value), do: value
+
+  defp stop_prompt_task(nil), do: :ok
+  defp stop_prompt_task(task), do: Task.shutdown(task, 1_000)
+
+  defp stop_client(client), do: stop_client(client, nil)
+  defp stop_client(nil, _provider_session_id), do: :ok
+
+  defp stop_client(client, provider_session_id) when is_pid(client) do
+    if Process.alive?(client) do
+      if is_binary(provider_session_id), do: safe_end_session(client, provider_session_id)
+      _ = Client.disconnect(client)
+      GenServer.stop(client, :normal, 5_000)
+    end
+
+    :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp safe_end_session(client, provider_session_id) do
+    _ = Client.end_session(client, provider_session_id)
+    :ok
+  catch
+    :exit, _reason -> :ok
   end
 end

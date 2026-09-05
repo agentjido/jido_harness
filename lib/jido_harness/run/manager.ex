@@ -1,18 +1,30 @@
 defmodule Jido.Harness.RunManager do
   @moduledoc false
 
-  alias Jido.Harness.{Await, CursorStream, ID, Registry, RunInfo, RunWorker}
+  alias Jido.Harness.{Await, CursorStream, Error, ID, Registry, RunInfo, RunWorker}
+  alias Jido.Harness.Run.ACP
+  alias Jido.Harness.Session.RequestValidator
 
   @max_replay_limit 10_000
 
   def start(provider, request) do
-    with {:ok, adapter} <- Registry.lookup(provider) do
+    with {:ok, adapter} <- Registry.lookup(provider),
+         {:ok, spec} <- Registry.spec(provider),
+         {:ok, acp_agent} <- require_acp_agent(spec),
+         request = %{request | provider: spec.provider},
+         {:ok, session_request, turn_request} <- ACP.prepare(request, spec, acp_agent),
+         :ok <- Jido.Harness.SessionManager.validate_request(session_request, spec, acp_agent),
+         :ok <-
+           RequestValidator.validate_turn_request(
+             %{provider: provider, adapter: adapter, acp_agent: acp_agent, request: session_request},
+             turn_request
+           ) do
       id = ID.generate("run")
       config = Registry.provider_config(provider)
 
       case DynamicSupervisor.start_child(
              Jido.Harness.RunSupervisor,
-             {RunWorker, {id, provider, request, adapter, config}}
+             {RunWorker, {id, provider, request, adapter, acp_agent, session_request, turn_request, config}}
            ) do
         {:ok, _pid} ->
           {:ok, id}
@@ -25,6 +37,12 @@ defmodule Jido.Harness.RunManager do
            )}
       end
     end
+  end
+
+  defp require_acp_agent(%{acp_agent: %Jido.Harness.ACPAgentSpec{} = acp_agent}), do: {:ok, acp_agent}
+
+  defp require_acp_agent(spec) do
+    {:error, Error.validation("provider does not expose an ACP agent", provider: spec.provider)}
   end
 
   def info(id), do: call(id, :info)

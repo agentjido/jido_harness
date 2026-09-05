@@ -1,7 +1,7 @@
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
-  @version "2.1.0-rc.2"
+  @version "3.0.0-rc.1"
   @source_url "https://github.com/agentjido/jido_harness"
   @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
@@ -10,6 +10,13 @@ defmodule Jido.Harness.MixProject do
       app: :jido_harness,
       version: @version,
       elixir: "~> 1.19",
+      hex: [
+        ignore_advisories: [
+          "EEF-CVE-2026-43966",
+          "EEF-CVE-2026-43969",
+          "EEF-CVE-2026-43971"
+        ]
+      ],
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -47,8 +54,11 @@ defmodule Jido.Harness.MixProject do
           "docs/adapter_contract.md",
           "docs/telemetry.md",
           "docs/dependency_policy.md",
+          "docs/decisions/exmcp-acp-boundary.md",
+          "docs/decisions/acp-v3-open-gaps.md",
           "docs/process_management.md",
           "docs/integration_testing.md",
+          "docs/migration_v3.md",
           "docs/migration_v2.md",
           "docs/structured_output_execution.md",
           "docs/decisions/structured-output-schema-isolation.md",
@@ -89,6 +99,8 @@ defmodule Jido.Harness.MixProject do
             "docs/integration_testing.md",
             "docs/telemetry.md",
             "docs/dependency_policy.md",
+            "docs/decisions/exmcp-acp-boundary.md",
+            "docs/migration_v3.md",
             "docs/migration_v2.md",
             "docs/structured_output_execution.md",
             "docs/decisions/structured-output-schema-isolation.md"
@@ -128,11 +140,11 @@ defmodule Jido.Harness.MixProject do
           "Providers and extension contracts": [
             Jido.Harness.ProviderStatus,
             Jido.Harness.Capabilities,
-            Jido.Harness.InteractionCapabilities,
+            Jido.Harness.SessionCapabilities,
+            Jido.Harness.ACPAgentSpec,
             Jido.Harness.Adapter,
             Jido.Harness.AdapterSpec,
             Jido.Harness.SessionAdapter,
-            Jido.Harness.SessionTransportSpec,
             Jido.Harness.Registry
           ],
           "Built-in adapters": [
@@ -174,6 +186,7 @@ defmodule Jido.Harness.MixProject do
           "config",
           "docs",
           "guides",
+          "examples",
           "lib",
           "livebooks",
           "mix.exs"
@@ -220,6 +233,7 @@ defmodule Jido.Harness.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:erlexec, "~> 2.3"},
+      {:ex_mcp, "~> 1.3"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

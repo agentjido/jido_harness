@@ -65,7 +65,6 @@ defmodule Jido.Harness.Session.EventStore do
       finished_at: state.finished_at,
       error: state.error,
       journal_dir: EventLog.dir(state.journal),
-      transport: state.transport_spec.name,
       output_cursor: state.sequence,
       queued_turns: :queue.len(state.queue),
       pending_approvals: map_size(state.pending_approvals),

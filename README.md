@@ -7,18 +7,16 @@ Jido.Harness is a supervised Elixir runtime for coding-agent CLIs. It turns
 Amp, Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI
 into caller-independent BEAM resources with one normalized API.
 
-Provider-specific protocols are translated into validated requests, terminal
-results, ordered events, readiness information, capabilities, and errors.
-Applications consume ordinary Jido.Harness structs instead of parsing each
-CLI's JSON or depending on provider SDKs.
+All agent work uses ACP through ExMCP. Native ACP CLIs and ACP adapter programs
+have the same Harness execution path. Applications consume Jido.Harness structs
+and do not parse provider protocols.
 
 ## What it provides
 
 - Blocking one-shot requests through `Jido.Harness.run/3`.
 - Detached supervised runs that can be listed, streamed, replayed, awaited,
   cancelled, and pruned by stable ID.
-- Multi-turn sessions with queued follow-ups and transport-aware interaction
-  capabilities.
+- Multi-turn ACP sessions with queued follow-ups and explicit capabilities.
 - Structured local process management using executable plus argv, with stdin,
   PTY, timeouts, process-group cancellation, and retained output.
 - Pull-based cursor streams and bounded replay journals for slow or reconnecting
@@ -33,17 +31,17 @@ restart.
 
 ## Supported providers
 
-| Provider | Atom | CLI | Default session transport |
-| --- | --- | --- | --- |
-| Amp | `:amp` | `amp` | resumed stream JSON |
-| Claude Code | `:claude` | `claude` | resumed stream JSON |
-| Codex | `:codex` | `codex` | resumed exec JSONL |
-| Gemini CLI | `:gemini` | `gemini` | resumed stream JSON |
-| Grok | `:grok` | `grok` | resumed streaming JSON |
-| Kimi Code | `:kimi` | `kimi` | persistent ACP |
-| OpenCode | `:opencode` | `opencode` | persistent ACP |
-| Pi | `:pi` | `pi` | persistent JSONL RPC |
-| Z.AI | `:zai` | `claude` | resumed stream JSON |
+| Provider | Atom | Base CLI | ACP entry point | Source |
+| --- | --- | --- | --- | --- |
+| Amp | `:amp` | `amp` | `amp-acp` | adapter |
+| Claude Code | `:claude` | `claude` | `claude-agent-acp` | adapter |
+| Codex | `:codex` | `codex` | `codex-acp` | adapter |
+| Gemini CLI | `:gemini` | `gemini` | `gemini --acp` | native |
+| Grok | `:grok` | `grok` | `grok agent stdio` | native |
+| Kimi Code | `:kimi` | `kimi` | `kimi acp` | native |
+| OpenCode | `:opencode` | `opencode` | `opencode acp` | native |
+| Pi | `:pi` | `pi` | `pi-acp` | adapter |
+| Z.AI | `:zai` | `claude` | `claude-agent-acp` | adapter |
 
 Provider capabilities and normalized options differ. Jido.Harness advertises
 those differences and rejects unsupported options instead of silently ignoring
@@ -51,26 +49,21 @@ them. See the [provider guide](guides/providers.md).
 
 ## Installation
 
-Jido.Harness is not published on Hex. Install the supported version 2 release
-from its immutable Git tag after that tag is created:
+Jido.Harness is not published on Hex. To test the current version 3 candidate,
+install it from Git and commit the resolved revision in your lockfile:
 
 ```elixir
 def deps do
   [
     {:jido_harness,
      github: "agentjido/jido_harness",
-     tag: "v2.1.0-rc.2"}
+     branch: "main"}
   ]
 end
 ```
 
-Until the tag exists, use the tested maintenance commit:
-
-```elixir
-{:jido_harness,
- github: "agentjido/jido_harness",
- ref: "d7aa2a5891907250616726994d17454ba4f8c65e"}
-```
+The first Hex release will be `3.0.0-rc.1`. The installation example will
+change to a Hex requirement only after that package exists.
 
 The built-in adapters are registered automatically. Configure a default only
 when you want providerless calls:
@@ -91,6 +84,9 @@ Check local CLIs without sending a prompt:
 mix jido_harness.check
 mix jido_harness.check --providers codex,kimi --strict
 ```
+
+`Jido.Harness.install/2` installs the base CLI and its ACP adapter when both
+are required. Use `dry_run: true` to inspect the commands first.
 
 For one optional live smoke request through exactly one provider:
 
@@ -202,9 +198,8 @@ Start with:
 - [Choosing a workflow](guides/choosing_a_workflow.md)
 - [Providers and capabilities](guides/providers.md)
 - [Normalization and the data model](guides/normalization_and_data_model.md)
-- [Structured output execution contract](docs/structured_output_execution.md)
-- [Structured output schema-isolation decision](docs/decisions/structured-output-schema-isolation.md)
-- [W20 Codex structured-output child plan](.spec/planning/w20-codex-structured-output/README.md)
+- [Version 3 migration](docs/migration_v3.md)
+- [ExMCP ACP boundary](docs/decisions/exmcp-acp-boundary.md)
 
 Then follow the workflow guides for
 [one-shot requests](guides/one_shot_requests.md),
