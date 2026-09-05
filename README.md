@@ -57,13 +57,13 @@ def deps do
   [
     {:jido_harness,
      github: "agentjido/jido_harness",
-     branch: "codex/acp-only-v3"}
+     branch: "main"}
   ]
 end
 ```
 
-The first Hex release will use an explicit prerelease version. The installation
-example will change to a Hex requirement only after that package exists.
+The first Hex release will be `3.0.0-rc.1`. The installation example will
+change to a Hex requirement only after that package exists.
 
 The built-in adapters are registered automatically. Configure a default only
 when you want providerless calls:

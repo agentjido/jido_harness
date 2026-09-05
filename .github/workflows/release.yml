@@ -42,7 +42,7 @@ on:
         default: ""
 
 permissions:
-  actions: read
+  actions: write
   contents: write
 
 jobs:

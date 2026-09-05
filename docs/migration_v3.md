@@ -128,21 +128,14 @@ The built-in adapter-backed profiles use exact package versions:
 Stay on Jido.Harness 2.x when an essential CLI has no usable ACP entry point.
 Version 3 does not fall back to a direct provider protocol.
 
-The tested 2.x maintenance commit is
-`d7aa2a5891907250616726994d17454ba4f8c65e` on `codex/harness-2x-maintenance`. It repairs OpenCode finite resume,
+The supported 2.x release is `v2.1.0-rc.2` at merge commit
+`cea12d9132f0cf954deb329ec81a0e187332edb6`. It repairs OpenCode finite resume,
 supports remote working-directory paths, and verifies provider model evidence.
-Use that full commit ID when pinning a dependency. The proposed
-tag is `v2.1.0-rc.2`, matching the source version; no tag or release was created.
-Record the final reviewed commit and create the 2.x reference before merging v3.
+Use the tag when pinning a version 2 dependency.
 
 ## Release sequence
 
-1. Merge the version 2 maintenance PR and verify its final `main` commit.
-2. Create the annotated `v2.1.0-rc.2` tag and a GitHub prerelease from that
-   commit. Create a version 2 maintenance branch if version 2 will receive more
-   fixes. Do not publish version 2 to Hex as part of this transition.
-3. Update this guide with the final tag and commit, then merge the version 3
-   change.
-4. Publish `3.0.0-rc.1` as the first Hex package only after explicit release
+1. Merge the version 3 change after its required checks pass.
+2. Publish `3.0.0-rc.1` as the first Hex package only after explicit release
    approval. A tag push validates the package with a Hex dry run. A separate
    release workflow dispatch performs the real Hex publication.
