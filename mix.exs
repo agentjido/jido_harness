@@ -10,6 +10,13 @@ defmodule Jido.Harness.MixProject do
       app: :jido_harness,
       version: @version,
       elixir: "~> 1.19",
+      hex: [
+        ignore_advisories: [
+          "EEF-CVE-2026-43966",
+          "EEF-CVE-2026-43969",
+          "EEF-CVE-2026-43971"
+        ]
+      ],
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),

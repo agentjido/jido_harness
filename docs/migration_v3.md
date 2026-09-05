@@ -80,11 +80,11 @@ Jido.Harness is not published on Hex. Version 2 remains available through an
 immutable Git tag during the transition. Version 3 will be the first planned
 Hex release line.
 
-To test PR #64 before its Harness release, add the Git dependency to your
-application's `mix.exs`:
+To test version 3 before its Harness Hex release, add the Git dependency to
+your application's `mix.exs`:
 
 ```elixir
-{:jido_harness, github: "agentjido/jido_harness", branch: "codex/acp-only-v3"}
+{:jido_harness, github: "agentjido/jido_harness", branch: "main"}
 ```
 
 Run `mix deps.get` and commit your application's `mix.lock`. For a fixed Harness
@@ -136,6 +136,7 @@ Use the tag when pinning a version 2 dependency.
 ## Release sequence
 
 1. Merge the version 3 change after its required checks pass.
-2. Publish `3.0.0-rc.1` as the first Hex package only after explicit release
-   approval. A tag push validates the package with a Hex dry run. A separate
-   release workflow dispatch performs the real Hex publication.
+2. Create the annotated `v3.0.0-rc.1` Git tag from the reviewed merge revision.
+   A tag push runs the release checks and a Hex package dry run.
+3. Publish that same tag as the first Hex package only after explicit release
+   approval. A separate release workflow dispatch performs the publication.
