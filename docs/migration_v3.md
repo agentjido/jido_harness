@@ -76,6 +76,10 @@ fields from a 2.x direct-CLI adapter must review this change.
 
 ## Installation
 
+Jido.Harness is not published on Hex. Version 2 remains available through an
+immutable Git tag during the transition. Version 3 will be the first planned
+Hex release line.
+
 To test PR #64 before its Harness release, add the Git dependency to your
 application's `mix.exs`:
 
@@ -130,3 +134,15 @@ supports remote working-directory paths, and verifies provider model evidence.
 Use that full commit ID when pinning a dependency. The proposed
 tag is `v2.1.0-rc.2`, matching the source version; no tag or release was created.
 Record the final reviewed commit and create the 2.x reference before merging v3.
+
+## Release sequence
+
+1. Merge the version 2 maintenance PR and verify its final `main` commit.
+2. Create the annotated `v2.1.0-rc.2` tag and a GitHub prerelease from that
+   commit. Create a version 2 maintenance branch if version 2 will receive more
+   fixes. Do not publish version 2 to Hex as part of this transition.
+3. Update this guide with the final tag and commit, then merge the version 3
+   change.
+4. Publish `3.0.0-rc.1` as the first Hex package only after explicit release
+   approval. A tag push validates the package with a Hex dry run. A separate
+   release workflow dispatch performs the real Hex publication.

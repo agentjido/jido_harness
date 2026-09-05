@@ -1,9 +1,7 @@
 # Jido.Harness
 
-[![Hex.pm](https://img.shields.io/hexpm/v/jido_harness.svg)](https://hex.pm/packages/jido_harness)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/jido_harness/)
 [![CI](https://github.com/agentjido/jido_harness/actions/workflows/ci.yml/badge.svg)](https://github.com/agentjido/jido_harness/actions/workflows/ci.yml)
-[![License](https://img.shields.io/hexpm/l/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/agentjido/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
 
 Jido.Harness is a supervised Elixir runtime for coding-agent CLIs. It turns
 Amp, Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI
@@ -51,13 +49,21 @@ them. See the [provider guide](guides/providers.md).
 
 ## Installation
 
+Jido.Harness is not published on Hex. To test the current version 3 candidate,
+install it from Git and commit the resolved revision in your lockfile:
+
 ```elixir
 def deps do
   [
-    {:jido_harness, "~> 3.0"}
+    {:jido_harness,
+     github: "agentjido/jido_harness",
+     branch: "codex/acp-only-v3"}
   ]
 end
 ```
+
+The first Hex release will use an explicit prerelease version. The installation
+example will change to a Hex requirement only after that package exists.
 
 The built-in adapters are registered automatically. Configure a default only
 when you want providerless calls:
