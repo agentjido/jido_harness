@@ -7,6 +7,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   alias Jido.Harness.SessionAdapters.ACP.{ExMCPHandler, ExMCPTransport}
 
   @startup_timeout 30_000
+  @handler_flush_timeout 1_000
+  @max_pending_update_markers 32
   @protocol_timeout_margin 5_000
   @maximum_protocol_timeout 4_294_967_295
 
@@ -26,6 +28,9 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
        provider_session_id: request.provider_session_id,
        active_turn_id: nil,
        prompt_task: nil,
+       pending_updates: :queue.new(),
+       pending_prompt_result: nil,
+       handler_flush_timer: nil,
        approvals: %{},
        closing?: false
      }}
@@ -61,7 +66,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   def handle_call({:interrupt, requested}, _from, %{active_turn_id: turn_id} = state)
       when requested in [:active, turn_id] and not is_nil(turn_id) do
-    state = deny_pending_approvals(state)
+    state = state |> deny_pending_approvals() |> cancel_prompt_wait()
     :ok = Client.cancel(state.client, state.provider_session_id)
     stop_prompt_task(state.prompt_task)
     {:reply, :ok, %{state | active_turn_id: nil, prompt_task: nil}}
@@ -88,14 +93,22 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   def handle_call(:close, _from, state) do
-    state = %{state | closing?: true} |> deny_pending_approvals()
+    state = %{state | closing?: true} |> deny_pending_approvals() |> cancel_prompt_wait()
     stop_prompt_task(state.prompt_task)
     stop_client(state.client, state.provider_session_id)
     {:stop, :normal, :ok, %{state | client: nil, prompt_task: nil, active_turn_id: nil}}
   end
 
   @impl true
+  def handle_info({:acp_session_update, provider_session_id, update}, state) do
+    pending_update = {provider_session_id, update, state.active_turn_id}
+    {:noreply, %{state | pending_updates: enqueue_pending_update(state.pending_updates, pending_update)}}
+  end
+
   def handle_info({:acp_session_update, provider_session_id, update, message}, state) do
+    {turn_id, pending_updates} =
+      take_pending_update(state.pending_updates, provider_session_id, update, state.active_turn_id)
+
     update
     |> map_update()
     |> Enum.each(fn event ->
@@ -103,14 +116,14 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         event
         | provider: state.provider,
           provider_session_id: provider_session_id,
-          turn_id: event.turn_id || state.active_turn_id,
+          turn_id: event.turn_id || turn_id,
           raw: message
       }
 
       Jido.Harness.SessionAdapter.emit(state.owner, event)
     end)
 
-    {:noreply, state}
+    {:noreply, state |> Map.put(:pending_updates, pending_updates) |> maybe_finish_prompt()}
   end
 
   def handle_info(
@@ -151,12 +164,20 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   def handle_info({ref, result}, %{prompt_task: %{ref: ref}, active_turn_id: turn_id} = state) do
     Process.demonitor(ref, [:flush])
-    state = finish_prompt(state, turn_id, result)
-    {:noreply, %{state | prompt_task: nil, active_turn_id: nil}}
+    {:noreply, queue_or_finish_prompt(%{state | prompt_task: nil}, turn_id, result)}
+  end
+
+  def handle_info(
+        {:acp_handler_flush_timeout, token},
+        %{handler_flush_timer: {token, _timer}, pending_prompt_result: {turn_id, result}} = state
+      ) do
+    pending_updates = drop_pending_updates(state.pending_updates, turn_id)
+    {:noreply, complete_prompt(%{state | pending_updates: pending_updates}, turn_id, result)}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{prompt_task: %{ref: ref}, active_turn_id: turn_id} = state) do
     emit(state, :turn_failed, %{"error" => "ACP prompt worker exited: #{inspect(reason)}"}, turn_id: turn_id)
+    state = cancel_prompt_wait(state)
     {:noreply, %{state | prompt_task: nil, active_turn_id: nil}}
   end
 
@@ -168,7 +189,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   @impl true
   def terminate(_reason, state) do
-    state = deny_pending_approvals(state)
+    state = state |> deny_pending_approvals() |> cancel_prompt_wait()
     stop_prompt_task(state.prompt_task)
     stop_client(state.client, state.provider_session_id)
     :ok
@@ -196,6 +217,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         "fs" => %{"readTextFile" => false, "writeTextFile" => false},
         "terminal" => false
       },
+      event_listener: self(),
       protocol_version: 1,
       initialize_timeout: @startup_timeout,
       pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
@@ -256,6 +278,104 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp finish_prompt(state, turn_id, {:error, reason}) do
     emit(state, :turn_failed, %{"error" => error_message(reason)}, turn_id: turn_id)
     deny_pending_approvals(state)
+  end
+
+  defp queue_or_finish_prompt(state, turn_id, result) do
+    if pending_update?(state.pending_updates, turn_id) do
+      token = make_ref()
+      timer = Process.send_after(self(), {:acp_handler_flush_timeout, token}, @handler_flush_timeout)
+
+      %{
+        state
+        | pending_prompt_result: {turn_id, result},
+          handler_flush_timer: {token, timer}
+      }
+    else
+      complete_prompt(state, turn_id, result)
+    end
+  end
+
+  defp maybe_finish_prompt(%{pending_prompt_result: nil} = state), do: state
+
+  defp maybe_finish_prompt(%{pending_prompt_result: {turn_id, result}} = state) do
+    if pending_update?(state.pending_updates, turn_id) do
+      state
+    else
+      complete_prompt(state, turn_id, result)
+    end
+  end
+
+  defp complete_prompt(state, turn_id, result) do
+    cancel_handler_flush_timer(state.handler_flush_timer)
+    state = finish_prompt(state, turn_id, result)
+
+    %{
+      state
+      | active_turn_id: nil,
+        pending_prompt_result: nil,
+        handler_flush_timer: nil
+    }
+  end
+
+  defp take_pending_update(queue, provider_session_id, update, fallback_turn_id) do
+    {before, matched_and_after} =
+      queue
+      |> :queue.to_list()
+      |> Enum.split_while(fn {session_id, queued_update, _turn_id} ->
+        session_id != provider_session_id or queued_update != update
+      end)
+
+    case matched_and_after do
+      [{_session_id, _update, turn_id} | after_match] ->
+        {turn_id, :queue.from_list(before ++ after_match)}
+
+      [] ->
+        {fallback_turn_id, queue}
+    end
+  end
+
+  defp enqueue_pending_update(queue, pending_update) do
+    queue = :queue.in(pending_update, queue)
+
+    if :queue.len(queue) > @max_pending_update_markers do
+      {{:value, _oldest}, queue} = :queue.out(queue)
+      queue
+    else
+      queue
+    end
+  end
+
+  defp pending_update?(queue, turn_id) do
+    Enum.any?(:queue.to_list(queue), fn {_session_id, _update, queued_turn_id} ->
+      queued_turn_id == turn_id
+    end)
+  end
+
+  defp drop_pending_updates(queue, turn_id) do
+    queue
+    |> :queue.to_list()
+    |> Enum.reject(fn {_session_id, _update, queued_turn_id} -> queued_turn_id == turn_id end)
+    |> :queue.from_list()
+  end
+
+  defp cancel_handler_flush_timer(nil), do: :ok
+
+  defp cancel_handler_flush_timer({_token, timer}) do
+    Process.cancel_timer(timer, async: true, info: false)
+    :ok
+  end
+
+  defp cancel_prompt_wait(state) do
+    cancel_handler_flush_timer(state.handler_flush_timer)
+
+    pending_updates =
+      if state.active_turn_id do
+        drop_pending_updates(state.pending_updates, state.active_turn_id)
+      else
+        state.pending_updates
+      end
+
+    %{state | pending_updates: pending_updates, pending_prompt_result: nil, handler_flush_timer: nil}
   end
 
   defp error_message(%{"message" => message}) when is_binary(message), do: message

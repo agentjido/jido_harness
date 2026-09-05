@@ -77,6 +77,34 @@ defmodule Jido.Harness.ACPSessionTest do
              Jido.Harness.Session.await(session_id, turn_id, 2_000)
   end
 
+  test "turn completion waits for queued ExMCP update callbacks" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_ready(session_id)
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.SessionRegistry, session_id)
+    transport = :sys.get_state(worker).handle
+    client = :sys.get_state(transport).client
+    handler = :sys.get_state(client).handler_pid
+    assert :ok = :sys.suspend(handler)
+
+    on_exit(fn ->
+      if Process.alive?(handler), do: :sys.resume(handler)
+    end)
+
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "fixture")
+
+    assert eventually(fn ->
+             match?(%{pending_prompt_result: {^turn_id, _result}}, :sys.get_state(transport))
+           end)
+
+    assert :ok = :sys.resume(handler)
+
+    assert {:ok, result} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    assert result.status == :completed
+    assert result.text == "fixture-ok"
+    assert result.usage == %{"size" => 10, "used" => 3}
+  end
+
   test "ACP translates permission requests and rejects stale responses" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, _info} = await_ready(session_id)
@@ -186,6 +214,18 @@ defmodule Jido.Harness.ACPSessionTest do
       _ ->
         Process.sleep(20)
         await_approval(session_id, attempts - 1)
+    end
+  end
+
+  defp eventually(condition, attempts \\ 100)
+  defp eventually(_condition, 0), do: false
+
+  defp eventually(condition, attempts) do
+    if condition.() do
+      true
+    else
+      Process.sleep(10)
+      eventually(condition, attempts - 1)
     end
   end
 
