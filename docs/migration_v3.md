@@ -129,7 +129,7 @@ Stay on Jido.Harness 2.x when an essential CLI has no usable ACP entry point.
 Version 3 does not fall back to a direct provider protocol.
 
 The tested 2.x maintenance commit is
-`adb3bce52ec97b14547cecc0434660b777e914ac` on `codex/harness-2x-maintenance`. It repairs OpenCode finite resume,
+`d7aa2a5891907250616726994d17454ba4f8c65e` on `codex/harness-2x-maintenance`. It repairs OpenCode finite resume,
 supports remote working-directory paths, and verifies provider model evidence.
 Use that full commit ID when pinning a dependency. The proposed
 tag is `v2.1.0-rc.2`, matching the source version; no tag or release was created.
