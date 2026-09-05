@@ -9,7 +9,7 @@ This is a clean breaking API.
 Jido.Harness is not published on Hex. Before version 3 replaces this line on
 `main`, the reviewed version 2 commit will receive the annotated Git tag
 `v2.1.0-rc.2`. This tag is the supported version 2 reference for Git consumers.
-Use the tested commit `adb3bce52ec97b14547cecc0434660b777e914ac` until the
+Use the tested commit `d7aa2a5891907250616726994d17454ba4f8c65e` until the
 tag exists. A version 2 Hex package is not part of this transition plan.
 
 ## Removed boundaries

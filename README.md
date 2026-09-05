@@ -69,7 +69,7 @@ Until the tag exists, use the tested maintenance commit:
 ```elixir
 {:jido_harness,
  github: "agentjido/jido_harness",
- ref: "adb3bce52ec97b14547cecc0434660b777e914ac"}
+ ref: "d7aa2a5891907250616726994d17454ba4f8c65e"}
 ```
 
 The built-in adapters are registered automatically. Configure a default only
