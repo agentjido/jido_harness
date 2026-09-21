@@ -7,6 +7,7 @@ defmodule Jido.Harness.AdapterTest do
     amp: {"amp-acp", :adapter, "amp-acp@0.9.0", []},
     claude: {"claude-agent-acp", :adapter, "@agentclientprotocol/claude-agent-acp@0.70.0", []},
     codex: {"codex-acp", :adapter, "@agentclientprotocol/codex-acp@1.6.2", []},
+    cursor: {"cursor-agent", :native, nil, ["acp"]},
     gemini: {"gemini", :native, nil, ["--acp"]},
     grok: {"grok", :native, nil, ["agent", "stdio"]},
     kimi: {"kimi", :native, nil, ["acp"]},
@@ -26,6 +27,15 @@ defmodule Jido.Harness.AdapterTest do
                argv: ^argv
              } = spec.acp_agent
     end)
+  end
+
+  test "Cursor declares its ACP login method and bounded normalized options" do
+    assert {:ok, spec} = Registry.spec(:cursor)
+    assert spec.acp_agent.auth_method == "cursor_login"
+    assert spec.normalized_options == [:provider_session_id, :mcp_config]
+    assert spec.acp_agent.capabilities.load_session
+    refute spec.acp_agent.capabilities.dynamic_model
+    refute spec.acp_agent.capabilities.multimodal
   end
 
   test "ACP profiles expose only options that their ACP entry point supports" do

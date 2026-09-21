@@ -3,7 +3,8 @@
 ## Scope
 
 - Use `jido_harness` as the normalization and lifecycle runtime for Amp,
-  Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI.
+  Claude Code, Codex, Cursor CLI, Gemini CLI, Grok, Kimi Code, OpenCode, Pi,
+  and Z.AI.
 - Treat `jido_shell` as unrelated.
 - Do not add provider SDK, Jido, Sprite, Splode, or generic subprocess-wrapper
   dependencies without changing the documented package boundary explicitly.

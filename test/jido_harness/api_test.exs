@@ -51,4 +51,19 @@ defmodule Jido.Harness.APITest do
               }
             }} = Jido.Harness.install(:codex, dry_run: true)
   end
+
+  test "Cursor installation previews the official script without running it" do
+    assert {:ok,
+            %{
+              provider: :cursor,
+              status: :dry_run,
+              recipe: %{
+                source: "https://cursor.com/install",
+                steps: [
+                  %{executable: "curl", argv: ["-fsS", "https://cursor.com/install", "-o", "<temporary-file>"]},
+                  %{executable: "bash", argv: ["<temporary-file>"]}
+                ]
+              }
+            }} = Jido.Harness.install(:cursor, dry_run: true)
+  end
 end

@@ -21,7 +21,8 @@ ACP session, sends prompts through ExMCP, and owns cancellation.
 
 `AdapterSpec` declares provider identity, one `ACPAgentSpec`, normalized request
 options, and installation data. `ACPAgentSpec` declares the executable, argv,
-source, package, maturity, supported options, and `SessionCapabilities`.
+source, package, optional ACP authentication method, maturity, supported
+options, and `SessionCapabilities`.
 
 Declarations are enforced before Harness starts a run or session. An unknown
 field, value, or provider option returns a validation error.

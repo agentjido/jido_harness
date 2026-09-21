@@ -4,8 +4,8 @@
 [![License](https://img.shields.io/github/license/agentjido/jido_harness.svg)](https://github.com/agentjido/jido_harness/blob/main/LICENSE)
 
 Jido.Harness is a supervised Elixir runtime for coding-agent CLIs. It turns
-Amp, Claude Code, Codex, Gemini CLI, Grok, Kimi Code, OpenCode, Pi, and Z.AI
-into caller-independent BEAM resources with one normalized API.
+Amp, Claude Code, Codex, Cursor CLI, Gemini CLI, Grok, Kimi Code, OpenCode, Pi,
+and Z.AI into caller-independent BEAM resources with one normalized API.
 
 All agent work uses ACP through ExMCP. Native ACP CLIs and ACP adapter programs
 have the same Harness execution path. Applications consume Jido.Harness structs
@@ -36,6 +36,7 @@ restart.
 | Amp | `:amp` | `amp` | `amp-acp` | adapter |
 | Claude Code | `:claude` | `claude` | `claude-agent-acp` | adapter |
 | Codex | `:codex` | `codex` | `codex-acp` | adapter |
+| Cursor CLI | `:cursor` | `cursor-agent` | `cursor-agent acp` | native |
 | Gemini CLI | `:gemini` | `gemini` | `gemini --acp` | native |
 | Grok | `:grok` | `grok` | `grok agent stdio` | native |
 | Kimi Code | `:kimi` | `kimi` | `kimi acp` | native |

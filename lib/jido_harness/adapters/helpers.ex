@@ -99,6 +99,69 @@ defmodule Jido.Harness.Adapters.Helpers do
     end
   end
 
+  def install_script(provider, url, options) do
+    recipe = %{
+      source: url,
+      steps: [
+        %{executable: "curl", argv: ["-fsS", url, "-o", "<temporary-file>"]},
+        %{executable: "bash", argv: ["<temporary-file>"]}
+      ]
+    }
+
+    if Keyword.get(options, :dry_run, false) do
+      {:ok, %{provider: provider, status: :dry_run, recipe: recipe}}
+    else
+      run_script_installer(provider, url, options)
+    end
+  end
+
+  defp run_script_installer(provider, url, options) do
+    directory =
+      Path.join(System.tmp_dir!(), "jido-harness-install-#{System.unique_integer([:positive, :monotonic])}")
+
+    script = Path.join(directory, "install.sh")
+    timeout = Keyword.get(options, :timeout, 300_000)
+
+    with :ok <- File.mkdir(directory) do
+      try do
+        with {:ok, download_output} <-
+               run_install_process(provider, %{executable: "curl", argv: ["-fsS", url, "-o", script]}, timeout),
+             {:ok, install_output} <-
+               run_install_process(provider, %{executable: "bash", argv: [script]}, timeout) do
+          {:ok, %{provider: provider, status: :installed, output: download_output <> install_output}}
+        end
+      after
+        File.rm_rf(directory)
+      end
+    else
+      {:error, reason} ->
+        {:error,
+         Error.new(:process, "could not create provider installation directory",
+           provider: provider,
+           cause: reason
+         )}
+    end
+  end
+
+  defp run_install_process(provider, spec, timeout) do
+    with {:ok, id} <- ProcessManager.start_process(spec),
+         {:ok, info} <- ProcessManager.await_process(id, timeout),
+         {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
+      output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
+      _ = ProcessManager.prune_process(id)
+
+      if info.state == :exited do
+        {:ok, output}
+      else
+        {:error,
+         Error.new(:process, "provider installation failed",
+           provider: provider,
+           details: %{state: info.state, status: info.exit_status, output: output}
+         )}
+      end
+    end
+  end
+
   defp probe(path, argv, options) do
     spec = %{
       executable: path,
