@@ -78,23 +78,13 @@ defmodule Jido.Harness.Adapters.Helpers do
     if Keyword.get(options, :dry_run, false) do
       {:ok, %{provider: provider, status: :dry_run, recipe: recipe}}
     else
-      with {:ok, id} <- ProcessManager.start_process(Map.take(recipe, [:executable, :argv])),
-           {:ok, %ProcessInfo{state: :exited}} <-
-             ProcessManager.await_process(id, Keyword.get(options, :timeout, 300_000)),
-           {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
-        output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
-        _ = ProcessManager.prune_process(id)
+      with {:ok, output} <-
+             run_install_process(
+               provider,
+               Map.take(recipe, [:executable, :argv]),
+               Keyword.get(options, :timeout, 300_000)
+             ) do
         {:ok, %{provider: provider, status: :installed, output: output}}
-      else
-        {:ok, %ProcessInfo{} = info} ->
-          {:error,
-           Error.new(:process, "provider installation failed",
-             provider: provider,
-             details: %{state: info.state, status: info.exit_status}
-           )}
-
-        error ->
-          error
       end
     end
   end
@@ -144,21 +134,47 @@ defmodule Jido.Harness.Adapters.Helpers do
   end
 
   defp run_install_process(provider, spec, timeout) do
-    with {:ok, id} <- ProcessManager.start_process(spec),
-         {:ok, info} <- ProcessManager.await_process(id, timeout),
-         {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
-      output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
-      _ = ProcessManager.prune_process(id)
+    case ProcessManager.start_process(spec) do
+      {:ok, id} ->
+        try do
+          with {:ok, info} <- ProcessManager.await_process(id, timeout),
+               {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
+            output =
+              events
+              |> Enum.filter(&(&1.type in [:stdout, :stderr]))
+              |> Enum.map_join("", &to_string(&1.data))
 
-      if info.state == :exited do
-        {:ok, output}
-      else
-        {:error,
-         Error.new(:process, "provider installation failed",
-           provider: provider,
-           details: %{state: info.state, status: info.exit_status, output: output}
-         )}
-      end
+            install_process_result(provider, info, output)
+          end
+        after
+          cleanup_install_process(id)
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp install_process_result(_provider, %ProcessInfo{state: :exited}, output), do: {:ok, output}
+
+  defp install_process_result(provider, %ProcessInfo{} = info, output) do
+    {:error,
+     Error.new(:process, "provider installation failed",
+       provider: provider,
+       details: %{state: info.state, status: info.exit_status, output: output}
+     )}
+  end
+
+  defp cleanup_install_process(id) do
+    case ProcessManager.prune_process(id) do
+      :ok ->
+        :ok
+
+      {:error, :running} ->
+        ProcessManager.cancel_process(id)
+
+      _error ->
+        :ok
     end
   end
 
