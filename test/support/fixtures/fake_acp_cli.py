@@ -6,6 +6,7 @@ import time
 
 session_id = "acp-fixture-session"
 pending_prompt = None
+authenticated = False
 
 
 def send(value, fragmented=False):
@@ -87,6 +88,11 @@ for line in sys.stdin:
     request_id = message.get("id")
 
     if method == "initialize":
+        auth_method = os.environ.get("HARNESS_FIXTURE_REQUIRE_AUTH_METHOD")
+        auth_methods = []
+        if auth_method:
+            auth_methods.append({"id": auth_method, "name": "Fixture Login"})
+
         send(
             {
                 "jsonrpc": "2.0",
@@ -99,18 +105,42 @@ for line in sys.stdin:
                         "promptCapabilities": {"image": True, "embeddedContext": True},
                     },
                     "agentInfo": {"name": "fixture-acp", "version": "1.0.0"},
+                    "authMethods": auth_methods,
                 },
             }
         )
+    elif method == "authenticate":
+        required_method = os.environ.get("HARNESS_FIXTURE_REQUIRE_AUTH_METHOD")
+        actual_method = message.get("params", {}).get("methodId")
+        if required_method and actual_method != required_method:
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32000, "message": "fixture authentication failed"},
+                }
+            )
+        else:
+            authenticated = True
+            send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif method == "session/new":
-        result = {"sessionId": session_id}
-        if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
-            result["configOptions"] = [{
-                "id": "model", "name": "Model", "category": "model", "type": "select",
-                "currentValue": "fixture-effective-model",
-                "options": [{"value": "fixture-effective-model", "name": "Fixture model"}],
-            }]
-        send({"jsonrpc": "2.0", "id": request_id, "result": result})
+        if os.environ.get("HARNESS_FIXTURE_REQUIRE_AUTH_METHOD") and not authenticated:
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32000, "message": "fixture authentication required"},
+                }
+            )
+        else:
+            result = {"sessionId": session_id}
+            if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
+                result["configOptions"] = [{
+                    "id": "model", "name": "Model", "category": "model", "type": "select",
+                    "currentValue": "fixture-effective-model",
+                    "options": [{"value": "fixture-effective-model", "name": "Fixture model"}],
+                }]
+            send({"jsonrpc": "2.0", "id": request_id, "result": result})
     elif method == "session/load":
         session_id = message.get("params", {}).get("sessionId", session_id)
         send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})

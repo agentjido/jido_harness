@@ -78,7 +78,7 @@ The live ACP soak is opt-in and may consume paid usage:
 
 ```console
 JIDO_HARNESS_INTEGRATION_PROFILE=soak \
-JIDO_HARNESS_INTEGRATION_PROVIDERS=amp,claude,codex,gemini,grok,kimi,opencode,pi,zai \
+JIDO_HARNESS_INTEGRATION_PROVIDERS=amp,claude,codex,cursor,gemini,grok,kimi,opencode,pi,zai \
 mix test --include integration test/integration/providers_test.exs \
   --timeout 7200000
 ```

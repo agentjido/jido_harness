@@ -123,6 +123,9 @@ defmodule Mix.Tasks.JidoHarness.Check do
   defp install_command(%AdapterSpec{install: %{npm: package}}) when is_binary(package),
     do: "npm install --global #{package}"
 
+  defp install_command(%AdapterSpec{install: %{script: url}}) when is_binary(url),
+    do: "download #{url} and run it with bash"
+
   defp install_command(%AdapterSpec{}), do: nil
 
   defp print_json(rows) do

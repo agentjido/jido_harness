@@ -151,6 +151,7 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.Adapters.Amp,
             Jido.Harness.Adapters.Claude,
             Jido.Harness.Adapters.Codex,
+            Jido.Harness.Adapters.Cursor,
             Jido.Harness.Adapters.Gemini,
             Jido.Harness.Adapters.Grok,
             Jido.Harness.Adapters.Kimi,

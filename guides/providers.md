@@ -1,6 +1,6 @@
 # Providers and capabilities
 
-Jido.Harness includes nine CLI providers. Every run and session uses ACP through
+Jido.Harness includes ten CLI providers. Every run and session uses ACP through
 ExMCP. A provider can supply ACP in its base CLI or through a separate adapter
 program.
 
@@ -19,6 +19,7 @@ Use `Jido.Harness.providers/0` to inspect the declarations.
 | Amp | `:amp` | `amp` | `amp-acp` | adapter | experimental |
 | Claude Code | `:claude` | `claude` | `claude-agent-acp` | adapter | stable |
 | Codex | `:codex` | `codex` | `codex-acp` | adapter | stable |
+| Cursor CLI | `:cursor` | `cursor-agent` | `cursor-agent acp` | native | experimental |
 | Gemini CLI | `:gemini` | `gemini` | `gemini --acp` | native | experimental |
 | Grok | `:grok` | `grok` | `grok agent stdio` | native | stable |
 | Kimi Code | `:kimi` | `kimi` | `kimi acp` | native | stable |
@@ -28,6 +29,14 @@ Use `Jido.Harness.providers/0` to inspect the declarations.
 
 Z.AI uses the Claude Code ACP adapter with the official Z.AI environment
 mapping. It remains a separate `:zai` provider.
+
+Cursor uses the stable `cursor-agent` binary name instead of the shorter
+`agent` alias. This prevents command-name collisions with other providers.
+Harness sends the documented `cursor_login` ACP authentication method before
+it opens a session. Authenticate first with `cursor-agent login`, or set
+`CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`. Cursor-specific blocking extension
+methods are not normalized yet, so this profile is experimental. See the
+[Cursor ACP documentation](https://cursor.com/docs/cli/acp).
 
 ## Capability declarations
 

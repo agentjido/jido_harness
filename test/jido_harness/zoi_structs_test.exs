@@ -82,7 +82,11 @@ defmodule Jido.Harness.ZoiStructsTest do
 
   test "adapter metadata validates one ACP agent declaration" do
     capabilities = SessionCapabilities.new!(load_session: true, multimodal: true)
-    acp_agent = ACPAgentSpec.native("test", ["acp"], %{capabilities: capabilities})
+
+    acp_agent =
+      ACPAgentSpec.native("test", ["acp"], %{auth_method: "test_login", capabilities: capabilities})
+
+    assert acp_agent.auth_method == "test_login"
 
     assert {:ok, %AdapterSpec{acp_agent: ^acp_agent}} =
              AdapterSpec.new(

@@ -7,6 +7,7 @@ defmodule Jido.Harness.Registry do
     amp: Jido.Harness.Adapters.Amp,
     claude: Jido.Harness.Adapters.Claude,
     codex: Jido.Harness.Adapters.Codex,
+    cursor: Jido.Harness.Adapters.Cursor,
     gemini: Jido.Harness.Adapters.Gemini,
     kimi: Jido.Harness.Adapters.Kimi,
     opencode: Jido.Harness.Adapters.OpenCode,

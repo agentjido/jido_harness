@@ -226,7 +226,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp initialize_session(client, request, state) do
-    with {:ok, result} <- open_session(client, request),
+    with :ok <- authenticate(client, state.context.acp_agent),
+         {:ok, result} <- open_session(client, request),
          {:ok, provider_session_id} <- provider_session_id(result, request),
          :ok <- record_session_configuration(state, provider_session_id, result),
          :ok <- apply_initial_configuration(client, provider_session_id, request, state.context.acp_agent) do
@@ -235,6 +236,15 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       {:error, reason} ->
         stop_client(client)
         {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp authenticate(_client, %{auth_method: nil}), do: :ok
+
+  defp authenticate(client, %{auth_method: method}) do
+    case Client.authenticate(client, method, timeout: @startup_timeout) do
+      {:ok, _result} -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
