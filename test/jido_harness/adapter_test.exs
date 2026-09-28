@@ -38,6 +38,14 @@ defmodule Jido.Harness.AdapterTest do
     refute spec.acp_agent.capabilities.multimodal
   end
 
+  test "OpenCode declares model configuration through the ACP config option" do
+    assert {:ok, spec} = Registry.spec(:opencode)
+    assert spec.acp_agent.model_configuration == :set_config_option
+    assert spec.acp_agent.configuration_options == [:model]
+    assert spec.acp_agent.capabilities.dynamic_model
+    assert :model in spec.normalized_options
+  end
+
   test "ACP profiles expose only options that their ACP entry point supports" do
     assert {:ok, request} =
              RequestResolver.resolve(:codex, %{

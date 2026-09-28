@@ -24,6 +24,11 @@ options, and installation data. `ACPAgentSpec` declares the executable, argv,
 source, package, optional ACP authentication method, maturity, supported
 options, and `SessionCapabilities`.
 
+When an ACP agent does not implement `session/set_model`, its
+`model_configuration` can select `:set_config_option`; model changes then use
+the agent's `model` config option while other agents retain the standard ACP
+method.
+
 Declarations are enforced before Harness starts a run or session. An unknown
 field, value, or provider option returns a validation error.
 

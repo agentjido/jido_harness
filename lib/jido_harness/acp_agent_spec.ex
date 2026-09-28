@@ -20,6 +20,7 @@ defmodule Jido.Harness.ACPAgentSpec do
               session_provider_options: @options |> Zoi.default([]),
               turn_options: @options |> Zoi.default([]),
               turn_provider_options: @options |> Zoi.default([]),
+              model_configuration: Zoi.enum([:set_model, :set_config_option]) |> Zoi.default(:set_model),
               configuration_options: Zoi.array(Zoi.atom()) |> Zoi.default([])
             },
             coerce: true

@@ -86,7 +86,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   def handle_call({:configure, changes}, _from, state) do
-    case apply_configuration(state.client, state.provider_session_id, changes) do
+    case apply_configuration(state.client, state.provider_session_id, changes, state.context.acp_agent) do
       :ok -> {:reply, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -563,21 +563,28 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         end
       end)
 
-    apply_configuration(client, provider_session_id, changes)
+    apply_configuration(client, provider_session_id, changes, acp_agent)
   end
 
-  defp apply_configuration(_client, _provider_session_id, changes) when changes == %{}, do: :ok
+  defp apply_configuration(_client, _provider_session_id, changes, _acp_agent) when changes == %{}, do: :ok
 
-  defp apply_configuration(client, provider_session_id, changes) do
+  defp apply_configuration(client, provider_session_id, changes, acp_agent) do
     Enum.reduce_while(changes, :ok, fn
       {:model, model}, :ok ->
-        continue_configuration(Client.set_model(client, provider_session_id, model))
+        result = configure_model(client, provider_session_id, model, acp_agent.model_configuration)
+        continue_configuration(result)
 
       {field, value}, :ok ->
         result = Client.set_config_option(client, provider_session_id, Atom.to_string(field), config_value(value))
         continue_configuration(result)
     end)
   end
+
+  defp configure_model(client, provider_session_id, model, :set_model),
+    do: Client.set_model(client, provider_session_id, model)
+
+  defp configure_model(client, provider_session_id, model, :set_config_option),
+    do: Client.set_config_option(client, provider_session_id, "model", config_value(model))
 
   defp continue_configuration({:ok, _result}), do: {:cont, :ok}
   defp continue_configuration({:error, reason}), do: {:halt, {:error, reason}}

@@ -35,6 +35,14 @@ defmodule Jido.Harness.ACPProviderTest do
     assert loaded.provider_session_id == "saved-opencode-session"
   end
 
+  test "OpenCode changes models through session config options" do
+    env = %{"HARNESS_FIXTURE_REJECT_SET_MODEL" => "1"}
+
+    assert {:ok, session_id} = Jido.Harness.Session.start(:opencode, %{model: "fixture-model", env: env})
+    assert {:ok, %{state: :idle, provider_session_id: "acp-fixture-session"}} = await_ready(session_id)
+    assert :ok = Jido.Harness.Session.configure(session_id, %{model: "next-model"})
+  end
+
   test "results retain original ACP messages while journal replay and streams omit raw data" do
     assert {:ok, result} = Jido.Harness.run(:grok, "fixture", await_timeout: 5_000)
     event = Enum.find(result.events, &(&1.type == :output_text_delta))
@@ -105,5 +113,19 @@ defmodule Jido.Harness.ACPProviderTest do
     refute Enum.any?(events, &(&1.type == :run_failed))
     assert Enum.count(events, &Jido.Harness.Event.run_terminal?/1) == 1
     assert List.last(events).type == :run_completed
+  end
+
+  defp await_ready(session_id, attempts \\ 100)
+  defp await_ready(_session_id, 0), do: {:error, :timeout}
+
+  defp await_ready(session_id, attempts) do
+    case Jido.Harness.Session.info(session_id) do
+      {:ok, %{state: :idle, provider_session_id: id}} = result when is_binary(id) ->
+        result
+
+      _ ->
+        Process.sleep(20)
+        await_ready(session_id, attempts - 1)
+    end
   end
 end

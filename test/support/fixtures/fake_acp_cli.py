@@ -179,6 +179,12 @@ for line in sys.stdin:
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        if method == "session/set_model" and os.environ.get("HARNESS_FIXTURE_REJECT_SET_MODEL") == "1":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {
+                "code": -32601, "message": "fixture does not implement session/set_model"
+            }})
+            continue
+
         if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
             send({"jsonrpc": "2.0", "method": "session/update", "params": {
                 "sessionId": session_id,
