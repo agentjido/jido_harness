@@ -96,11 +96,7 @@ The ACP adapter must report the applied controls in
 `agentCapabilities._meta.codex.isolation`. Harness returns a configuration error
 before opening a session when a requested control is unavailable. The pinned
 Codex ACP 1.6.2 package does not support these controls. An adapter with the
-isolation extension can be selected with `acp_path`. For finite local tasks,
-use the [local Codex CLI workaround](local_workarounds.md). It uses the CLI's
-existing isolation flags and retains the authentication home. The submitted
-ACP patch was withdrawn after review found defects; do not use it as a
-supported isolation implementation.
+isolation extension can be selected with `acp_path`.
 Do not assume that an older adapter applies these environment controls.
 
 ```elixir

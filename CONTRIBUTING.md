@@ -32,8 +32,6 @@ Local unit tests use fake CLIs. They do not need provider credentials.
 | `test/support/` | Shared test modules and executable fixtures |
 | `test/support/modules/` | Modules compiled with the unit suite |
 | `test/support/fixtures/escript/` | A small Mix project that tests native-helper packaging |
-| `test/scripts/` | Tests for local command helpers |
-| `scripts/local_workarounds/` | Local setup and checks, with versioned patches |
 | `doc/` | Generated API documentation; ignored by Git |
 
 Keep package boundaries clear. Harness owns execution and resource lifetime.
@@ -64,16 +62,6 @@ coverage threshold and module exclusions had no effect with ExCoveralls and
 were removed. ExCoveralls has no enforced minimum yet. The previous 90% target
 remains release work: configure `coverage_options.minimum_coverage` in
 `coveralls.json` and meet that target before a stable release.
-
-For changes to local command helpers, also run:
-
-```console
-python3 -m unittest discover -s test/scripts -v
-```
-
-See [Local workarounds](guides/local_workarounds.md) for the optional native
-process patch and its checks. These tools require a source checkout. They are
-not part of the package runtime.
 
 ## Change documentation
 
@@ -107,7 +95,7 @@ Run the four checks above and the affected live provider profiles. Review the
 published dependency for package consumers.
 
 The Hex package contains runtime source, configuration, and documentation.
-Tests, test fixtures, and local workaround tools stay in the source repository.
+Tests and test fixtures stay in the source repository.
 Inspect `mix hex.build` output before publication.
 
 Do not edit `CHANGELOG.md` by hand. Release automation creates release notes

@@ -34,8 +34,7 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/operations.md",
        "guides/testing.md",
-       "guides/custom_adapters.md",
-       "guides/local_workarounds.md"
+       "guides/custom_adapters.md"
      ]},
     {"Reference",
      [

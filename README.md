@@ -121,5 +121,4 @@ Provider cells use live CLIs. The managed-process example runs locally.
 ## Contribute
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the file map, checks, and
-release preparation. Local dependency workarounds require a source checkout;
-see [Local workarounds](guides/local_workarounds.md).
+release preparation.
