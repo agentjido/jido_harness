@@ -21,7 +21,7 @@ defmodule Jido.Harness.NativeRuntimeTest do
       end
 
     assert {_output, 0} =
-             System.cmd("cc", flags ++ ["-o", library, fixture_path("process_groups/group_failure.c")],
+             System.cmd("cc", ["-o", library, fixture_path("process_groups/group_failure.c")] ++ flags,
                stderr_to_stdout: true
              )
 

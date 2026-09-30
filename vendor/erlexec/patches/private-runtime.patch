@@ -307,7 +307,7 @@
              Pid
          end,
  
-@@ -1810,11 +1815,11 @@
+@@ -1810,7 +1815,7 @@
              end,
      M     = N*2,
      {setup,
@@ -316,11 +316,6 @@
          fun(Pid) -> exit(Pid, kill) end,
          [
              {timeout, 200,
--                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_exec:run(N, 60000, Delay))}
-+                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_jido_harness_exec:run(N, 60000, Delay))}
-         ]
-     }.
- 
 @@ -1831,64 +1836,64 @@
      case os:getenv("NO_ROOT_TESTS") of
          false ->

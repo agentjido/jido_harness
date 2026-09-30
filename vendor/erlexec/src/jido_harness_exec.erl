@@ -1819,7 +1819,7 @@ exec_run_many_test_() ->
         fun(Pid) -> exit(Pid, kill) end,
         [
             {timeout, 200,
-                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_jido_harness_exec:run(N, 60000, Delay))}
+                ?_assertMatch({ok,[{io_ops,M},{success,N}]}, test_exec:run(N, 60000, Delay))}
         ]
     }.
 
