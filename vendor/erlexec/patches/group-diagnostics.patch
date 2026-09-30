@@ -1,0 +1,16 @@
+--- a/c_src/exec_impl.cpp
++++ b/c_src/exec_impl.cpp
+@@ -1076,9 +1076,11 @@
+         // Both the parent and child assign this group after fork().
+         // Accept a failed call only when the requested group is already
+         // established. Do not retry or accept a different process group.
+-        if (getpgrp() != gid) {
++        pid_t actual_gid = getpgrp();
++        if (actual_gid != gid) {
++          err.write("Cannot set effective group to %d (pid=%d requested=%d actual=%d parent=%d sid=%d)",
++              op.group(), getpid(), gid, actual_gid, getppid(), getsid(0));
+           errno = group_errno;
+-          err.write("Cannot set effective group to %d", op.group());
+           perror(err.c_str());
+           exit(EXIT_FAILURE);
+         }

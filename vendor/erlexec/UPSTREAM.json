@@ -22,6 +22,7 @@
   },
   "patches": [
     "patches/process-group-startup.patch",
+    "patches/group-diagnostics.patch",
     "patches/private-runtime.patch",
     "patches/native-build.patch"
   ]

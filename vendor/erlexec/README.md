@@ -22,6 +22,8 @@ retain the upstream license with the generated helper.
 - `patches/process-group-startup.patch` checks the actual process group after
   a failed child assignment. Startup succeeds only when that group is correct.
   This matches [upstream PR #210](https://github.com/saleyn/erlexec/pull/210).
+- `patches/group-diagnostics.patch` adds process and group IDs to the startup
+  error so a failed assignment can be diagnosed from retained stderr.
 - `patches/private-runtime.patch` records the private module names,
   configuration scope, asset directory, and hidden internal documentation.
 - `patches/native-build.patch` removes obsolete macOS linker flags. The Mix task

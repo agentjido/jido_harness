@@ -1076,9 +1076,11 @@ pid_t start_child(CmdOptions& op, std::string& error)
         // Both the parent and child assign this group after fork().
         // Accept a failed call only when the requested group is already
         // established. Do not retry or accept a different process group.
-        if (getpgrp() != gid) {
+        pid_t actual_gid = getpgrp();
+        if (actual_gid != gid) {
+          err.write("Cannot set effective group to %d (pid=%d requested=%d actual=%d parent=%d sid=%d)",
+              op.group(), getpid(), gid, actual_gid, getppid(), getsid(0));
           errno = group_errno;
-          err.write("Cannot set effective group to %d", op.group());
           perror(err.c_str());
           exit(EXIT_FAILURE);
         }
