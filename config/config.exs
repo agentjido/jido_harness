@@ -1,10 +1,13 @@
 import Config
 
+# Repository tools and local logging. Host applications supply runtime settings.
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:module]
 
 if config_env() == :dev do
+  config :logger, level: :debug
+
   config :git_hooks,
     auto_install: true,
     verbose: true,
@@ -34,4 +37,6 @@ if config_env() == :dev do
     ]
 end
 
-import_config "#{config_env()}.exs"
+if config_env() == :test do
+  config :logger, level: :warning
+end

@@ -157,7 +157,6 @@ defmodule Jido.Harness.MixProject do
           "LICENSE",
           "README.md",
           "usage-rules.md",
-          "config",
           "guides",
           "lib",
           "mix.exs"

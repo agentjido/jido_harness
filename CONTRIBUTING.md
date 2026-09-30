@@ -21,6 +21,7 @@ Local unit tests use fake CLIs. They do not need provider credentials.
 | `lib/jido_harness.ex` | Public facade |
 | `lib/jido_harness/` | Adapters, public types, and resource lifecycle |
 | `lib/mix/tasks/` | Provider readiness and one-request smoke tasks |
+| `config/config.exs` | Repository logging, commit checks, and release tools |
 | `guides/` | Getting started, workflows, shared concepts, and operations |
 | `guides/reference/` | Configuration, event, process, and dependency contracts |
 | `guides/migrations/` | Version changes and clearly marked historical contracts |
@@ -94,8 +95,8 @@ Run the four checks above and the affected live provider profiles. Review the
 [current provider limits](guides/providers.md). A local patch does not fix the
 published dependency for package consumers.
 
-The Hex package contains runtime source, configuration, and documentation.
-Tests and test fixtures stay in the source repository.
+The Hex package contains runtime source and documentation. Repository
+configuration, tests, and test fixtures stay in the source repository.
 Inspect `mix hex.build` output before publication.
 
 Do not edit `CHANGELOG.md` by hand. Release automation creates release notes

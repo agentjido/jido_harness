@@ -3,6 +3,11 @@
 Jido.Harness reads application configuration under the `:jido_harness` key.
 Request values override configured defaults.
 
+Set these values in the host application's configuration. The Harness
+repository's `config/config.exs` only configures local logging and repository
+tools. Mix does not load a dependency's configuration files into the host
+application.
+
 ## `:default_provider`
 
 ```elixir
