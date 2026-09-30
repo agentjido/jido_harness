@@ -48,9 +48,10 @@ defmodule Jido.Harness.ACPTransportTest do
 
     assert {:ok, "first"} = Bridge.receive_message(bridge)
     assert {:ok, "second"} = Bridge.receive_message(bridge)
-    assert {:error, {:process_stopped, :failed}} = Bridge.receive_message(bridge)
-    assert_receive {:acp_process_stopped, :failed, ^details}
-    assert {:error, {:process_stopped, :failed}} = Bridge.receive_message(bridge)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert diagnostics["details"] == details
+    assert_receive {:acp_process_stopped, :failed, ^diagnostics}
+    assert {:error, {:process_stopped, :failed, ^diagnostics}} = Bridge.receive_message(bridge)
     refute_received {:acp_process_stopped, _, _}
   end
 
@@ -59,10 +60,25 @@ defmodule Jido.Harness.ACPTransportTest do
     await(fn -> match?(%{waiter: {_, _}}, :sys.get_state(bridge)) end)
     send(reader, {:process_events, [event(:timed_out, "fixture deadline")]})
 
-    assert {:error, {:process_stopped, :timed_out}} = Task.await(receiver)
-    assert_receive {:acp_process_stopped, :timed_out, "fixture deadline"}
-    assert {:error, {:process_stopped, :timed_out}} = Bridge.receive_message(bridge)
+    assert {:error, {:process_stopped, :timed_out, diagnostics}} = Task.await(receiver)
+    assert diagnostics["details"] == "fixture deadline"
+    assert_receive {:acp_process_stopped, :timed_out, ^diagnostics}
+    assert {:error, {:process_stopped, :timed_out, ^diagnostics}} = Bridge.receive_message(bridge)
     refute_received {:acp_process_stopped, _, _}
+  end
+
+  test "failure diagnostics retain a bounded stderr tail", %{bridge: bridge, reader: reader} do
+    send(
+      reader,
+      {:process_events,
+       [event(:stderr, String.duplicate("x", 8_000) <> "last error"), event(:failed, %{"exit_status" => 1})]}
+    )
+
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert byte_size(diagnostics["stderr"]) <= 4_096
+    assert diagnostics["stderr_truncated"]
+    assert String.ends_with?(diagnostics["stderr"], "last error")
   end
 
   defp event(type, data) do

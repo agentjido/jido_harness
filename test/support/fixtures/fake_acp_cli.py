@@ -4,6 +4,11 @@ import os
 import sys
 import time
 
+if os.environ.get("HARNESS_FIXTURE_EXIT_BEFORE_INIT") == "1":
+    sys.stderr.write("fixture startup failed: " + os.environ.get("HARNESS_FIXTURE_SECRET_TOKEN", "") + "\n")
+    sys.stderr.flush()
+    sys.exit(1)
+
 session_id = "acp-fixture-session"
 pending_prompt = None
 authenticated = False
@@ -150,6 +155,10 @@ for line in sys.stdin:
             for block in message.get("params", {}).get("prompt", [])
             if isinstance(block, dict)
         )
+        if text == "exit-with-stderr":
+            sys.stderr.write("fixture command failed: " + os.environ.get("HARNESS_FIXTURE_SECRET_TOKEN", "") + "\n")
+            sys.stderr.flush()
+            sys.exit(1)
         if text in ["fail", "raise", "terminal-fail"]:
             send(
                 {
@@ -179,6 +188,23 @@ for line in sys.stdin:
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        record_path = os.environ.get("HARNESS_FIXTURE_CONFIGURATION_LOG")
+        if record_path:
+            with open(record_path, "a") as record:
+                record.write(json.dumps(message) + "\n")
+        configuration_protocol = os.environ.get("HARNESS_FIXTURE_CONFIGURATION_PROTOCOL")
+        if configuration_protocol == "config" and method == "session/set_model":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "No set_model"}})
+            continue
+        if configuration_protocol == "legacy" and method == "session/set_config_option":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "No config options"}})
+            continue
+        if configuration_protocol == "invalid" and method == "session/set_config_option":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid model"}})
+            continue
+        if configuration_protocol == "config" and method == "session/set_config_option" and message["params"].get("configId") != "model":
+            send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Wrong configId"}})
+            continue
         if os.environ.get("HARNESS_FIXTURE_MODEL_STATE") == "1":
             send({"jsonrpc": "2.0", "method": "session/update", "params": {
                 "sessionId": session_id,

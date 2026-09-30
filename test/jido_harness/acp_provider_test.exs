@@ -35,6 +35,48 @@ defmodule Jido.Harness.ACPProviderTest do
     assert loaded.provider_session_id == "saved-opencode-session"
   end
 
+  test "OpenCode sets initial and runtime models without session/set_model" do
+    log = Path.join(System.tmp_dir!(), "harness-model-#{System.unique_integer([:positive])}.jsonl")
+    on_exit(fn -> File.rm(log) end)
+
+    env = %{
+      "HARNESS_FIXTURE_CONFIGURATION_PROTOCOL" => "config",
+      "HARNESS_FIXTURE_CONFIGURATION_LOG" => log
+    }
+
+    assert {:ok, result} = Jido.Harness.run(:opencode, "fixture", model: "initial", env: env, await_timeout: 5_000)
+    assert result.status == :completed
+    assert {:ok, session} = Jido.Harness.Session.start(:opencode, %{model: "initial", env: env})
+    assert {:ok, _info} = await_ready(session)
+    assert :ok = Jido.Harness.Session.configure(session, %{model: "changed"})
+    assert {:ok, turn} = Jido.Harness.Session.send_message(session, "fixture")
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session, turn, 5_000)
+
+    calls = log |> File.read!() |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    assert Enum.map(calls, & &1["method"]) == List.duplicate("session/set_config_option", 3)
+    assert Enum.map(calls, & &1["params"]["configId"]) == List.duplicate("model", 3)
+    assert Enum.map(calls, & &1["params"]["value"]) == ["initial", "initial", "changed"]
+  end
+
+  test "model configuration falls back only when config options are not implemented" do
+    assert {:ok, result} =
+             Jido.Harness.run(:codex, "fixture",
+               model: "legacy-model",
+               env: %{"HARNESS_FIXTURE_CONFIGURATION_PROTOCOL" => "legacy"},
+               await_timeout: 5_000
+             )
+
+    assert result.status == :completed
+
+    assert {:ok, session} =
+             Jido.Harness.Session.start(:opencode, %{env: %{"HARNESS_FIXTURE_CONFIGURATION_PROTOCOL" => "invalid"}})
+
+    assert {:ok, _info} = await_ready(session)
+
+    assert {:error, %{"code" => -32602, "message" => "Invalid model"}} =
+             Jido.Harness.Session.configure(session, %{model: "invalid"})
+  end
+
   test "results retain original ACP messages while journal replay and streams omit raw data" do
     assert {:ok, result} = Jido.Harness.run(:grok, "fixture", await_timeout: 5_000)
     event = Enum.find(result.events, &(&1.type == :output_text_delta))
@@ -105,5 +147,19 @@ defmodule Jido.Harness.ACPProviderTest do
     refute Enum.any?(events, &(&1.type == :run_failed))
     assert Enum.count(events, &Jido.Harness.Event.run_terminal?/1) == 1
     assert List.last(events).type == :run_completed
+  end
+
+  defp await_ready(session, attempts \\ 100)
+  defp await_ready(_session, 0), do: {:error, :timeout}
+
+  defp await_ready(session, attempts) do
+    case Jido.Harness.Session.info(session) do
+      {:ok, %{state: :idle}} = result ->
+        result
+
+      _ ->
+        Process.sleep(20)
+        await_ready(session, attempts - 1)
+    end
   end
 end

@@ -74,3 +74,11 @@ to an ACP adapter.
 
 Jido.Harness does not rank providers, retry billable work, or fall back to a
 second provider. Pass a provider atom or configure one default.
+
+## OpenCode model changes
+
+OpenCode accepts `model` on runs and sessions. Use
+`Jido.Harness.Session.configure(session_id, %{model: "provider/model"})` to
+change a session model. Harness uses `session/set_config_option` with config ID
+`model`. Older ACP agents can use `session/set_model` only when the config RPC
+returns method not found. Other provider errors are returned to the caller.

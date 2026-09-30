@@ -14,10 +14,11 @@ defmodule Jido.Harness.Adapters.OpenCode do
       capabilities: %Capabilities{streaming?: true, resume?: true, usage?: true, native_cancel?: true},
       acp_agent:
         Jido.Harness.ACPAgentSpec.native("opencode", ["acp"], %{
-          capabilities: %{load_session: true, multimodal: true, usage: true},
+          capabilities: %{load_session: true, multimodal: true, usage: true, dynamic_model: true},
+          configuration_options: [:model],
           turn_options: [:attachments, :content]
         }),
-      normalized_options: [:provider_session_id, :mcp_config, :attachments],
+      normalized_options: [:model, :provider_session_id, :mcp_config, :attachments],
       install: %{npm: "opencode-ai"}
     }
   end

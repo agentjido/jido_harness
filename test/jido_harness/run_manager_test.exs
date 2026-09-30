@@ -54,6 +54,45 @@ defmodule Jido.Harness.RunManagerTest do
     assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
   end
 
+  test "failed ACP startup retains redacted stderr and lifecycle diagnostics" do
+    assert {:ok, result} =
+             Jido.Harness.run(:test, "fixture",
+               env: %{
+                 "HARNESS_FIXTURE_EXIT_BEFORE_INIT" => "1",
+                 "HARNESS_FIXTURE_SECRET_TOKEN" => "fixture-private-token"
+               },
+               await_timeout: 5_000
+             )
+
+    assert_process_failure(result, "fixture startup failed")
+  end
+
+  test "ACP exits during a turn retain diagnostics at the run boundary" do
+    assert {:ok, result} =
+             Jido.Harness.run(:test, "exit-with-stderr",
+               env: %{"HARNESS_FIXTURE_SECRET_TOKEN" => "fixture-private-token"},
+               await_timeout: 5_000
+             )
+
+    assert_process_failure(result, "fixture command failed")
+    assert {:ok, replay} = Jido.Harness.Run.replay(result.run_id, limit: 100)
+    assert List.last(replay).payload["process"] == result.error.details.process
+  end
+
+  test "a timed out process does not affect the next fake ACP run" do
+    for _iteration <- 1..10 do
+      assert {:ok, process} =
+               Jido.Harness.Process.start(%{executable: "/bin/sleep", argv: ["20"], runtime_timeout_ms: 25})
+
+      assert {:ok, %{state: :timed_out}} = Jido.Harness.Process.await(process, 2_000)
+      assert :ok = Jido.Harness.Process.prune(process)
+      assert {:ok, result} = Jido.Harness.run(:test, "fixture", await_timeout: 5_000)
+      assert result.status == :completed
+      assert result.usage == %{"size" => 10, "used" => 3}
+      assert :ok = Jido.Harness.Run.prune(result.run_id)
+    end
+  end
+
   test "retains provider model configuration in results, replay, and streams" do
     assert {:ok, result} =
              Jido.Harness.run(:test, "provider-start",
@@ -334,4 +373,16 @@ defmodule Jido.Harness.RunManagerTest do
   end
 
   defp eventually(_function, 0), do: false
+
+  defp assert_process_failure(result, stderr) do
+    assert result.status == :failed
+    assert %Jido.Harness.Error{category: :execution, details: %{process: process}} = result.error
+    assert process["state"] == "failed"
+    assert process["details"]["exit_status"] == 1
+    assert process["stderr"] =~ stderr
+    assert process["stderr"] =~ "[REDACTED]"
+    refute inspect(result) =~ "fixture-private-token"
+    assert Enum.map(process["lifecycle"], & &1["type"]) == ["started", "failed"]
+    assert Enum.count(result.events, &Jido.Harness.Event.run_terminal?/1) == 1
+  end
 end

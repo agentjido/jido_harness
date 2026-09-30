@@ -273,8 +273,10 @@ defmodule Jido.Harness.Session.Lifecycle do
 
   defp normalize_turn_error(_state, nil, _payload, status) when status in [:completed, :interrupted], do: nil
 
-  defp normalize_turn_error(state, nil, payload, :failed),
-    do: Error.execution(Map.get(payload, "error", "turn failed"), provider: state.provider)
+  defp normalize_turn_error(state, nil, payload, :failed) do
+    details = if is_map(payload["process"]), do: %{process: payload["process"]}, else: %{}
+    Error.execution(Map.get(payload, "error", "turn failed"), provider: state.provider, details: details)
+  end
 
   defp normalize_turn_error(state, error, _payload, _status), do: normalize_error(state, error)
 

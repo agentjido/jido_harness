@@ -3,7 +3,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   use GenServer, restart: :temporary
 
   alias ExMCP.ACP.Client
-  alias Jido.Harness.{ApprovalResponse, Event, ID, TurnRequest}
+  alias Jido.Harness.{ApprovalResponse, Error, Event, ID, TurnRequest}
   alias Jido.Harness.SessionAdapters.ACP.{ExMCPHandler, ExMCPTransport}
 
   @startup_timeout 30_000
@@ -41,7 +41,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     with {:ok, process_spec} <- process_spec(request, state.context) do
       case start_client(state, process_spec) do
         {:ok, client} -> initialize_session(client, request, state)
-        {:error, reason} -> {:reply, {:error, reason}, state}
+        {:error, reason} -> {:reply, {:error, process_error(reason, state.provider)}, state}
       end
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
@@ -154,7 +154,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   def handle_info({:acp_process_stopped, type, data}, %{closing?: false} = state) do
     if state.active_turn_id do
-      emit(state, :turn_failed, %{"error" => inspect(data || type)}, turn_id: state.active_turn_id)
+      emit(state, :turn_failed, %{"error" => "ACP process #{type}", "process" => data}, turn_id: state.active_turn_id)
     end
 
     {:stop, {:process_stopped, type}, state}
@@ -198,7 +198,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp start_client(state, process_spec) do
-    Client.start_link(
+    options = [
       transport_mod: ExMCPTransport,
       harness_transport: [
         process_manager: state.context.process_manager,
@@ -222,7 +222,55 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       initialize_timeout: @startup_timeout,
       pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
       handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)
-    )
+    ]
+
+    child = Supervisor.child_spec({Client, options}, restart: :temporary)
+
+    task =
+      Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
+        DynamicSupervisor.start_child(Jido.Harness.SessionTransportSupervisor, child)
+      end)
+
+    deadline = System.monotonic_time(:millisecond) + @startup_timeout
+    await_client(task, nil, state, deadline)
+  end
+
+  defp await_client(%Task{ref: task_ref} = task, client, state, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:acp_client_starting, client} ->
+        await_client(task, client, state, deadline)
+
+      {^task_ref, {:ok, client} = result} ->
+        Task.ignore(task)
+        Process.link(client)
+        result
+
+      {^task_ref, result} ->
+        Task.ignore(task)
+        result
+
+      {:DOWN, ^task_ref, :process, _pid, reason} ->
+        {:error, reason}
+
+      {:acp_process_stderr, data} ->
+        emit(state, :provider_event, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
+        await_client(task, client, state, deadline)
+
+      {:acp_process_stopped, type, details} ->
+        stop_starting_client(task, client)
+        {:error, {:process_stopped, type, details}}
+    after
+      remaining ->
+        stop_starting_client(task, client)
+        {:error, :init_timeout}
+    end
+  end
+
+  defp stop_starting_client(task, client) do
+    if is_pid(client), do: Process.exit(client, :kill)
+    Task.shutdown(task, :brutal_kill)
   end
 
   defp initialize_session(client, request, state) do
@@ -235,9 +283,17 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     else
       {:error, reason} ->
         stop_client(client)
-        {:reply, {:error, reason}, state}
+        {:reply, {:error, process_error(reason, state.provider)}, state}
     end
   end
+
+  defp process_error({:transport_error, reason}, provider), do: process_error(reason, provider)
+
+  defp process_error({:process_stopped, type, details}, provider) do
+    Error.execution("ACP process #{type}", provider: provider, details: %{process: details})
+  end
+
+  defp process_error(reason, _provider), do: reason
 
   defp authenticate(_client, %{auth_method: nil}), do: :ok
 
@@ -286,7 +342,15 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp finish_prompt(state, turn_id, {:error, reason}) do
-    emit(state, :turn_failed, %{"error" => error_message(reason)}, turn_id: turn_id)
+    error = process_error(reason, state.provider)
+    payload = %{"error" => error_message(error)}
+
+    payload =
+      if match?(%Error{details: %{process: _}}, error),
+        do: Map.put(payload, "process", error.details.process),
+        else: payload
+
+    emit(state, :turn_failed, payload, turn_id: turn_id)
     deny_pending_approvals(state)
   end
 
@@ -571,12 +635,19 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp apply_configuration(client, provider_session_id, changes) do
     Enum.reduce_while(changes, :ok, fn
       {:model, model}, :ok ->
-        continue_configuration(Client.set_model(client, provider_session_id, model))
+        continue_configuration(set_model(client, provider_session_id, model))
 
       {field, value}, :ok ->
         result = Client.set_config_option(client, provider_session_id, Atom.to_string(field), config_value(value))
         continue_configuration(result)
     end)
+  end
+
+  defp set_model(client, provider_session_id, model) do
+    case Client.set_config_option(client, provider_session_id, "model", model) do
+      {:error, %{"code" => -32601}} -> Client.set_model(client, provider_session_id, model)
+      result -> result
+    end
   end
 
   defp continue_configuration({:ok, _result}), do: {:cont, :ok}
