@@ -70,7 +70,9 @@ defmodule Jido.Harness.NativeRuntimeTest do
     expression = """
     {ok, _} = jido_harness_exec:start([{portexe, #{literal(String.to_charlist(context.wrapper))}},
                                      {env, #{literal(environment)}}]),
-    case jido_harness_exec:run(["/bin/echo", "group-ok"], [sync, stdout, stderr, {group, 0}, kill_group]) of
+    case jido_harness_exec:run(["/bin/echo", "group-ok"],
+      [sync, stdout, stderr, {group, 0}, kill_group,
+       {env, [{#{literal(String.to_charlist(context.loader))}, false}]}]) of
       #{expected};
       Other -> io:format("Unexpected result: ~p~n", [Other]), halt(1)
     end,
