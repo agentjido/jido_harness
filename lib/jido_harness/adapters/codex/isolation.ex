@@ -36,7 +36,7 @@ defmodule Jido.Harness.Adapters.Codex.Isolation do
   @spec validate_capabilities(SessionRequest.t(), map()) :: :ok | {:error, Error.t()}
   def validate_capabilities(request, capabilities) do
     with {:ok, options} <- options(request.provider_options) do
-      applied = get_in(capabilities, ["_meta", "codex", "isolation"]) || %{}
+      applied = applied_controls(capabilities)
 
       case Enum.find(options, fn {key, enabled} ->
              {_variable, capability} = Keyword.fetch!(@controls, key)
@@ -54,6 +54,11 @@ defmodule Jido.Harness.Adapters.Codex.Isolation do
       end
     end
   end
+
+  defp applied_controls(%{"_meta" => %{"codex" => %{"isolation" => applied}}}) when is_map(applied),
+    do: applied
+
+  defp applied_controls(_capabilities), do: %{}
 
   defp options(options) do
     Enum.reduce_while(@controls, {:ok, %{}}, fn {key, _mapping}, {:ok, normalized} ->

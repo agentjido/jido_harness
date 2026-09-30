@@ -100,6 +100,13 @@ for line in sys.stdin:
         if auth_method:
             auth_methods.append({"id": auth_method, "name": "Fixture Login"})
 
+        codex_meta = {"isolation": {
+            "ephemeral": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_EPHEMERAL") == "1",
+            "ignoreUserConfig": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_IGNORE_USER_CONFIG") == "1",
+        }}
+        if "HARNESS_FIXTURE_CODEX_META" in os.environ:
+            codex_meta = json.loads(os.environ["HARNESS_FIXTURE_CODEX_META"])
+
         send(
             {
                 "jsonrpc": "2.0",
@@ -108,10 +115,7 @@ for line in sys.stdin:
                     "protocolVersion": 1,
                     "agentCapabilities": {
                         "loadSession": True,
-                        "_meta": {"codex": {"isolation": {
-                            "ephemeral": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_EPHEMERAL") == "1",
-                            "ignoreUserConfig": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_IGNORE_USER_CONFIG") == "1",
-                        }}},
+                        "_meta": {"codex": codex_meta},
                         "sessionCapabilities": {"close": {}},
                         "promptCapabilities": {"image": True, "embeddedContext": True},
                     },
@@ -172,7 +176,10 @@ for line in sys.stdin:
             sys.stderr.write("fixture command failed: " + os.environ.get("HARNESS_FIXTURE_SECRET_TOKEN", "") + "\n")
             sys.stderr.flush()
             sys.exit(1)
-        if text in ["fail", "raise", "terminal-fail"]:
+        if "harness-provider-panic" in text:
+            sys.stderr.write("panic: could not find doneCh for checkpoint\n")
+            sys.stderr.flush()
+        elif text in ["fail", "raise", "terminal-fail"]:
             send(
                 {
                     "jsonrpc": "2.0",

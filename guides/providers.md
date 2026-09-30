@@ -26,17 +26,18 @@ Maturity is profile metadata. It does not establish that live tests ran for
 every installed CLI version. Use [Testing](testing.md) to verify the providers
 required by a release.
 
+### Antigravity setup
+
 Antigravity's `agy` CLI exposes no ACP mode, so this profile runs the
 `refined-antigravity-acp` adapter, which drives Google's official
 `agy_acp_server` binary. Two setup steps are required beyond installing the
 adapter package.
 
-First, provision the ACP server binary with the adapter's setup command, which
-also records acceptance of the Google Antigravity Terms of Service:
+First, provision the ACP server binary with the adapter's setup command. Read
+and accept the Google Antigravity Terms of Service when it prompts:
 
 ```sh
-refined-antigravity-acp setup        # prompts for the Terms of Service
-refined-antigravity-acp setup --yes  # accepts them non-interactively
+refined-antigravity-acp setup
 ```
 
 Setup also writes an editor profile for Zed and a Paseo configuration, and it
@@ -45,18 +46,40 @@ binary, so expect those extra files on a harness-only machine.
 
 Second, the ACP server authenticates separately from the `agy` CLI. It reads
 its own `~/.gemini/antigravity-acp/settings.json` and ignores the CLI's keyring
-session, so signing in with `agy` is not sufficient. Set `auth.type` there to
-`gemini-api-key` and export `GEMINI_API_KEY` for a non-interactive setup, or
-complete the server's own one-time browser OAuth flow, after which it writes
-that file and a refresh token itself. Harness sends no ACP `authenticate`
-method for this provider, because the OAuth method opens a browser flow that
-cannot complete inside a harness run.
+session, so signing in with `agy` is not sufficient. For a Gemini API key,
+merge this block into the settings file and export `GEMINI_API_KEY`:
+
+```json
+{"auth": {"type": "gemini-api-key"}}
+```
+
+For Agent Platform, use `auth.type: "agent-platform"` and `GOOGLE_API_KEY`,
+or configure a project, location, and Application Default Credentials.
+`GEMINI_HOME` changes the settings path to
+`$GEMINI_HOME/antigravity-acp/settings.json`. Provider-configured environment
+values also apply to readiness checks. A key alone is insufficient: readiness
+reports authentication as false until a supported method is selected.
+
+For Google OAuth, use an ACP client with browser-login support to authenticate
+once through the same wrapper and with the same `GEMINI_HOME`. The wrapper
+uses file credential storage. Harness reports configured OAuth as `:unknown`;
+only a live request can prove the stored credentials work. Harness sends no
+ACP `authenticate` method for this provider.
 
 Model ids differ between the two layers. The CLI flattens reasoning effort into
 the id, as in `gemini-3.8-flash-high`, while the adapter splits it apart. Pass
 the base id as `model` and the effort as `reasoning_effort`. The adapter is
 community maintained, so this profile is experimental. See the
 [Antigravity CLI documentation](https://antigravity.google/docs/cli/install/).
+
+Harness includes a crash guard for wrapper version 1.2.11. The wrapper can
+otherwise report a server panic as a successful turn. The guard changes that
+response to an ACP error and preserves the wrapper's recovery state. It is
+loaded only for Antigravity through `NODE_OPTIONS`, which retains explicit
+request values over provider configuration and the ambient environment.
+Other Node packages inherit the module but receive no patch. An untested
+version of the wrapper fails at startup. Recheck the guard when changing the
+package pin.
 
 ## Separate ACP packages
 
@@ -163,6 +186,10 @@ the initialize response to report applied controls in
 A custom ACP executable can be selected with `acp_path`. Verify its isolation
 behavior before use. The presence of these request fields does not establish
 isolation support in the pinned package.
+
+Codex ACP 2.0.1 was also checked and does not expose these controls. For a
+finite task, use the [native Codex process example](managed_processes.md#isolated-native-codex-task).
+This uses the Codex CLI controls and the Harness process API.
 
 Codex sandbox values select the ACP mode. Harness `approval_mode` controls
 its permission responses. Environment replacement, sandbox mode, and saved

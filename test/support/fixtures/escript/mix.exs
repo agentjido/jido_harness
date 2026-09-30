@@ -11,7 +11,7 @@ defmodule JidoHarnessEscriptFixture.MixProject do
       escript: [
         main_module: JidoHarnessEscriptFixture,
         app: nil,
-        include_priv_for: [:erlexec],
+        include_priv_for: [:erlexec, :jido_harness],
         path: System.fetch_env!("JIDO_HARNESS_ESCRIPT_PATH")
       ]
     ]

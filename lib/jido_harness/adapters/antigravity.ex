@@ -17,7 +17,8 @@ defmodule Jido.Harness.Adapters.Antigravity do
   """
   @behaviour Jido.Harness.Adapter
 
-  alias Jido.Harness.{AdapterSpec, Adapters.Helpers, Capabilities}
+  alias Jido.Harness.{AdapterSpec, Adapters.Helpers, Capabilities, Error, ProviderStatus}
+  alias Jido.Harness.Adapters.Antigravity.Authentication
 
   @install_url "https://antigravity.google/cli/install.sh"
 
@@ -61,12 +62,32 @@ defmodule Jido.Harness.Adapters.Antigravity do
   end
 
   @impl true
-  def status(config),
-    do:
-      Helpers.status(:antigravity, spec().executable, ["GEMINI_API_KEY", "GOOGLE_API_KEY"], config,
-        cli_path_env: "ANTIGRAVITY_CLI_PATH",
-        capabilities: spec().capabilities
-      )
+  def status(config) do
+    with {:ok, status} <-
+           Helpers.status(:antigravity, spec().executable, [], config,
+             cli_path_env: "ANTIGRAVITY_CLI_PATH",
+             capabilities: spec().capabilities
+           ) do
+      {authenticated, error} = Authentication.check(config)
+      {:ok, ProviderStatus.finalize(%{status | authenticated: authenticated, error: status.error || error})}
+    end
+  end
+
+  @impl true
+  def acp_env(request, config) do
+    env = Authentication.environment(request.env_mode, config, request.env)
+    options = if is_binary(env["NODE_OPTIONS"]), do: env["NODE_OPTIONS"], else: ""
+    path = :jido_harness |> :code.priv_dir() |> to_string() |> Path.join("acp/antigravity.mjs")
+
+    case :erl_prim_loader.get_file(String.to_charlist(path)) do
+      {:ok, source, _path} ->
+        uri = "data:text/javascript;base64," <> Base.encode64(source)
+        {:ok, %{"NODE_OPTIONS" => String.trim(options <> " --import=" <> uri)}}
+
+      :error ->
+        {:error, Error.new(:configuration, "Antigravity ACP crash guard is missing", provider: :antigravity)}
+    end
+  end
 
   @impl true
   def install(_config, options), do: Helpers.install_script(:antigravity, @install_url, options)

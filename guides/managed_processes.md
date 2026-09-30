@@ -141,6 +141,62 @@ limit per resource, and a private user-cache directory. Journal failure leaves
 bounded memory retention and emits telemetry. Full cursor and retention rules
 are in [Streaming, replay, and retention](streaming_replay_and_retention.md).
 
+## Isolated native Codex task
+
+Use a native Codex process when a finite task needs `--ephemeral` and
+`--ignore-user-config`. The Codex ACP packages do not expose these controls;
+see [Provider limits](providers.md#codex-isolation-controls).
+
+This example checks the installed CLI before starting the task:
+
+```elixir
+codex =
+  System.get_env("CODEX_PATH") || System.find_executable("codex") ||
+    raise("Install a Codex CLI with the required isolation options")
+
+{help, 0} = System.cmd(codex, ["exec", "--help"])
+supported_flags = String.split(help)
+
+for flag <- ["--ephemeral", "--ignore-user-config"] do
+  unless flag in supported_flags, do: raise("Codex CLI does not support #{flag}")
+end
+
+workspace = File.cwd!()
+
+{:ok, process_id} =
+  Jido.Harness.Process.start(%{
+    executable: codex,
+    argv: [
+      "--ask-for-approval", "never", "exec",
+      "--ephemeral", "--ignore-user-config",
+      "--sandbox", "workspace-write", "--json", "--cd", workspace,
+      "--", "Create proof.txt with the text ready. Follow workspace instructions."
+    ],
+    cwd: workspace,
+    stdin: false,
+    runtime_timeout_ms: 300_000,
+    idle_timeout_ms: 120_000
+  })
+
+{:ok, info} = Jido.Harness.Process.await(process_id, 310_000)
+{:ok, events} = Jido.Harness.Process.replay(process_id, limit: 10_000)
+{info, events}
+```
+
+Run this in the target workspace. Closing stdin lets Codex start when the
+complete prompt is in argv. The command uses the CLI's default model; add
+`--model` with an available model when needed. Verify `info.state == :exited`
+and `info.exit_status == 0`, then check the task output before pruning.
+
+The process API records native JSON bytes as stdout events. It returns
+`ProcessInfo` and `ProcessEvent` values. ACP sessions, normalized provider
+events, `RunResult`, and resume are unavailable through this path.
+
+The CLI keeps its existing authentication home and applies the scope of its
+`--ignore-user-config` option. Workspace instructions remain active. The
+example does not copy credentials, change `CODEX_HOME`, or pass `--ignore-rules`.
+An ephemeral task cannot resume a saved thread.
+
 ## Shell escape hatch
 
 `Jido.Harness.Process.unsafe_shell_spec/2` builds a shell-backed specification.

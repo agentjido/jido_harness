@@ -9,7 +9,7 @@ defmodule Jido.Harness.Escript do
   that path.
 
   Call this function before `:erlexec` or `:jido_harness` starts. The escript
-  must use `app: nil` and `include_priv_for: [:erlexec]`.
+  must use `app: nil` and `include_priv_for: [:erlexec, :jido_harness]`.
 
       def main(_args) do
         with {:ok, _path} <- Jido.Harness.Escript.bootstrap_erlexec(),
