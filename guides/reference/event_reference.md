@@ -102,7 +102,7 @@ the ACP message. Provider-native fields that the adapter does not map are not
 present.
 Permission events keep their Harness `request_id`; the provider request ID
 remains in `raw["id"]`. See the
-[ExMCP ACP boundary](../decisions/exmcp-acp-boundary.md) for the protocol boundary.
+[architecture reference](architecture.md) for the protocol boundary.
 
 `acp_session_configuration` events retain provider session-open configuration
 under `payload["configuration"]`. Their source is `session_open`, before

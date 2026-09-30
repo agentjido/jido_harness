@@ -9,8 +9,8 @@ defmodule Jido.Harness.Process do
   targets the complete process group and escalates through SIGINT, SIGTERM, and
   SIGKILL.
 
-  See [Managed processes](managed_processes.html) and the
-  [process reference](process_management.html).
+  See [Managed processes](managed_processes.html) for process specifications,
+  output, cancellation, and retention.
   """
 
   alias Jido.Harness.ProcessManager

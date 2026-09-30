@@ -9,7 +9,7 @@ defmodule Jido.Harness.Run do
   streams or explicit replay pages. An await timeout stops only the waiter; it
   never cancels the run.
 
-  See [Detached runs](detached_runs.html) and
+  See [Runs](runs.html) and
   [Streaming, replay, and retention](streaming_replay_and_retention.html).
   """
 

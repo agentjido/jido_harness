@@ -23,9 +23,10 @@ or:
 mix jido_harness.check --providers codex --strict
 ```
 
-Provider configuration can set `provider_config[provider].cli_path` when an
-explicit executable path is required. Individual requests may also use the
-declared `provider_options.cli_path` escape hatch.
+Provider configuration can set `provider_config[provider].cli_path` for
+base-CLI readiness checks. Set `acp_path` in provider configuration or a run
+or session request to select the executable that performs ACP work. The two
+paths can refer to different programs.
 
 ## Application configuration
 
@@ -103,6 +104,9 @@ as retained operational history rather than durable distributed storage.
 Terminal resources remain available for 24 hours by default. Explicitly prune
 completed resources sooner when an application no longer needs replay.
 
+Journals remain sensitive even after redaction. Apply the host application's
+data-retention rules; see [Security](security.md#journal-permissions).
+
 ## Shutdown and restart
 
 On application shutdown, managed process groups are terminated. Stable harness
@@ -124,3 +128,6 @@ before the ACP initialize response.
 Keep the failed result before pruning its run or process. A nonzero exit status
 alone does not identify the cause. Use the stderr and lifecycle data to check
 process startup and output drain. Harness does not retry a failed process.
+
+For a release, follow [Testing](testing.md#release-verification) and review the
+[dependency audit exceptions](reference/dependencies.md#audit-exceptions).

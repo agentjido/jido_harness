@@ -42,17 +42,19 @@ Environment overlays accept string names with string, `false`, or `nil` values.
 Use `false` or `nil` to remove inherited variables when constructing a child
 environment.
 
-For hard isolation, set `env_mode: :replace` on every run or session and provide
+To limit inherited environment values, set `env_mode: :replace` and provide
 only the minimal environment required by that provider. Runs and sessions use
 the same ACP process path, so replacement mode has the same meaning in both
-workflows. It prevents ambient host variables from reaching provider
-descendants.
+workflows. Replacement mode limits environment inheritance. It does not
+isolate filesystem access or network access, and it does not replace the
+provider's sandbox. Provider environment hooks can also add declared values.
 
 ## Structured-output isolation
 
 No built-in version 3 ACP profile advertises structured output. Harness rejects
-`structured_output` before it starts the agent. Stay on version 2 when the old
-direct-Codex structured-output contract is required.
+`structured_output` before it starts the agent. See the
+[migration guide](migrations/migration_v3.md#structured-output-and-isolation)
+for changes from the old direct-Codex contract.
 
 ## Redaction
 
@@ -78,7 +80,7 @@ execute or influence provider behavior. Enable them deliberately.
 
 ## Additional directories
 
-`add_dirs` expands the provider's visible filesystem beyond `cwd`. Validate
+When a profile supports it, `add_dirs` requests access beyond `cwd`. Validate
 those paths at the application boundary and do not accept arbitrary user paths
 without an authorization decision.
 

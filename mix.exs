@@ -11,16 +11,13 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/overview.md",
        "guides/getting_started.md",
-       "guides/choosing_a_workflow.md",
        "guides/providers.md"
      ]},
     {"Workflows",
      [
-       "guides/one_shot_requests.md",
-       "guides/detached_runs.md",
+       "guides/runs.md",
        "guides/interactive_sessions.md",
        "guides/managed_processes.md",
-       "guides/escripts.md",
        "guides/recipes/policy_jobs.md"
      ]},
     {"Shared concepts",
@@ -33,6 +30,7 @@ defmodule Jido.Harness.MixProject do
     {"Operating and extending",
      [
        "guides/operations.md",
+       "guides/escripts.md",
        "guides/testing.md",
        "guides/custom_adapters.md"
      ]},
@@ -40,23 +38,13 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/reference/configuration_reference.md",
        "guides/reference/event_reference.md",
-       "guides/reference/adapter_contract.md",
-       "guides/reference/process_management.md",
-       "guides/reference/integration_testing.md",
        "guides/reference/telemetry.md",
-       "guides/reference/dependency_policy.md",
-       "guides/reference/dependency_audit.md"
+       "guides/reference/architecture.md",
+       "guides/reference/dependencies.md"
      ]},
     {"Migration",
      [
-       "guides/migrations/migration_v3.md",
-       "guides/migrations/migration_v2.md",
-       "guides/migrations/structured_output_execution.md"
-     ]},
-    {"Design decisions",
-     [
-       "guides/decisions/exmcp-acp-boundary.md",
-       "guides/decisions/structured-output-schema-isolation.md"
+       "guides/migrations/migration_v3.md"
      ]},
     {"Livebooks",
      [

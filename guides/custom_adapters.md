@@ -1,9 +1,20 @@
 # Custom adapters
 
-A custom provider implements `Jido.Harness.Adapter` and returns one
-`AdapterSpec` with one `ACPAgentSpec`.
+A provider adapter describes its base CLI and one ACP entry point. Harness
+owns runs, sessions, processes, and results. ExMCP owns ACP framing, validation,
+and protocol request correlation.
 
-## Minimal adapter
+## Required callbacks
+
+| Callback | Return value |
+| --- | --- |
+| `spec/0` | A validated `Jido.Harness.AdapterSpec` |
+| `status/1` | `{:ok, ProviderStatus.t()}` or `{:error, reason}` |
+
+A version 3 adapter does not implement `run/2`, `cancel/2`, session transports,
+or ACP JSON parsing.
+
+## Minimal native profile
 
 ```elixir
 defmodule MyApp.HarnessAdapter do
@@ -17,36 +28,43 @@ defmodule MyApp.HarnessAdapter do
       provider: :my_provider,
       name: "My Provider",
       executable: "my-provider",
-      capabilities: Capabilities.new!(),
+      capabilities: Capabilities.new!(resume?: true),
       acp_agent: ACPAgentSpec.native("my-provider", ["acp"],
-        capabilities: %{load_session: true, multimodal: true},
-        turn_options: [:attachments, :content]
+        capabilities: %{load_session: true}
       ),
-      normalized_options: [:model, :provider_session_id, :attachments],
+      normalized_options: [:provider_session_id, :mcp_config],
       provider_options: []
     )
   end
 
   @impl true
-  def status(_config) do
+  def status(config) do
+    executable = System.find_executable(Map.get(config, :cli_path, spec().executable))
+    installed = not is_nil(executable)
+
     {:ok,
      ProviderStatus.new!(
        provider: :my_provider,
-       installed: true,
-       compatible: true,
+       installed: installed,
+       compatible: installed,
        authenticated: :unknown,
-       smoke_ready: true,
+       smoke_ready: installed,
+       executable: executable,
        capabilities: spec().capabilities
      )}
   end
 end
 ```
 
-The adapter does not implement `run/2`, session transport callbacks, ACP
-framing, event mapping, or protocol correlation. Harness and ExMCP provide
-those functions.
+This example checks executable availability and declares no version floor.
+Add the provider's version and authentication checks before using a profile
+that requires them. `status/1` must not send a model prompt.
+`Jido.Harness.status/1` adds ACP executable readiness;
+`ProviderStatus.ready?/1` requires both CLI and ACP readiness.
 
 ## Register the provider
+
+Put the registration in the host application's configuration:
 
 ```elixir
 config :jido_harness,
@@ -56,12 +74,29 @@ config :jido_harness,
   }
 ```
 
-Registrations merge over built-ins. A built-in provider atom is an explicit
-override.
+Registrations merge over built-ins. An existing provider atom overrides its
+built-in adapter. See the [configuration reference](reference/configuration_reference.md).
 
-## Adapter-backed ACP
+## Declare options and capabilities
 
-Use `ACPAgentSpec.adapter/3` when ACP is a separate program:
+`AdapterSpec` defines provider identity, base-CLI installation data, normalized
+options, accepted values, provider options, and request defaults.
+`ACPAgentSpec` defines the ACP executable, arguments, source, optional package
+and authentication method, maturity, and session capabilities.
+
+Declare supported fields in `session_options`, `turn_options`, and
+`configuration_options`. Declare provider extensions separately in
+`session_provider_options` and `turn_provider_options`. Using `:adapter` for
+an option list delegates to the corresponding `AdapterSpec` declaration.
+
+Declarations are checked before a run or session dispatches work. Unknown
+options, unsupported values, and unavailable capabilities return errors.
+Only advertise behavior the selected ACP entry point implements.
+
+## Separate ACP adapter programs
+
+Use `ACPAgentSpec.adapter/3` when another program translates the base CLI's
+protocol into ACP:
 
 ```elixir
 ACPAgentSpec.adapter("my-provider-acp", "my-provider-acp@1.2.3",
@@ -69,17 +104,35 @@ ACPAgentSpec.adapter("my-provider-acp", "my-provider-acp@1.2.3",
 )
 ```
 
-Use an exact package version. `Jido.Harness.install/2` then includes this
-package. A caller can override executable discovery with `acp_path`.
+Declare an exact package version. `Jido.Harness.install/2` installs the base
+CLI and the separate ACP package. Installation is an explicit operation and
+supports `dry_run: true`. A request or provider configuration can override ACP
+executable discovery with `acp_path`.
 
-## Environment mapping
+## Optional callbacks
 
-Implement optional `acp_env/2` only when the ACP process needs provider-specific
-credential or endpoint mapping. Return a map of child environment values. Do
-not read prompts or create lifecycle state in this callback.
+| Callback | Purpose | Return value |
+| --- | --- | --- |
+| `install/2` | Install the base CLI | `{:ok, result}` or `{:error, reason}` |
+| `acp_env/2` | Map provider configuration and request values to the child environment | `{:ok, map}` or `{:error, reason}` |
+| `acp_validate_request/1` | Reject invalid provider option combinations | `:ok` or `{:error, reason}` |
+| `acp_validate_capabilities/2` | Check the initialize response before authentication and session creation | `:ok` or `{:error, reason}` |
+| `acp_configuration/1` | Map normalized configuration fields to ACP IDs and values | A map |
 
-## Test the contract
+Environment hooks receive a `SessionRequest` for both finite runs and
+interactive sessions. Preserve the request's environment policy. Do not
+create lifecycle state or send prompts from these hooks.
 
-Use a fake ACP executable to test initialization, prompts, updates, approvals,
-cancellation, process cleanup, and invalid frames. Add opt-in live tests for the
-real ACP entry point.
+Configuration mapping applies at session opening and at runtime. Codex uses
+it to translate normalized sandbox values into an ACP mode. See
+[Providers](providers.md) for current profile limits.
+
+## Verify the profile
+
+Use a fake ACP executable for initialization, prompts, updates, permission
+requests, cancellation, malformed frames, and process cleanup. Add explicit
+live checks for the real entry point. Follow [Testing](testing.md) before
+release.
+
+The [architecture reference](reference/architecture.md) describes the boundary
+an adapter must preserve.

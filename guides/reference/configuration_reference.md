@@ -40,10 +40,11 @@ config :jido_harness,
       acp_path: "/opt/acp/bin/codex-acp",
       request_defaults: %{
         sandbox_mode: :workspace_write,
-        approval_mode: :prompt
+        runtime_timeout_ms: 300_000
       },
       session_defaults: %{
         sandbox_mode: :workspace_write,
+        approval_mode: :prompt,
         turn_runtime_timeout_ms: 600_000
       },
       retention: %{

@@ -23,27 +23,12 @@ corresponding API contracts.
 
 ## Install the local package
 
-Desktop applications often start with a smaller `PATH` than an interactive
-shell. Add the common user-level CLI locations before Jido.Harness resolves a
-provider executable. Extend `extra_cli_paths` if your CLI is installed
-elsewhere.
+Open this notebook from the source checkout with Elixir 1.19 or a compatible
+later version. The relative dependency path uses its saved location.
+Configure the Livebook runtime's `PATH` before starting provider cells; see
+[Runtime environment](../operations.md#runtime-environment).
 
 ```elixir
-extra_cli_paths = [
-  Path.join(System.user_home!(), ".local/bin"),
-  Path.join(System.user_home!(), ".local/share/mise/shims"),
-  Path.join(System.user_home!(), ".bun/bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin"
-]
-
-path =
-  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
-  |> Enum.uniq()
-  |> Enum.join(":")
-
-System.put_env("PATH", path)
-
 Mix.install([
   {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
@@ -69,16 +54,17 @@ the caller's wait; it does not kill a run if the wait expires.
 provider = :codex
 cwd = Path.expand("../..", __DIR__)
 prompt = "Reply with exactly: harness-ready"
-await_timeout = 300_000
+runtime_timeout_ms = 300_000
+await_timeout = 320_000
 
-%{provider: provider, cwd: cwd, prompt: prompt, await_timeout: await_timeout}
+%{provider: provider, cwd: cwd, prompt: prompt, runtime_timeout_ms: runtime_timeout_ms, await_timeout: await_timeout}
 ```
 
 ## Discover capabilities
 
 `providers/0` is local metadata. `status/1` checks installation, version,
-authentication readiness, normalized capabilities, and available session
-transports without sending a prompt.
+authentication evidence, normalized capabilities, and ACP executable
+availability without sending a prompt.
 
 ```elixir
 Jido.Harness.providers()
@@ -87,7 +73,7 @@ Jido.Harness.providers()
     provider: spec.provider,
     executable: spec.executable,
     normalized_options: spec.normalized_options,
-    session_transports: Enum.map(spec.session_transports, & &1.name)
+    acp_agent: spec.acp_agent
   }
 end)
 ```
@@ -112,7 +98,8 @@ end
   authenticated?: provider_status.authenticated,
   version: provider_status.version,
   capabilities: provider_status.capabilities,
-  session_transports: Enum.map(provider_status.session_transports, & &1.name)
+  acp_agent: provider_status.acp_agent,
+  session_ready?: provider_status.session_ready
 }
 ```
 
@@ -125,7 +112,7 @@ canonical mapping remain available as `:provider_event` events.
 result =
   Jido.Harness.run(
     provider,
-    %{prompt: prompt, cwd: cwd, runtime_timeout_ms: await_timeout},
+    %{prompt: prompt, cwd: cwd, runtime_timeout_ms: runtime_timeout_ms},
     await_timeout: await_timeout
   )
   |> JidoHarnessLivebook.completed!()

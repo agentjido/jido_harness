@@ -14,7 +14,7 @@ do not survive a BEAM or host restart.
 
 > This checkout is the `3.0.0-rc.1` release candidate. Test it with a Git
 > dependency. Review the [version 3 migration guide](guides/migrations/migration_v3.md)
-> and [dependency audit exceptions](guides/reference/dependency_audit.md) before release use.
+> and [dependency audit exceptions](guides/reference/dependencies.md#audit-exceptions) before release use.
 
 ## Install
 
@@ -54,7 +54,8 @@ authentication, and application configuration.
 {:ok, %Jido.Harness.RunResult{status: :completed} = result} =
   Jido.Harness.run(:codex, "Reply with exactly: harness-ready",
     cwd: File.cwd!(),
-    await_timeout: 300_000
+    runtime_timeout_ms: 300_000,
+    await_timeout: 320_000
   )
 
 IO.puts(result.text)
@@ -69,14 +70,14 @@ cancel the task.
 
 | Need | API | Guide |
 | --- | --- | --- |
-| Wait for one task | `Jido.Harness.run/3` | [One-shot requests](guides/one_shot_requests.md) |
-| Start work and return later | `Jido.Harness.Run` | [Detached runs](guides/detached_runs.md) |
+| Wait for one task | `Jido.Harness.run/3` | [One-shot requests](guides/runs.md#wait-for-one-run) |
+| Start work and return later | `Jido.Harness.Run` | [Detached runs](guides/runs.md#start-a-detached-run) |
 | Keep a multi-turn conversation | `Jido.Harness.Session` | [Interactive sessions](guides/interactive_sessions.md) |
 | Manage a local executable | `Jido.Harness.Process` | [Managed processes](guides/managed_processes.md) |
 
 Resources have stable Harness IDs. You can inspect their state, stream or
 replay events, wait for completion, cancel active work, and prune retained
-results. See [Choosing a workflow](guides/choosing_a_workflow.md).
+results. See [Choose an API](guides/overview.md#choose-an-api).
 
 ## Providers
 
@@ -96,11 +97,12 @@ Application code owns provider selection, workspace setup, approval policy,
 and decisions about the result.
 
 Harness does not require `jido` or `jido_connect`. It can run in an Elixir
-application on its own. See the [dependency and scope policy](guides/reference/dependency_policy.md).
+application on its own. See the [architecture](guides/reference/architecture.md)
+and [dependency reference](guides/reference/dependencies.md).
 
 ## Documentation
 
-All guides, reference pages, design decisions, and notebooks are under `guides/`.
+All guides, reference pages, migration instructions, and notebooks are under `guides/`.
 Generated API documentation is written to the ignored `doc/` directory.
 
 - [Overview](guides/overview.md): resource model and runtime guarantees.

@@ -1,20 +1,21 @@
 # Escript packaging
 
-Jido.Harness uses `erlexec` and its native `exec-port` helper to manage OS
-processes. A Mix escript can include this helper, but it cannot execute a file
-inside the escript archive. Extract and configure the helper before the
-applications start.
+Harness uses erlexec's native `exec-port` helper to manage OS processes. An
+escript can include this file, but it cannot execute a file inside its archive.
+Extract and configure the helper before applications start.
 
 ## Configure the escript
 
-Set `app: nil` so that Mix does not start `erlexec` before your main function.
-Use `include_priv_for: [:erlexec]` to add the native helper to the archive:
+First add Harness as described in [Getting started](getting_started.md).
+In your Mix project, set `app: nil` so Mix does not start erlexec before the
+main function. Include its native helper:
 
 ```elixir
 def project do
   [
     app: :my_cli,
     version: "0.1.0",
+    deps: deps(),
     escript: [
       main_module: MyCLI,
       app: nil,
@@ -26,46 +27,52 @@ end
 
 ## Bootstrap before application startup
 
-Call `Jido.Harness.Escript.bootstrap_erlexec/1` before you start
-`:jido_harness`:
+This example checks Codex readiness without sending a prompt:
 
 ```elixir
 defmodule MyCLI do
-  def main(args) do
-    with {:ok, _helper_path} <- Jido.Harness.Escript.bootstrap_erlexec(),
-         {:ok, _applications} <- Application.ensure_all_started(:jido_harness) do
-      run(args)
+  def main(_args) do
+    with {:ok, _helper} <- Jido.Harness.Escript.bootstrap_erlexec(),
+         {:ok, _applications} <- Application.ensure_all_started(:jido_harness),
+         {:ok, status} <- Jido.Harness.status(:codex) do
+      IO.inspect(status, label: "Codex readiness")
+      unless Jido.Harness.ProviderStatus.ready?(status), do: System.halt(1)
     else
-      {:error, error} ->
-        IO.puts(:stderr, Exception.message(error))
+      {:error, reason} ->
+        IO.puts(:stderr, "startup failed: #{inspect(reason)}")
         System.halt(1)
     end
   end
 end
 ```
 
-The bootstrap function selects only `erlexec/priv/SYSTEM_ARCH/exec-port` from
-the archive. It writes the helper below the private user-cache directory with
-mode `0700` and sets the `:erlexec, :portexe` application value. Repeated calls
-for the same helper content reuse the cached file.
+The bootstrap selects `erlexec/priv/SYSTEM_ARCH/exec-port` from the archive.
+It writes the helper under the private user-cache directory with mode `0700`
+and sets `:erlexec, :portexe`. Calls with the same content reuse the cached
+file.
 
-Use `cache_dir: path` when the default user-cache directory is not suitable:
+Set `cache_dir: path` when the default cache is unsuitable:
 
 ```elixir
 Jido.Harness.Escript.bootstrap_erlexec(cache_dir: cache_dir)
 ```
 
-Do not call the bootstrap function after `:erlexec` starts. The running port
-process cannot change its executable path.
+Do not bootstrap after erlexec starts. Its running port cannot change the
+executable path.
 
 ## Build and verify
 
-Build the escript and run a provider readiness check from the packaged CLI:
-
 ```console
 mix escript.build
-./my_cli check codex
+./my_cli
 ```
 
-The target machine must use the same system architecture as the included
-`exec-port` file. Build one escript artifact for each supported architecture.
+The provider CLI and ACP executable must still be installed and authenticated
+on the target host. The archive does not include them.
+
+The target architecture must match the included native helper. Build a
+separate artifact for each supported architecture.
+
+The fixture under `test/support/fixtures/escript/` builds and executes a real
+escript to check native extraction and managed processes. See
+[Testing](testing.md#unit-and-fixture-checks) for verification.

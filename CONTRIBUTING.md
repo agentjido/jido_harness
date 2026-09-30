@@ -23,9 +23,8 @@ Local unit tests use fake CLIs. They do not need provider credentials.
 | `lib/mix/tasks/` | Provider readiness and one-request smoke tasks |
 | `config/config.exs` | Repository logging, commit checks, and release tools |
 | `guides/` | Getting started, workflows, shared concepts, and operations |
-| `guides/reference/` | Configuration, event, process, and dependency contracts |
-| `guides/migrations/` | Version changes and clearly marked historical contracts |
-| `guides/decisions/` | Design decisions and their status |
+| `guides/reference/` | Configuration, events, telemetry, architecture, and dependencies |
+| `guides/migrations/` | Upgrade instructions for the current release |
 | `guides/livebooks/` | Runnable notebooks |
 | `guides/recipes/` | Tested application examples and their instructions |
 | `test/jido_harness/`, `test/mix/` | Unit and fake-CLI tests |
@@ -70,6 +69,10 @@ Put documentation under `guides/`. Put notebooks under `guides/livebooks/` and
 tested application recipes under `guides/recipes/`. Link related pages with
 relative paths.
 
+Keep one guide for each workflow or shared contract. Link to reference pages
+instead of repeating their tables. Keep current release instructions in the
+published guides; link to an immutable Git tag for historical contracts.
+
 Add each published guide to the appropriate `@guide_groups` entry in `mix.exs`.
 That list defines both ExDoc extras and their navigation groups. Do not create
 a second list of guide paths. Root project documents have a separate short
@@ -91,7 +94,7 @@ components and runs the same ExUnit contracts.
 ## Prepare a release
 
 Run the four checks above and the affected live provider profiles. Review the
-[dependency audit exceptions](guides/reference/dependency_audit.md) and
+[dependency audit exceptions](guides/reference/dependencies.md#audit-exceptions) and
 [current provider limits](guides/providers.md). A local patch does not fix the
 published dependency for package consumers.
 

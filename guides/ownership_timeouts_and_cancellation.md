@@ -40,10 +40,14 @@ caller-independent until explicitly stopped or pruned.
 | `turn_runtime_timeout_ms` | active session turn | yes |
 | `turn_idle_timeout_ms` | inactive session turn | yes |
 | `session_idle_timeout_ms` | idle time between turns | closes session |
-| `approval_timeout_ms` | unresolved approval | resolves through session lifecycle |
+| `approval_timeout_ms` | unresolved approval | denies the request; the provider can continue |
 
 Timeout fields default to `:infinity` unless a caller or provider default sets
 them. Production applications should choose finite values based on the work.
+
+Managed processes also have a 15-second `startup_timeout_ms`. ACP initialization
+uses a separate 30-second limit. These startup limits are finite even when
+execution timeouts use `:infinity`; see the [architecture reference](reference/architecture.md#internal-deadlines).
 
 ## Run cancellation
 
@@ -67,14 +71,15 @@ turn receives `:turn_interrupted`; the session can accept later input.
 ## Session close and kill
 
 `Jido.Harness.Session.close/1` is graceful and produces a closed lifecycle.
-`Jido.Harness.Session.kill/1`
-forcibly cancels the session and ACP process. Both leave a terminal resource that
+`Jido.Harness.Session.kill/1` forcibly cancels the session and ACP process.
+Both leave a terminal resource that
 can be replayed and pruned.
 
 ## Process cancellation escalation
 
-`Jido.Harness.Process.cancel/1` signals the entire process group with SIGINT, waits five
-seconds, sends SIGTERM, waits five more seconds, then sends SIGKILL.
+`Jido.Harness.Process.cancel/1` signals the process group with SIGINT, then
+SIGTERM, then SIGKILL. The two grace periods default to five seconds each and
+can be configured under `:process_manager`.
 `Jido.Harness.Process.kill/1` immediately sends SIGKILL to the group.
 
 Group-level signaling matters for coding-agent CLIs because they may create

@@ -3,7 +3,12 @@
 This guide installs Jido.Harness, verifies one provider without sending a
 prompt, and makes one live normalized request.
 
+Run Elixir examples in `iex -S mix` from the application that uses Harness.
+
 ## Add the dependency
+
+Use Elixir 1.19 or a compatible later version and its supported Erlang/OTP
+version. Provider executables must be available to that runtime.
 
 Use the Git dependency to test the version 3 release candidate. Commit your
 application's `mix.lock` so that it records the selected revision.
@@ -36,6 +41,16 @@ adapter. Preview the required installation:
 ```elixir
 Jido.Harness.install(:codex, dry_run: true)
 ```
+
+The plan includes the base CLI and its separate ACP adapter. To install both:
+
+```elixir
+Jido.Harness.install(:codex)
+```
+
+Authenticate with the provider's CLI before making a live request. Harness
+does not copy or manage credentials. See [Providers](providers.md) for entry
+points and authentication details.
 
 Then ask Jido.Harness for a non-billable status report:
 
@@ -74,7 +89,7 @@ This sends `Reply with exactly: ready` through one provider and one finite
 harness run. It may consume paid API or subscription usage. It is deliberately
 not an interactive chat loop.
 
-## Make the same request from Elixir
+## Make a request from Elixir
 
 ```elixir
 alias Jido.Harness.RunResult
@@ -82,7 +97,8 @@ alias Jido.Harness.RunResult
 {:ok, %RunResult{status: :completed} = result} =
   Jido.Harness.run(:codex, "Reply with exactly: harness-ready",
     cwd: File.cwd!(),
-    await_timeout: 300_000
+    runtime_timeout_ms: 300_000,
+    await_timeout: 320_000
   )
 
 IO.puts(result.text)
@@ -140,10 +156,19 @@ case Jido.Harness.run(:codex, prompt, cwd: File.cwd!()) do
   {:ok, %Jido.Harness.RunResult{} = result} ->
     {:error, result.error || result.status}
 
+  {:error, :timeout} ->
+    {:error, :still_running}
+
   {:error, %Jido.Harness.Error{} = error} ->
     {:error, error}
+
+  {:error, reason} ->
+    {:error, reason}
 end
 ```
 
-Read [Choosing a workflow](choosing_a_workflow.md) before adding lifecycle
+An await timeout leaves the run active. Use [Runs](runs.md#start-a-detached-run)
+when you need its ID before waiting, so later code can cancel or await it.
+
+Read [Choose an API](overview.md#choose-an-api) before adding lifecycle
 control to an application.

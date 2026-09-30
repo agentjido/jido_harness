@@ -1,20 +1,14 @@
 # Providers and capabilities
 
-Jido.Harness includes ten CLI providers. Every run and session uses ACP through
-ExMCP. A provider can supply ACP in its base CLI or through a separate adapter
-program.
+Harness includes ten provider profiles. Every run and session uses ACP through
+ExMCP. ACP can be part of the base CLI or a separate adapter program.
 
-This distinction also controls the source of `Event.raw`. A native ACP provider
-writes the retained ACP message. For an adapter-backed provider, the adapter
-writes it after it translates the provider's native protocol. Native fields
-that the adapter does not include in its ACP message are not available to
-Harness.
-
-Use `Jido.Harness.providers/0` to inspect the declarations.
+Use `Jido.Harness.providers/0` to inspect the bundled declarations. These
+describe the selected Harness profile, not every feature of the base CLI.
 
 ## Provider inventory
 
-| Provider | Atom | Base CLI | ACP entry point | Source | Maturity |
+| Provider | Atom | Base CLI | ACP entry point | Source | Profile maturity |
 | --- | --- | --- | --- | --- | --- |
 | Amp | `:amp` | `amp` | `amp-acp` | adapter | experimental |
 | Claude Code | `:claude` | `claude` | `claude-agent-acp` | adapter | stable |
@@ -27,84 +21,115 @@ Use `Jido.Harness.providers/0` to inspect the declarations.
 | Pi | `:pi` | `pi` | `pi-acp` | adapter | experimental |
 | Z.AI | `:zai` | `claude` | `claude-agent-acp` | adapter | experimental |
 
-Z.AI uses the Claude Code ACP adapter with the official Z.AI environment
-mapping. It remains a separate `:zai` provider.
+Maturity is profile metadata. It does not establish that live tests ran for
+every installed CLI version. Use [Testing](testing.md) to verify the providers
+required by a release.
 
-Cursor uses the stable `cursor-agent` binary name instead of the shorter
-`agent` alias. This prevents command-name collisions with other providers.
-Harness sends the documented `cursor_login` ACP authentication method before
-it opens a session. Authenticate first with `cursor-agent login`, or set
-`CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`. Cursor-specific blocking extension
-methods are not normalized yet, so this profile is experimental. See the
-[Cursor ACP documentation](https://cursor.com/docs/cli/acp).
+## Separate ACP packages
 
-## Capability declarations
+`Jido.Harness.install/2` installs both the base CLI and these pinned ACP packages:
 
-`ACPAgentSpec.capabilities` is the source of truth for session loading,
-follow-up turns, interruption, approvals, multimodal input, MCP servers, usage,
-and dynamic configuration. Unsupported operations fail before provider
-dispatch. Capabilities can differ, but the Harness API is the same.
+| Provider | ACP package |
+| --- | --- |
+| Amp | `amp-acp@0.9.0` |
+| Claude Code | `@agentclientprotocol/claude-agent-acp@0.70.0` |
+| Codex | `@agentclientprotocol/codex-acp@1.6.2` |
+| Pi | `pi-acp@0.0.33` |
+| Z.AI | `@agentclientprotocol/claude-agent-acp@0.70.0` |
+
+Preview installation with `Jido.Harness.install(provider, dry_run: true)`.
+Native profiles use the base CLI's ACP command.
+
+Z.AI remains a separate provider. It uses the Claude ACP adapter with the
+[Z.AI Claude configuration](https://docs.z.ai/devpack/tool/claude) mapping for
+`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
+
+Cursor uses `cursor-agent` to avoid collisions with other `agent` commands.
+Harness selects the `cursor_login` authentication method. Log in first with
+the installed Cursor CLI, or supply `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`.
+Cursor extension methods are not normalized in this profile. See
+[Cursor ACP authentication](https://cursor.com/docs/cli/acp).
 
 ## Readiness
 
 ```elixir
 {:ok, status} = Jido.Harness.status(:codex)
-status.session_ready
-Jido.Harness.ProviderStatus.ready?(status)
+{status.session_ready, Jido.Harness.ProviderStatus.ready?(status)}
 ```
 
-The first value reports the ACP executable. The second value requires both the
-base CLI and ACP executable. Status checks do not send a model prompt.
+`session_ready` reports ACP executable availability. `ready?/1` requires base
+CLI and ACP readiness. Authentication can be `:unknown` when inspection
+cannot establish cached login. A live request is still needed to prove the
+provider can execute a task.
 
 ```console
 mix jido_harness.check --providers codex,kimi --strict
 ```
 
-For an adapter-backed provider, the check output gives one installation command
-for the base CLI and one for the ACP adapter.
+Readiness sends no model prompt. The check output includes installation
+guidance for both components of a separate-adapter profile.
 
-## Normalized options
+## Options and capabilities
 
-Each `ACPAgentSpec` declares the session, turn, and configuration fields that it
-can represent. Provider escape hatches stay under `provider_options` and are
-also declared. Unknown options fail. Harness does not pass old direct-CLI flags
-to an ACP adapter.
+`AdapterSpec` declares normalized request fields and provider extensions.
+`ACPAgentSpec` declares session, turn, and configuration options and
+`SessionCapabilities`. Unsupported values fail before dispatch.
 
-## Provider selection
+The current profiles differ in model configuration, resume, attachments,
+usage, MCP support, and approvals. Inspect the selected declaration:
 
-Jido.Harness does not rank providers, retry billable work, or fall back to a
-second provider. Pass a provider atom or configure one default.
+```elixir
+spec = Enum.find(Jido.Harness.providers(), &(&1.provider == :codex))
+
+%{
+  request_options: spec.normalized_options,
+  session_options: spec.acp_agent.session_options,
+  configuration_options: spec.acp_agent.configuration_options,
+  capabilities: spec.acp_agent.capabilities
+}
+```
+
+Steering is unavailable in the current ACP path. No built-in profile supports
+structured output. Finite runs reject manual `approval_mode: :prompt`; see
+[Runs](runs.md) and the [approval-policy recipe](recipes/policy_jobs.md).
+
+Unknown options return errors. Old direct-CLI flags are not passed through
+to an ACP adapter. Harness does not select providers, retry paid work, or fall
+back to another provider.
+
+For a separate ACP adapter, `Event.raw` is the adapter's translated ACP message.
+Native fields it omits are unavailable. See the
+[event reference](reference/event_reference.md#provider-events-and-replay-gaps).
 
 ## OpenCode model changes
 
-OpenCode accepts `model` on runs and sessions. Use
-`Jido.Harness.Session.configure(session_id, %{model: "provider/model"})` to
-change a session model. Harness uses `session/set_config_option` with config ID
-`model`. Older ACP agents can use `session/set_model` only when the config RPC
-returns method not found. Other provider errors are returned to the caller.
+OpenCode supports initial and runtime model configuration:
+
+```elixir
+Jido.Harness.Session.configure(session_id, %{model: "provider/model"})
+```
+
+Harness uses `session/set_config_option` with config ID `model`. It tries
+`session/set_model` only when the config RPC returns method not found.
+Other provider errors are returned to the caller. Use a model available to the
+selected provider.
 
 ## Codex isolation controls
 
-Set `provider_options: %{ephemeral: true, ignore_user_config: true}` on a Codex
-run or session to request a nonpersistent thread without user configuration.
-Both options are optional booleans. An ephemeral request cannot load a saved
-session. Workspace instructions remain active, and the workspace can remain
-writable. `approval_mode` controls Harness permission responses; sandbox values
-select the Codex ACP mode.
+The optional `provider_options` booleans `ephemeral` and
+`ignore_user_config` request a thread without saved state and without user
+configuration. An ephemeral request cannot load a saved session. Workspace
+instructions remain active.
 
-The ACP adapter must report the applied controls in
-`agentCapabilities._meta.codex.isolation`. Harness returns a configuration error
-before opening a session when a requested control is unavailable. The pinned
-Codex ACP 1.6.2 package does not support these controls. An adapter with the
-isolation extension can be selected with `acp_path`.
-Do not assume that an older adapter applies these environment controls.
+The pinned Codex ACP 1.6.2 package does not support these controls. Requesting
+them returns a configuration error before session creation. Harness requires
+the initialize response to report applied controls in
+`agentCapabilities._meta.codex.isolation`.
 
-```elixir
-Jido.Harness.run(:codex, "Update the fixture",
-  cwd: "/path/to/fixture",
-  acp_path: "/path/to/isolation-capable/codex-acp",
-  sandbox_mode: :workspace_write,
-  approval_mode: :auto_approve,
-  provider_options: %{ephemeral: true, ignore_user_config: true}
-)
-```
+A custom ACP executable can be selected with `acp_path`. Verify its isolation
+behavior before use. The presence of these request fields does not establish
+isolation support in the pinned package.
+
+Codex sandbox values select the ACP mode. Harness `approval_mode` controls
+its permission responses. Environment replacement, sandbox mode, and saved
+thread state are separate controls; see [Security](security.md).

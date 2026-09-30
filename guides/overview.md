@@ -1,116 +1,85 @@
 # Overview
 
-Jido.Harness is a normalization and lifecycle layer for CLI coding agents. It
-gives an Elixir application one way to start provider work, observe it, retain
-its output, and control its lifetime without adopting a provider SDK or parsing
-provider-specific JSON.
+Jido.Harness runs coding-agent CLIs from Elixir. It converts Agent Client
+Protocol (ACP) activity into common requests, events, results, and errors. It
+also owns the processes that execute the work.
 
-The package has two complementary responsibilities:
+Runs, sessions, and local processes belong to the application supervision
+tree. They can continue after the caller exits. Their output has bounded
+memory and disk retention.
 
-1. **Normalize ACP activity.** Agent requests and records become
-   validated Jido.Harness requests, events, results, statuses, capabilities,
-   and errors.
-2. **Own runtime resources.** Runs, sessions, and local processes live under
-   the application supervision tree rather than under whichever caller happens
-   to start or consume them.
+## Choose an API
 
-## The resource model
+| Need | API | Guide |
+| --- | --- | --- |
+| Send one request and wait | `Jido.Harness.run/3` | [Runs](runs.md#wait-for-one-run) |
+| Start work and return its ID | `Jido.Harness.Run` | [Runs](runs.md#start-a-detached-run) |
+| Keep provider context across turns | `Jido.Harness.Session` | [Interactive sessions](interactive_sessions.md) |
+| Manage an arbitrary local executable | `Jido.Harness.Process` | [Managed processes](managed_processes.md) |
 
-The public API is organized around three resource types.
+The blocking and detached APIs use the same finite-run lifecycle. Use the
+detached API when a web request, job process, or progress consumer can end
+before the provider finishes.
 
-| Resource | Use it for | Stable identity | Terminal value |
-| --- | --- | --- | --- |
-| `Jido.Harness.Run` | One finite provider execution | `run_id` | `Jido.Harness.RunResult` |
-| `Jido.Harness.Session` | A multi-turn provider conversation | `session_id`, `turn_id` | `Jido.Harness.TurnResult` per turn |
-| `Jido.Harness.Process` | One structured local OS process | `process_id` | `Jido.Harness.ProcessInfo` |
+A session keeps one ACP process open for multiple turns. A managed process
+executes a local program without requiring a provider or ACP.
 
-`Jido.Harness.run/3` is a convenience over the run lifecycle: it starts a
-supervised run, waits for its result, and returns that result directly.
+## Resource identities
 
-Every resource can be inspected independently of its creator. Detached runs
-and sessions can be listed and reattached by ID. Their event streams are
-cursor-driven, so a slow consumer does not cause an unbounded producer mailbox.
+| ID | Meaning |
+| --- | --- |
+| `run_id` | One finite Harness execution |
+| `session_id` | One Harness conversation |
+| `turn_id` | One accepted turn inside a session |
+| `process_id` | One managed OS process |
+| `provider_session_id` | A provider's context or resume token |
 
-## The normalization boundary
-
-Provider-specific values enter and leave only at explicit edges:
-
-```text
-provider selection and normalized request
-                    │
-                    ▼
- RunRequest / SessionRequest / TurnRequest
-                    │
-                    ▼
-        ExMCP + supervised ACP process
-                    │
-                    ▼
-       ordered Jido.Harness.Event values
-                    │
-                    ▼
- RunResult / TurnResult / Jido.Harness.Error
-```
-
-Shared semantics have stable names and types. Capability-dependent data is
-present only when a provider can supply it. Input escape hatches live under
-`provider_options`; output without a safe canonical mapping uses
-`:provider_event` and `Event.raw`.
-
-This is normalization, not forced equivalence. ACP agents can expose different
-capabilities. Capability metadata makes those differences visible, and
-unsupported options fail before provider dispatch.
-
-Read [Normalization and the data model](normalization_and_data_model.md) for
-the stability boundary.
+Harness IDs control resource lookup, cancellation, replay, and pruning.
+A provider session ID is request data used to resume provider context. It
+cannot look up a Harness resource.
 
 ## Runtime guarantees
 
-Jido.Harness establishes these package-level guarantees:
+- Resources survive the caller or stream consumer.
+- Events have an increasing sequence within each resource.
+- A terminal run, session, or accepted turn has one terminal event for its scope.
+- An await timeout stops the caller's wait and leaves the work running.
+- Process cancellation targets the managed process group.
+- Output retention has memory and disk limits.
+- Unknown options and unsupported values return errors.
+- Built-in adapters launch an executable with separate arguments.
 
-- A run, session, or process is application-owned rather than caller-owned.
-- Each resource receives a stable harness ID distinct from provider resume IDs.
-- Events are sequenced within their resource.
-- Each finite run receives exactly one run-terminal event.
-- Each accepted session turn receives exactly one turn-terminal event.
-- Each session receives exactly one session-terminal event.
-- An await timeout stops waiting but does not cancel the underlying resource.
-- Cancellation targets the complete managed process group.
-- Output retention is bounded in memory and on disk.
-- Unknown options are rejected rather than silently discarded.
-- Built-in adapters launch an executable with argv and never interpolate a
-  shell command.
+Resources are local to the current application instance. Harness does not
+recover live work or reconstruct journals after a BEAM or host restart.
 
-These are in-process guarantees. Resources and journals are not reconstructed
-after a BEAM or host restart.
+## Provider differences
 
-## Capability map
+The API uses common names and types. Optional behavior still depends on the
+selected provider's ACP profile. Check its capabilities before requiring
+resume, attachments, approvals, usage, or runtime model changes.
 
-| Capability | Entry point |
-| --- | --- |
-| Discover providers | `Jido.Harness.providers/0` |
-| Check installation and readiness | `Jido.Harness.status/1` |
-| Preview or perform an installation recipe | `Jido.Harness.install/2` |
-| Make a blocking request | `Jido.Harness.run/3` |
-| Detach, stream, replay, cancel, or prune a run | `Jido.Harness.Run` |
-| Hold multi-turn context | `Jido.Harness.Session` |
-| Manage a shell-free subprocess | `Jido.Harness.Process` |
-| Observe normalized activity | `Jido.Harness.Event` and telemetry |
-| Verify a provider integration | Mix tasks and `Jido.Harness.IntegrationCase` |
-| Add or override a provider | `Jido.Harness.Adapter` and registry configuration |
+Input extensions belong under `provider_options`. Output that has no common
+mapping uses `:provider_event`. See [Providers](providers.md) and
+[Normalization and the data model](normalization_and_data_model.md).
 
-## What Jido.Harness does not do
+## Package boundaries
 
-Jido.Harness does not select a provider automatically, retry billable work,
-provision workspaces, automate provider TUIs, or provide durable distributed
-execution. It is also independent of `jido`, `jido_shell`, Sprites, and Splode.
+Harness owns coding-agent execution, lifecycle, and retained results. ExMCP
+owns ACP messages and protocol correlation. Jido Connect owns service API
+integrations. The host application owns provider selection, workspace setup,
+approval policy, retries, and durable job records.
 
-## Where to go next
+Harness can run without `jido` or `jido_connect`. See the
+[architecture reference](reference/architecture.md) for the process and
+protocol boundary, and [dependencies](reference/dependencies.md) for release
+audit exceptions.
 
-1. Follow [Getting started](getting_started.md) to verify one CLI and make one
-   normalized request.
-2. Use [Choosing a workflow](choosing_a_workflow.md) to select the right
-   lifecycle API.
-3. Read the guide for [one-shot requests](one_shot_requests.md),
-   [detached runs](detached_runs.md),
-   [interactive sessions](interactive_sessions.md), or
-   [managed processes](managed_processes.md).
+## Start here
+
+Follow [Getting started](getting_started.md) to install one provider and make
+one request. Then read the guide for the API selected in the table above.
+[Operations](operations.md) covers production limits, monitoring, and cleanup.
+
+Three [Livebooks](livebooks/01_one_shot_requests.livemd) demonstrate blocking
+runs, detached runs, and sessions with managed processes. Open them from a
+source checkout. Provider cells use live CLIs and can consume paid usage.

@@ -1,25 +1,29 @@
 # Testing
 
-Provider integration tests must balance deterministic lifecycle coverage with
-explicit live verification. Jido.Harness supports both without running provider
-requests during ordinary package startup or default unit tests.
+Use fake CLIs for deterministic package checks. Use explicit live profiles to
+verify installed providers. Live requests need credentials and can consume
+API or subscription usage.
 
-## Unit tests with fake CLIs
+## Unit and fixture checks
 
-Use deterministic executable fixtures to test:
+```console
+mix test
+mix quality
+mix docs --warnings-as-errors
+mix hex.build
+```
 
-- ACP framing and normalized update mapping;
-- event ordering and terminal uniqueness;
-- timeouts and cancellation;
-- caller and consumer death;
-- stdin, stdout, stderr, and PTY behavior;
-- journal rotation and replay gaps;
-- process-group cleanup.
+The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
+mapping, terminal events, caller exits, timeouts, stdin, output, PTY behavior,
+journal rotation, replay gaps, and process cleanup. It excludes live provider
+and long process-soak tests.
 
-Fake CLIs should accept structured argv and never require network access or
-credentials. They make lifecycle regressions reproducible in pull-request CI.
+The escript fixture verifies native-helper extraction in a separate VM. The
+[approval-policy recipe](recipes/policy_jobs.md) has fake-provider tests that
+load its published source. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup,
+coverage limits, and required checks.
 
-## Non-billable provider readiness
+## Provider readiness
 
 ```console
 mix jido_harness.check
@@ -27,92 +31,101 @@ mix jido_harness.check --providers codex,kimi --strict
 mix jido_harness.check --json
 ```
 
-The check task never sends an agent prompt. Use it for developer setup, release
-environment validation, or a non-billable CI readiness job.
+| Option | Meaning |
+| --- | --- |
+| `--providers NAME,...` | Select providers; omitted means all registered providers |
+| `--strict` | Fail if a selected provider is not ready |
+| `--json` | Emit machine-readable output |
 
-## One minimal live query
+Readiness reports base-CLI installation, compatibility, authentication
+evidence, and ACP executable availability. It sends no model prompt.
+An `:unknown` authentication value requires a live request to establish
+whether cached login works.
+
+## One live request
 
 ```console
 mix jido_harness.chat codex
+mix jido_harness.chat codex "Explain this repository in one sentence."
 mix jido_harness.chat codex --timeout 120 --json
 ```
 
-The chat task sends one finite request through exactly one provider. It fails on
-a provider error or empty response and may consume paid API or subscription
-usage.
+This task requires one provider. Its default prompt is
+`Reply with exactly: ready`. `--timeout` is in seconds. The task starts one
+finite run and fails on provider error or empty text.
 
 ## Reusable integration contracts
 
 ```elixir
-defmodule MyCodexIntegrationTest do
+defmodule MyProviderIntegrationTest do
   use Jido.Harness.IntegrationCase, provider: :codex
   harness_contract_tests()
 end
 ```
 
-`Jido.Harness.IntegrationCase` generates tagged tests for status, minimal runs,
-event ordering, terminal uniqueness, caller-independent lifecycle, cancellation,
-resume, and interactive context where supported.
+Generated tests are tagged `:integration` and have a two-hour watchdog.
+Loading Harness does not start ExUnit or execute these tests.
 
-The package does not start ExUnit merely because `jido_harness` is loaded.
-
-## Integration profiles
+## Select live coverage
 
 ```console
-JIDO_HARNESS_INTEGRATION_PROFILE=contract \
+JIDO_HARNESS_INTEGRATION_PROFILE=lifecycle \
 JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
+JIDO_HARNESS_INTEGRATION_STRICT=true \
 mix test --include integration test/integration/providers_test.exs \
   --timeout 7200000
 ```
-
-Profiles are:
 
 | Profile | Coverage |
 | --- | --- |
-| `smoke` | readiness and one minimal run |
-| `contract` | canonical events, results, replay, and reattachment |
-| `lifecycle` | caller death, resume, cancellation, and cleanup |
-| `interactive` | live two-turn context through the provider ACP entry point |
-| `soak` | one long-lived live ACP session per selected provider |
+| `smoke` | Readiness and one minimal run |
+| `contract` | Smoke checks, canonical events, results, replay, and reattachment |
+| `lifecycle` | Contract checks plus caller death, resume, cancellation, and cleanup |
+| `interactive` | Smoke checks and live two-turn ACP context |
+| `soak` | Smoke checks and one long-lived ACP session per selected provider |
 
-Set `JIDO_HARNESS_INTEGRATION_STRICT=true` to fail rather than skip when a
-selected provider is unavailable.
+The default profile is `contract`. Unavailable providers can be skipped
+unless strict mode is enabled. Resume and other optional checks still depend
+on the selected profile's capabilities.
 
-## Soak testing
+The manual live-integration workflow currently exposes `smoke`, `contract`,
+and `lifecycle` for its configured provider matrix. Use the command above for
+`interactive` or `soak` and for providers outside that matrix. The workflow
+installs the base CLI and its required ACP entry point.
 
-Run the opt-in live ACP soak for selected providers:
+## Live session soak
 
-```console
-JIDO_HARNESS_INTEGRATION_PROFILE=soak \
-JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
-mix test --include integration test/integration/providers_test.exs \
-  --timeout 7200000
-```
+Select `JIDO_HARNESS_INTEGRATION_PROFILE=soak` with the same command. The default
+keeps each selected ACP session open for 10 minutes and sends a small turn every
+minute. Provider modules run concurrently. Each turn checks response text,
+session identity, process ownership, replay order, and terminal events.
 
-The default live soak keeps each ACP session open for 10 minutes and sends one
-small turn every minute. Selected provider modules run concurrently. Set
-`JIDO_HARNESS_LIVE_SOAK_DURATION_MS`,
-`JIDO_HARNESS_LIVE_SOAK_INTERVAL_MS`, or
-`JIDO_HARNESS_LIVE_SOAK_MAX_TURNS` for a shorter bounded run. This profile can
-consume paid usage.
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `JIDO_HARNESS_LIVE_SOAK_DURATION_MS` | `600000` | Total session duration |
+| `JIDO_HARNESS_LIVE_SOAK_INTERVAL_MS` | `60000` | Delay between completed turns |
+| `JIDO_HARNESS_LIVE_SOAK_TURN_TIMEOUT_MS` | `600000` | Limit for one turn and startup wait |
+| `JIDO_HARNESS_LIVE_SOAK_MAX_TURNS` | unset | Optional turn ceiling |
 
-The separate deterministic process soak runs for 65 minutes without contacting
-a provider:
+Use strict mode when a release check requires every selected provider to run.
+
+## Deterministic process soak
 
 ```console
 mix test --include soak test/integration/soak_test.exs --timeout 7200000
 ```
 
-It exercises long-lived lifecycle and retention behavior that short unit tests
-cannot establish.
+This separate test runs for 65 minutes without contacting a provider. It checks
+long-lived process, journal, and cleanup behavior.
 
 ## Release verification
 
-Before releasing an adapter change:
+Run deterministic checks for every change. For an adapter change, also run
+the affected live smoke profile. Run lifecycle and interactive profiles when
+the ACP entry point or lifecycle behavior changes. Soak checks cover longer
+session and process lifetimes.
 
-1. run deterministic unit and fixture contracts;
-2. run the live smoke profile for the affected providers;
-3. run lifecycle and interactive profiles when their ACP entry points changed;
-4. run `mix quality`, `mix test`, `mix docs`, and `mix hex.build`.
-
-See the exact [integration testing reference](reference/integration_testing.md).
+Record which live profiles ran and which were skipped. A passing unit suite
+does not establish live compatibility. Review the
+[dependency audit exceptions](reference/dependencies.md#audit-exceptions)
+before publication.

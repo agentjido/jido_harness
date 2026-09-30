@@ -14,7 +14,7 @@ By the end you will have:
 - awaited its normalized terminal result;
 - seen how cancellation and pruning fit the lifecycle.
 
-Read the [detached-runs guide](../detached_runs.md) and
+Read the [detached-runs guide](../runs.md#start-a-detached-run) and
 [retention guide](../streaming_replay_and_retention.md) for the
 corresponding API contracts.
 
@@ -22,26 +22,12 @@ corresponding API contracts.
 
 ## Install the local package
 
-Livebook Desktop may not inherit the `PATH` from your interactive shell. Add
-the common CLI installation directories before resolving a provider. Extend
-`extra_cli_paths` when needed.
+Open this notebook from the source checkout with Elixir 1.19 or a compatible
+later version. The relative dependency path uses its saved location.
+Configure the Livebook runtime's `PATH` before starting provider cells; see
+[Runtime environment](../operations.md#runtime-environment).
 
 ```elixir
-extra_cli_paths = [
-  Path.join(System.user_home!(), ".local/bin"),
-  Path.join(System.user_home!(), ".local/share/mise/shims"),
-  Path.join(System.user_home!(), ".bun/bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin"
-]
-
-path =
-  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
-  |> Enum.uniq()
-  |> Enum.join(":")
-
-System.put_env("PATH", path)
-
 Mix.install([
   {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
@@ -86,8 +72,8 @@ end
 run_id
 ```
 
-The snapshot is redacted and safe to use for lifecycle decisions. Its output
-cursor tells consumers how many sequenced events have been retained so far.
+The snapshot contains lifecycle state and an output cursor. The cursor is the
+last appended sequence; it does not count records still retained after rotation.
 
 ```elixir
 Jido.Harness.Run.info(run_id)
@@ -116,7 +102,8 @@ end)
 ## Await and replay
 
 Awaiting a finished run returns immediately. Replay can start at any cursor and
-is the durable source of truth when a result's bounded text tail is truncated.
+provides retained events when a result's bounded text tail is truncated.
+Journals are bounded and are not recovered after an application restart.
 
 ```elixir
 result =
@@ -151,9 +138,9 @@ end
 ## Cancellation and pruning
 
 The following cell is intentionally disabled. Set `exercise_cancellation?` to
-`true` to start a second live request and request cancellation. Cancellation is
-cooperative at the provider boundary and always produces one normalized
-terminal result.
+`true` to start a second live request and request cancellation. Cancellation
+targets the managed process group. A request that already
+completed can keep its completed result.
 
 ```elixir
 exercise_cancellation? = false
@@ -166,7 +153,9 @@ if exercise_cancellation? do
     })
 
   :ok = Jido.Harness.Run.cancel(cancellable_id)
-  Jido.Harness.Run.await(cancellable_id, 30_000)
+  cancelled = Jido.Harness.Run.await(cancellable_id, 30_000)
+  :ok = Jido.Harness.Run.prune(cancellable_id)
+  cancelled
 else
   :skipped
 end

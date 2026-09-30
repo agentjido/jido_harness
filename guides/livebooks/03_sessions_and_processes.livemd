@@ -3,9 +3,8 @@
 ## What you will learn
 
 This notebook covers the two stateful lifecycle APIs: multi-turn provider
-sessions and direct local processes. Sessions use official provider headless
-protocols; managed processes use a structured executable plus argv without
-shell interpolation.
+sessions and direct local processes. Sessions use ACP. Managed processes use
+a structured executable plus argv without shell interpolation.
 
 By the end you will have:
 
@@ -24,26 +23,12 @@ API contracts.
 
 ## Install the local package
 
-Livebook Desktop may not inherit the `PATH` from your interactive shell. Add
-the common CLI installation directories before resolving a provider. Extend
-`extra_cli_paths` when needed.
+Open this notebook from the source checkout with Elixir 1.19 or a compatible
+later version. The relative dependency path uses its saved location.
+Configure the Livebook runtime's `PATH` before starting provider cells; see
+[Runtime environment](../operations.md#runtime-environment).
 
 ```elixir
-extra_cli_paths = [
-  Path.join(System.user_home!(), ".local/bin"),
-  Path.join(System.user_home!(), ".local/share/mise/shims"),
-  Path.join(System.user_home!(), ".bun/bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin"
-]
-
-path =
-  (extra_cli_paths ++ String.split(System.get_env("PATH", ""), ":", trim: true))
-  |> Enum.uniq()
-  |> Enum.join(":")
-
-System.put_env("PATH", path)
-
 Mix.install([
   {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
@@ -62,7 +47,7 @@ end
 
 ## Start a multi-turn session
 
-Choose a provider whose status reports at least one session transport.
+Choose a provider whose status reports an available ACP executable.
 
 ```elixir
 provider = :codex
@@ -83,7 +68,8 @@ end
 %{
   provider: provider,
   ready?: ready?,
-  session_transports: Enum.map(status.session_transports, &{&1.name, &1.capabilities})
+  acp_agent: status.acp_agent,
+  session_ready?: status.session_ready
 }
 ```
 
@@ -96,7 +82,7 @@ end
     metadata: %{source: "sessions-livebook"}
   })
 
-{:ok, session_info} = Jido.Harness.Session.info(session_id)
+{:ok, %{state: :idle} = session_info} = Jido.Harness.Session.info(session_id)
 session_info
 ```
 
@@ -158,6 +144,7 @@ This example starts the current Elixir executable directly. The code string is
 one argv value; no shell parses or interpolates it.
 
 ```elixir
+cwd = Path.expand("../..", __DIR__)
 elixir = System.find_executable("elixir") || raise "elixir executable not found"
 
 {:ok, process_id} =
