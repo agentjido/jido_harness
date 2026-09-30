@@ -10,7 +10,8 @@ defmodule Jido.Harness.SessionManager do
          {:ok, spec} <- Registry.spec(provider),
          {:ok, acp_agent} <- require_acp_agent(spec),
          request = %{request | provider: spec.provider},
-         :ok <- validate_request(request, spec, acp_agent) do
+         :ok <- validate_request(request, spec, acp_agent),
+         :ok <- validate_adapter_request(adapter, request) do
       id = ID.generate("session")
       config = Registry.provider_config(provider)
 
@@ -174,6 +175,13 @@ defmodule Jido.Harness.SessionManager do
       true ->
         :ok
     end
+  end
+
+  @doc false
+  def validate_adapter_request(adapter, request) do
+    if function_exported?(adapter, :acp_validate_request, 1),
+      do: adapter.acp_validate_request(request),
+      else: :ok
   end
 
   defp inherited_options(:adapter, adapter_options), do: adapter_options

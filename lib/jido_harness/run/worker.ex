@@ -396,8 +396,10 @@ defmodule Jido.Harness.RunWorker do
     finalize(state, :failed, error)
   end
 
-  defp failure_details(%{"failure_kind" => kind}) when is_binary(kind), do: %{failure_kind: kind}
-  defp failure_details(_payload), do: %{}
+  defp failure_details(payload) do
+    details = if is_binary(payload["failure_kind"]), do: %{failure_kind: payload["failure_kind"]}, else: %{}
+    if is_map(payload["process"]), do: Map.put(details, :process, payload["process"]), else: details
+  end
 
   defp schedule_runtime(%{request: %{runtime_timeout_ms: :infinity}} = state), do: state
 

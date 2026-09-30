@@ -6,7 +6,16 @@ defmodule Jido.Harness.ACPTransportTest do
 
   defmodule ControlledProcessManager do
     def start_owned_process(_spec, owner), do: {:ok, owner}
-    def cancel_process(_owner), do: :ok
+
+    def cancel_process(owner) do
+      send(owner, :process_cancelled)
+      :ok
+    end
+
+    def await_process(owner, timeout) do
+      send(owner, {:process_awaited, timeout})
+      {:ok, %{state: :cancelled}}
+    end
 
     def stream_process(owner) do
       stream =
@@ -27,11 +36,11 @@ defmodule Jido.Harness.ACPTransportTest do
     end
   end
 
-  setup do
+  setup context do
     options = [
       process_manager: ControlledProcessManager,
       process_owner: self(),
-      process_spec: nil,
+      process_spec: %{env: context[:env] || %{}},
       listener: self()
     ]
 
@@ -48,9 +57,10 @@ defmodule Jido.Harness.ACPTransportTest do
 
     assert {:ok, "first"} = Bridge.receive_message(bridge)
     assert {:ok, "second"} = Bridge.receive_message(bridge)
-    assert {:error, {:process_stopped, :failed}} = Bridge.receive_message(bridge)
-    assert_receive {:acp_process_stopped, :failed, ^details}
-    assert {:error, {:process_stopped, :failed}} = Bridge.receive_message(bridge)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert diagnostics["details"] == details
+    assert_receive {:acp_process_stopped, :failed, ^diagnostics}
+    assert {:error, {:process_stopped, :failed, ^diagnostics}} = Bridge.receive_message(bridge)
     refute_received {:acp_process_stopped, _, _}
   end
 
@@ -59,10 +69,51 @@ defmodule Jido.Harness.ACPTransportTest do
     await(fn -> match?(%{waiter: {_, _}}, :sys.get_state(bridge)) end)
     send(reader, {:process_events, [event(:timed_out, "fixture deadline")]})
 
-    assert {:error, {:process_stopped, :timed_out}} = Task.await(receiver)
-    assert_receive {:acp_process_stopped, :timed_out, "fixture deadline"}
-    assert {:error, {:process_stopped, :timed_out}} = Bridge.receive_message(bridge)
+    assert {:error, {:process_stopped, :timed_out, diagnostics}} = Task.await(receiver)
+    assert diagnostics["details"] == "fixture deadline"
+    assert_receive {:acp_process_stopped, :timed_out, ^diagnostics}
+    assert {:error, {:process_stopped, :timed_out, ^diagnostics}} = Bridge.receive_message(bridge)
     refute_received {:acp_process_stopped, _, _}
+  end
+
+  test "failure diagnostics retain a bounded stderr tail", %{bridge: bridge, reader: reader} do
+    send(
+      reader,
+      {:process_events,
+       [event(:stderr, String.duplicate("x", 8_000) <> "last error"), event(:failed, %{"exit_status" => 1})]}
+    )
+
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert byte_size(diagnostics["stderr"]) <= 4_096
+    assert diagnostics["stderr_truncated"]
+    assert String.ends_with?(diagnostics["stderr"], "last error")
+  end
+
+  @tag env: %{"SECRET_TOKEN" => "abcd"}
+  test "redaction does not expand diagnostics beyond the stderr limit", %{bridge: bridge, reader: reader} do
+    send(reader, {:process_events, [event(:stderr, String.duplicate("abcd", 1_024)), event(:failed, %{})]})
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert byte_size(diagnostics["stderr"]) <= 4_096
+    assert diagnostics["stderr_truncated"]
+    refute diagnostics["stderr"] =~ "abcd"
+  end
+
+  @tag env: %{"SECRET_TOKEN" => "token1234567890"}
+  test "stderr truncation does not expose a clipped secret", %{bridge: bridge, reader: reader} do
+    data = "token1234567890" <> String.duplicate("x", 4_090)
+    send(reader, {:process_events, [event(:stderr, data), event(:failed, %{})]})
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    refute diagnostics["stderr"] =~ "67890"
+    assert byte_size(diagnostics["stderr"]) <= 4_096
+  end
+
+  test "close waits for process shutdown before returning", %{bridge: bridge} do
+    assert :ok = Bridge.close(bridge)
+    assert_received :process_cancelled
+    assert_received {:process_awaited, 2_000}
   end
 
   defp event(type, data) do

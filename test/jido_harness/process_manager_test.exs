@@ -305,7 +305,9 @@ defmodule Jido.Harness.ProcessManagerTest do
       end)
 
     Enum.each(ids, fn id ->
-      assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
+      assert {:ok, info} = Jido.Harness.Process.await(id, 5_000)
+      assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+      assert info.state == :exited, inspect(%{info: info, events: events}, pretty: true)
     end)
 
     if File.exists?("/usr/bin/tty") do

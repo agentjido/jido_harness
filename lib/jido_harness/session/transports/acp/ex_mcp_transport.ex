@@ -9,6 +9,9 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport do
 
   @impl true
   def connect(opts) do
+    listener = opts |> Keyword.fetch!(:harness_transport) |> Keyword.fetch!(:listener)
+    send(listener, {:acp_client_starting, self()})
+
     with {:ok, bridge} <- opts |> Keyword.fetch!(:harness_transport) |> Bridge.start_link() do
       {:ok, %__MODULE__{bridge: bridge}}
     end
@@ -41,7 +44,10 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   @moduledoc false
   use GenServer
 
-  alias Jido.Harness.ProcessEvent
+  alias Jido.Harness.{ProcessEvent, Redaction, TextTail}
+
+  @stderr_bytes 4_096
+  @lifecycle_limit 8
 
   @max_frame_bytes 1_048_576
 
@@ -81,7 +87,11 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
          frames: :queue.new(),
          waiter: nil,
          status: :open,
-         stop_notified?: false
+         stop_notified?: false,
+         stderr: TextTail.new(@stderr_bytes),
+         lifecycle: [],
+         secrets:
+           Redaction.secrets_from_env(Map.merge(System.get_env(), if(process_spec, do: process_spec.env, else: %{})))
        }, {:continue, :start_reader}}
     else
       {:error, reason} -> {:stop, reason}
@@ -120,6 +130,12 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   def handle_call(:connected?, _from, state), do: {:reply, state.status == :open, state}
 
   def handle_call(:close, _from, state) do
+    _ = state.process_manager.cancel_process(state.process_id)
+
+    if function_exported?(state.process_manager, :await_process, 2) do
+      _ = state.process_manager.await_process(state.process_id, 2_000)
+    end
+
     state = close_state(state, :closed, true)
     {:stop, :normal, :ok, state}
   end
@@ -134,12 +150,18 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   def handle_info({:acp_transport_process_event, %ProcessEvent{type: :stderr, data: data}}, state) do
     send(state.listener, {:acp_process_stderr, data})
-    {:noreply, state}
+    {:noreply, %{state | stderr: TextTail.append(state.stderr, data)}}
   end
 
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: type, data: data}}, state)
+  def handle_info({:acp_transport_process_event, %ProcessEvent{type: :started} = event}, state) do
+    {:noreply, record_lifecycle(state, event)}
+  end
+
+  def handle_info({:acp_transport_process_event, %ProcessEvent{type: type, data: data} = event}, state)
       when type in [:failed, :timed_out, :exited, :cancelled] do
-    {:noreply, stop_for_process_event(state, type, data)}
+    state = record_lifecycle(state, event)
+    details = diagnostics(state, type, data)
+    {:noreply, stop_for_process_event(state, type, details)}
   end
 
   def handle_info({ref, _result}, %{reader: %{ref: ref}} = state) do
@@ -181,7 +203,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   defp wait_for_frame(_from, %{status: {:process_stopped, type, data}} = state) do
     state = notify_process_stopped(state, type, data)
-    {:reply, {:error, {:process_stopped, type}}, state}
+    {:reply, {:error, {:process_stopped, type, data}}, state}
   end
 
   defp wait_for_frame(_from, state), do: {:reply, {:error, :closed}, state}
@@ -210,6 +232,40 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     %{state | frames: queue}
   end
 
+  defp record_lifecycle(state, event) do
+    entry = %{"type" => Atom.to_string(event.type), "sequence" => event.sequence, "data" => event.data}
+    %{state | lifecycle: Enum.take(state.lifecycle ++ [entry], -@lifecycle_limit)}
+  end
+
+  defp diagnostics(state, type, data) do
+    stderr = state.stderr.data
+    stderr = if state.stderr.truncated?, do: redact_clipped_secrets(stderr, state.secrets), else: stderr
+    stderr = TextTail.new(@stderr_bytes) |> TextTail.append(Redaction.redact(stderr, state.secrets))
+
+    %{
+      "process_id" => state.process_id,
+      "state" => Atom.to_string(type),
+      "details" => data,
+      "stderr" => stderr.data,
+      "stderr_truncated" => state.stderr.truncated? or stderr.truncated?,
+      "lifecycle" => state.lifecycle
+    }
+    |> Redaction.redact(state.secrets)
+  end
+
+  defp redact_clipped_secrets(value, secrets) do
+    Enum.reduce(secrets, value, fn secret, value ->
+      maximum = min(byte_size(secret) - 1, byte_size(value))
+
+      overlap =
+        Enum.find(maximum..1//-1, fn size ->
+          String.starts_with?(value, binary_part(secret, byte_size(secret) - size, size))
+        end)
+
+      if overlap, do: "[REDACTED]" <> binary_part(value, overlap, byte_size(value) - overlap), else: value
+    end)
+  end
+
   defp stop_for_process_event(%{status: :open} = state, type, data) do
     waiting? = not is_nil(state.waiter)
     state = close_state(state, {:process_stopped, type, data}, false)
@@ -230,7 +286,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     }
   end
 
-  defp receive_error({:process_stopped, type, _data}), do: {:process_stopped, type}
+  defp receive_error({:process_stopped, type, data}), do: {:process_stopped, type, data}
   defp receive_error(reason), do: reason
 
   defp notify_process_stopped(%{stop_notified?: true} = state, _type, _data), do: state

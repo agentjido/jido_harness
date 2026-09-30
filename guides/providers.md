@@ -74,3 +74,39 @@ to an ACP adapter.
 
 Jido.Harness does not rank providers, retry billable work, or fall back to a
 second provider. Pass a provider atom or configure one default.
+
+## OpenCode model changes
+
+OpenCode accepts `model` on runs and sessions. Use
+`Jido.Harness.Session.configure(session_id, %{model: "provider/model"})` to
+change a session model. Harness uses `session/set_config_option` with config ID
+`model`. Older ACP agents can use `session/set_model` only when the config RPC
+returns method not found. Other provider errors are returned to the caller.
+
+## Codex isolation controls
+
+Set `provider_options: %{ephemeral: true, ignore_user_config: true}` on a Codex
+run or session to request a nonpersistent thread without user configuration.
+Both options are optional booleans. An ephemeral request cannot load a saved
+session. Workspace instructions remain active, and the workspace can remain
+writable. `approval_mode` controls Harness permission responses; sandbox values
+select the Codex ACP mode.
+
+The ACP adapter must report the applied controls in
+`agentCapabilities._meta.codex.isolation`. Harness returns a configuration error
+before opening a session when a requested control is unavailable. The pinned
+Codex ACP 1.6.2 package does not support these controls. An adapter with the
+isolation extension can be selected with `acp_path`. Until upstream publishes
+this extension, build [Codex ACP PR #569](https://github.com/agentclientprotocol/codex-acp/pull/569)
+and use its executable.
+Do not assume that an older adapter applies these environment controls.
+
+```elixir
+Jido.Harness.run(:codex, "Update the fixture",
+  cwd: "/path/to/fixture",
+  acp_path: "/path/to/isolation-capable/codex-acp",
+  sandbox_mode: :workspace_write,
+  approval_mode: :auto_approve,
+  provider_options: %{ephemeral: true, ignore_user_config: true}
+)
+```

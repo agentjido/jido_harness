@@ -111,3 +111,16 @@ does not recover live resources or reconstruct supervisors after restart.
 
 Applications that require durable job state should persist their own external
 job record and treat a restarted harness execution as a new resource.
+
+## ACP process failures
+
+A failed ACP run or turn can include `error.details.process`. It contains the
+process ID, terminal state, exit details, a stderr tail, and lifecycle events.
+The stderr tail is limited to 4 KiB. `stderr_truncated` identifies a truncated
+tail. Environment secrets are redacted before these diagnostics leave the
+transport. Startup failures return the same diagnostics, including failures
+before the ACP initialize response.
+
+Keep the failed result before pruning its run or process. A nonzero exit status
+alone does not identify the cause. Use the stderr and lifecycle data to check
+process startup and output drain. Harness does not retry a failed process.

@@ -52,3 +52,16 @@ action and supports `dry_run: true`.
 An adapter change must pass deterministic ACP fixtures, lifecycle and cleanup
 tests, affected live integration profiles, documentation compilation, static
 analysis, and package build verification.
+
+## Optional ACP hooks
+
+Adapters can implement `acp_validate_request/1` to reject invalid provider
+option values before a run or session starts. `acp_env/2` maps accepted options
+to the agent process environment. `acp_validate_capabilities/2` checks the ACP
+initialize response before authentication or session creation.
+
+`acp_configuration/1` maps normalized configuration changes to provider config
+IDs and values. It applies to initial configuration and runtime changes. Codex
+uses this hook to map sandbox values to ACP `mode`. Request and capability
+validation return `:ok` or `{:error, reason}`; the configuration hook returns a
+map.

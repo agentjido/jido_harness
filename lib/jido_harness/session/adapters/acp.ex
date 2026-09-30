@@ -13,7 +13,7 @@ defmodule Jido.Harness.SessionAdapters.ACP do
            {ACPTransport, {request, context}}
          ) do
       {:ok, pid} ->
-        case GenServer.call(pid, {:initialize, request}, @startup_timeout) do
+        case GenServer.call(pid, {:initialize, request}, @startup_timeout + 1_000) do
           {:ok, provider_session_id} ->
             Jido.Harness.SessionAdapter.emit(
               context.owner,

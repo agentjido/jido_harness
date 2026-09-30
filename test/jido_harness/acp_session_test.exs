@@ -66,6 +66,22 @@ defmodule Jido.Harness.ACPSessionTest do
     assert state in [:cancelled, :exited]
   end
 
+  test "a slow initialize handshake does not block another session" do
+    assert {:ok, slow} = Jido.Harness.Session.start(:kimi, %{env: %{"HARNESS_FIXTURE_INITIALIZE_DELAY" => "1.5"}})
+    assert {:ok, fast} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_ready(fast, 50)
+
+    transport =
+      Jido.Harness.SessionTransportSupervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.map(fn {_, pid, _, _} -> pid end)
+      |> Enum.find(fn pid -> :sys.get_state(pid).context.session_id == slow end)
+
+    assert :sys.get_state(transport).initialize_from != nil
+    assert :ok = Jido.Harness.Session.close(slow)
+    assert {:ok, _info} = Jido.Harness.Session.info(fast)
+  end
+
   test "ACP loads an existing provider session through ExMCP" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:kimi, %{provider_session_id: "saved-provider-session"})
