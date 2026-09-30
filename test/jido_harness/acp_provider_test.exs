@@ -96,6 +96,34 @@ defmodule Jido.Harness.ACPProviderTest do
              Jido.Harness.Session.start(:codex, %{provider_session_id: "saved", provider_options: %{ephemeral: true}})
   end
 
+  test "Codex rejects malformed isolation reports without dispatching a task" do
+    cwd = Path.join(System.tmp_dir!(), "harness-invalid-isolation-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(cwd)
+    on_exit(fn -> File.rm_rf!(cwd) end)
+
+    for meta <- [
+          true,
+          %{"isolation" => true},
+          %{"isolation" => [%{"ephemeral" => true}]},
+          %{"isolation" => %{"ephemeral" => "true", "ignoreUserConfig" => 1}}
+        ] do
+      assert {:ok, result} =
+               Jido.Harness.run(:codex, "write-isolated-fixture",
+                 cwd: cwd,
+                 sandbox_mode: :workspace_write,
+                 approval_mode: :auto_approve,
+                 provider_options: %{ephemeral: true, ignore_user_config: true},
+                 env: %{"HARNESS_FIXTURE_CODEX_META" => Jason.encode!(meta)},
+                 await_timeout: 5_000
+               )
+
+      assert result.status == :failed
+      assert %Jido.Harness.Error{category: :configuration, details: %{capability: :isolation}} = result.error
+      refute Enum.any?(result.events, &(&1.type == :output_text_delta))
+      refute File.exists?(Path.join(cwd, "isolated-result.txt"))
+    end
+  end
+
   test "OpenCode sets initial and runtime models without session/set_model" do
     log = Path.join(System.tmp_dir!(), "harness-model-#{System.unique_integer([:positive])}.jsonl")
     on_exit(fn -> File.rm(log) end)
