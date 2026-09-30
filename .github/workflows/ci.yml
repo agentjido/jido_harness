@@ -34,7 +34,6 @@ jobs:
     timeout-minutes: 15
     env:
       MIX_ENV: test
-      HARNESS_TEST_ANTIGRAVITY_ACP_PATH: ${{ runner.temp }}/antigravity-acp/node_modules/.bin/refined-antigravity-acp
     steps:
       - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
@@ -55,6 +54,8 @@ jobs:
           --ignore-scripts --no-audit --no-fund
           @simonepri/refined-antigravity-acp@1.2.11
       - name: Test wrapper failures and session recovery without model requests
+        env:
+          HARNESS_TEST_ANTIGRAVITY_ACP_PATH: ${{ runner.temp }}/antigravity-acp/node_modules/.bin/refined-antigravity-acp
         run: >-
           mix test --no-cover --include antigravity_wrapper
           test/jido_harness/antigravity_test.exs
