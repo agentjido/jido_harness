@@ -130,6 +130,10 @@ A custom ACP executable can be selected with `acp_path`. Verify its isolation
 behavior before use. The presence of these request fields does not establish
 isolation support in the pinned package.
 
+Codex ACP 2.0.1 was also checked and does not expose these controls. For a
+finite task, use the [native Codex process example](managed_processes.md#isolated-native-codex-task).
+This uses the Codex CLI controls and the Harness process API.
+
 Codex sandbox values select the ACP mode. Harness `approval_mode` controls
 its permission responses. Environment replacement, sandbox mode, and saved
 thread state are separate controls; see [Security](security.md).

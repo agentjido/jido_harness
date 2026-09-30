@@ -3,6 +3,7 @@ name: CI
 on:
   pull_request:
   merge_group:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -26,3 +27,31 @@ jobs:
       docs_command: mix docs -f html --warnings-as-errors
       test_matrix: '[{"otp":"28","elixir":"1.19"},{"otp":"29","elixir":"1.20"}]'
       test_command: mix test
+
+  macos:
+    name: macOS process lifecycle
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20"
+      - name: Install Mix tools
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+      - run: mix deps.get
+      - name: Test native startup, process groups, PTY, and packaged helper
+        run: >-
+          mix test
+          --no-cover
+          --include soak
+          test/jido_harness/process_startup_regression_test.exs
+          test/jido_harness/process_manager_test.exs
+          test/jido_harness/environment_mode_test.exs
+          test/jido_harness/escript_test.exs

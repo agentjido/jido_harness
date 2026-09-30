@@ -57,11 +57,12 @@ checks native-helper extraction in a separate VM. The approval-policy tests
 load the recipe in `guides/recipes/policy_job.exs`. Keep these checks when you
 change packaging or session behavior.
 
-The default suite currently reports about 72% line coverage. The old Mix
-coverage threshold and module exclusions had no effect with ExCoveralls and
-were removed. ExCoveralls has no enforced minimum yet. The previous 90% target
-remains release work: configure `coverage_options.minimum_coverage` in
-`coveralls.json` and meet that target before a stable release.
+The default suite currently reports about 72% line coverage. `coveralls.json`
+enforces a 70% minimum through ExCoveralls, with no file exclusions. This
+prevents a large drop in existing coverage. The stable release target is 90%:
+raise the minimum and meet that target before a stable release.
+For a focused test run, use `mix test --no-cover test/path_test.exs`; a subset
+does not measure full-suite coverage.
 
 ## Change documentation
 

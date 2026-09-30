@@ -66,5 +66,5 @@ jobs:
           '
       - name: Run the selected live contracts
         run: >-
-          mix test --include integration test/integration/providers_test.exs
+          mix test --no-cover --include integration test/integration/providers_test.exs
           --timeout 7200000

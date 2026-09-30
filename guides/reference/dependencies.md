@@ -21,6 +21,28 @@ Harness does not require provider SDKs, `jido`, `jido_shell`, Sprites, or
 Splode. Provider routing, workspace provisioning, retries, and durable job
 storage belong to the host application.
 
+## Native process startup
+
+Harness requires erlexec `~> 2.5` for its PTY and process-group cleanup fixes.
+The published 2.5.0 source can still fail a short non-PTY process on macOS
+with `Cannot set effective group to 0: Operation not permitted`. The startup
+regression test reproduced this after concurrent process starts and timeout
+cleanup. A passing default unit suite does not rule out this failure.
+
+A local erlexec patch was tested with 100 timeouts and 800 short processes.
+It accepts a failed child group call only when the child already belongs to
+the requested group. Tests also force a wrong group and require startup to
+fail. The patch adds no retry. Additional failure logging confirmed that the
+requested group was already set when the system call returned `EPERM`.
+The cause of that system call failure and the older Codex failure in
+[issue #71](https://github.com/agentjido/jido_harness/issues/71) remain open.
+
+The patch is outside the Harness repository and Hex package. A package
+consumer gets the published dependency, so macOS release verification
+remains open. Do not replace pipe streams with a PTY, omit process-group
+creation, or retry failed starts to make the test pass. Those changes alter
+output or cancellation behavior.
+
 ## Audit exceptions
 
 The current lockfile selects Cowlib 2.20.0 through ExMCP's required Cowboy
@@ -43,6 +65,17 @@ mix hex.audit
 The listed IDs are excluded from audit failure. Other advisories can fail the
 check. A passing audit does not mean these exceptions have been resolved.
 The current exceptions require review before a production release.
+
+The September 2026 review found no calls to the affected header or cookie
+encoders in the Harness ACP path. ExMCP's application starts no HTTP listener.
+These are scope limits, not fixes to Cowlib. The
+[structured-header advisory](https://cna.erlef.org/cves/CVE-2026-43966.html)
+requires validation of encoder input. It also identifies Cowboy 2.16 and
+later with `invalid_response_headers: :error_terminate` as a server-side
+mitigation. The locked Cowboy 2.19.0 keeps that default.
+The [cookie advisory](https://cna.erlef.org/cves/CVE-2026-43969.html)
+requires valid cookie names and values before encoding. Host applications
+that use these HTTP functions must check their own input paths and options.
 
 Remove an exception when a supported dependency update resolves it. Then run
 audit, package, protocol, and lifecycle checks. Local native-process patches

@@ -190,7 +190,7 @@ defmodule Jido.Harness.MixProject do
       {:zoi, ">= 0.17.1 and < 0.19.0"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
-      {:erlexec, "~> 2.3"},
+      {:erlexec, "~> 2.5"},
       {:ex_mcp, "~> 1.3"},
 
       # Dev/Test

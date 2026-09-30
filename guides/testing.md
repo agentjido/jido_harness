@@ -72,7 +72,7 @@ Loading Harness does not start ExUnit or execute these tests.
 JIDO_HARNESS_INTEGRATION_PROFILE=lifecycle \
 JIDO_HARNESS_INTEGRATION_PROVIDERS=codex,grok \
 JIDO_HARNESS_INTEGRATION_STRICT=true \
-mix test --include integration test/integration/providers_test.exs \
+mix test --no-cover --include integration test/integration/providers_test.exs \
   --timeout 7200000
 ```
 
@@ -111,8 +111,22 @@ Use strict mode when a release check requires every selected provider to run.
 
 ## Deterministic process soak
 
+Run the short startup regression check first:
+
 ```console
-mix test --include soak test/integration/soak_test.exs --timeout 7200000
+mix test --no-cover --include soak test/jido_harness/process_startup_regression_test.exs
+```
+
+It runs 50 timeouts and 400 short CLI processes without retries. A failure
+includes the process state, stderr, and terminal events. The manual CI run
+also runs this check on macOS with unmodified dependencies. It is excluded
+from the default suite because erlexec 2.5.0 can fail this check on macOS;
+see [Native process startup](reference/dependencies.md#native-process-startup).
+
+For the longer retention and cleanup check:
+
+```console
+mix test --no-cover --include soak test/integration/soak_test.exs --timeout 7200000
 ```
 
 This separate test runs for 65 minutes without contacting a provider. It checks
