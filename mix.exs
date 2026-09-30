@@ -118,6 +118,7 @@ defmodule Jido.Harness.MixProject do
           ],
           "Built-in adapters": [
             Jido.Harness.Adapters.Amp,
+            Jido.Harness.Adapters.Antigravity,
             Jido.Harness.Adapters.Claude,
             Jido.Harness.Adapters.Codex,
             Jido.Harness.Adapters.Cursor,

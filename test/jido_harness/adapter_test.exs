@@ -5,6 +5,7 @@ defmodule Jido.Harness.AdapterTest do
 
   @profiles %{
     amp: {"amp-acp", :adapter, "amp-acp@0.9.0", []},
+    antigravity: {"refined-antigravity-acp", :adapter, "@simonepri/refined-antigravity-acp@1.2.11", []},
     claude: {"claude-agent-acp", :adapter, "@agentclientprotocol/claude-agent-acp@0.70.0", []},
     codex: {"codex-acp", :adapter, "@agentclientprotocol/codex-acp@1.6.2", []},
     cursor: {"cursor-agent", :native, nil, ["acp"]},

@@ -5,6 +5,7 @@ defmodule Jido.Harness.Registry do
 
   @builtins %{
     amp: Jido.Harness.Adapters.Amp,
+    antigravity: Jido.Harness.Adapters.Antigravity,
     claude: Jido.Harness.Adapters.Claude,
     codex: Jido.Harness.Adapters.Codex,
     cursor: Jido.Harness.Adapters.Cursor,

@@ -6,7 +6,7 @@ defmodule Jido.Harness.ACPProviderTest do
     original = Application.get_env(:jido_harness, :provider_config, %{})
 
     provider_config =
-      [:amp, :claude, :codex, :cursor, :gemini, :grok, :zai, :opencode]
+      [:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :zai, :opencode]
       |> Map.new(&{&1, %{acp_path: acp_fixture}})
 
     Application.put_env(:jido_harness, :provider_config, Map.merge(original, provider_config))
@@ -160,7 +160,7 @@ defmodule Jido.Harness.ACPProviderTest do
   end
 
   test "all finite provider runs use the same ACP interface" do
-    Enum.each([:amp, :claude, :codex, :cursor, :gemini, :grok, :zai], fn provider ->
+    Enum.each([:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :zai], fn provider ->
       assert {:ok, run_id} = Jido.Harness.Run.start(provider, %{prompt: "fixture"})
       assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
       assert result.status == :completed
