@@ -86,6 +86,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   def handle_call({:configure, changes}, _from, state) do
+    changes = configuration_changes(changes, state.context.adapter)
+
     case apply_configuration(state.client, state.provider_session_id, changes) do
       :ok -> {:reply, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
@@ -274,16 +276,26 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   defp initialize_session(client, request, state) do
-    with :ok <- authenticate(client, state.context.acp_agent),
+    with :ok <- validate_provider_capabilities(client, request, state.context.adapter),
+         :ok <- authenticate(client, state.context.acp_agent),
          {:ok, result} <- open_session(client, request),
          {:ok, provider_session_id} <- provider_session_id(result, request),
          :ok <- record_session_configuration(state, provider_session_id, result),
-         :ok <- apply_initial_configuration(client, provider_session_id, request, state.context.acp_agent) do
+         :ok <- apply_initial_configuration(client, provider_session_id, request, state.context) do
       {:reply, {:ok, provider_session_id}, %{state | client: client, provider_session_id: provider_session_id}}
     else
       {:error, reason} ->
         stop_client(client)
         {:reply, {:error, process_error(reason, state.provider)}, state}
+    end
+  end
+
+  defp validate_provider_capabilities(client, request, adapter) do
+    if function_exported?(adapter, :acp_validate_capabilities, 2) do
+      with {:ok, capabilities} <- Client.agent_capabilities(client),
+           do: adapter.acp_validate_capabilities(request, capabilities || %{})
+    else
+      :ok
     end
   end
 
@@ -617,9 +629,9 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     min(timeout + @protocol_timeout_margin, @maximum_protocol_timeout)
   end
 
-  defp apply_initial_configuration(client, provider_session_id, request, acp_agent) do
+  defp apply_initial_configuration(client, provider_session_id, request, context) do
     changes =
-      acp_agent.configuration_options
+      context.acp_agent.configuration_options
       |> Enum.reduce(%{}, fn field, changes ->
         case Map.get(request, field) do
           value when value in [nil, :default] -> changes
@@ -627,7 +639,11 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
         end
       end)
 
-    apply_configuration(client, provider_session_id, changes)
+    apply_configuration(client, provider_session_id, configuration_changes(changes, context.adapter))
+  end
+
+  defp configuration_changes(changes, adapter) do
+    if function_exported?(adapter, :acp_configuration, 1), do: adapter.acp_configuration(changes), else: changes
   end
 
   defp apply_configuration(_client, _provider_session_id, changes) when changes == %{}, do: :ok

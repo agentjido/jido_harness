@@ -35,6 +35,67 @@ defmodule Jido.Harness.ACPProviderTest do
     assert loaded.provider_session_id == "saved-opencode-session"
   end
 
+  test "Codex isolation controls preserve writable finite runs" do
+    cwd = Path.join(System.tmp_dir!(), "harness-isolation-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(cwd)
+    on_exit(fn -> File.rm_rf!(cwd) end)
+
+    assert {:ok, result} =
+             Jido.Harness.run(:codex, "write-isolated-fixture",
+               cwd: cwd,
+               sandbox_mode: :workspace_write,
+               approval_mode: :auto_approve,
+               provider_options: %{ephemeral: true, ignore_user_config: true},
+               env: %{"HARNESS_FIXTURE_ISOLATION_SUPPORT" => "1", "HARNESS_FIXTURE_CODEX_CONFIGURATION" => "1"},
+               await_timeout: 5_000
+             )
+
+    assert result.status == :completed
+    assert File.read!(Path.join(cwd, "isolated-result.txt")) == "workspace remains writable"
+  end
+
+  test "Codex isolation defaults, string keys, and unsupported adapters are explicit" do
+    alias Jido.Harness.Adapters.Codex
+    assert {:ok, request} = Jido.Harness.SessionRequest.new(%{})
+    assert {:ok, %{}} = Codex.acp_env(request, %{})
+    assert {:ok, result} = Jido.Harness.run(:codex, "fixture", await_timeout: 5_000)
+    assert result.status == :completed
+
+    assert {:ok, result} =
+             Jido.Harness.run(:codex, "fixture",
+               provider_options: %{"ephemeral" => true, "ignore_user_config" => true},
+               env: %{"HARNESS_FIXTURE_ISOLATION_SUPPORT" => "1"},
+               await_timeout: 5_000
+             )
+
+    assert result.status == :completed
+
+    assert {:ok, failed} =
+             Jido.Harness.run(:codex, "fixture", provider_options: %{ephemeral: true}, await_timeout: 5_000)
+
+    assert failed.status == :failed
+    assert %Jido.Harness.Error{category: :configuration, details: %{option: :ephemeral}} = failed.error
+    refute Enum.any?(failed.events, &(&1.type == :output_text_delta))
+  end
+
+  test "Codex validates isolation values and rejects ephemeral resume before startup" do
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.Run.start(:codex, %{prompt: "fixture", provider_options: %{ephemeral: "true"}})
+
+    assert {:error, %Jido.Harness.Error{category: :validation}} =
+             Jido.Harness.Session.start(:codex, %{provider_options: %{ephemeral: "true"}})
+
+    assert {:error, %Jido.Harness.Error{message: "ephemeral Codex execution cannot resume a session"}} =
+             Jido.Harness.Run.start(:codex, %{
+               prompt: "fixture",
+               provider_session_id: "saved",
+               provider_options: %{ephemeral: true}
+             })
+
+    assert {:error, %Jido.Harness.Error{message: "ephemeral Codex execution cannot resume a session"}} =
+             Jido.Harness.Session.start(:codex, %{provider_session_id: "saved", provider_options: %{ephemeral: true}})
+  end
+
   test "OpenCode sets initial and runtime models without session/set_model" do
     log = Path.join(System.tmp_dir!(), "harness-model-#{System.unique_integer([:positive])}.jsonl")
     on_exit(fn -> File.rm(log) end)

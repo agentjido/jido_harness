@@ -17,5 +17,13 @@ defmodule Jido.Harness.Adapter do
   @callback install(map(), keyword()) :: {:ok, map()} | {:error, term()}
   @callback acp_env(SessionRequest.t(), map()) :: {:ok, map()} | {:error, term()}
 
-  @optional_callbacks install: 2, acp_env: 2
+  @callback acp_configuration(map()) :: map()
+  @callback acp_validate_request(SessionRequest.t()) :: :ok | {:error, term()}
+  @callback acp_validate_capabilities(SessionRequest.t(), map()) :: :ok | {:error, term()}
+
+  @optional_callbacks install: 2,
+                      acp_env: 2,
+                      acp_validate_request: 1,
+                      acp_validate_capabilities: 2,
+                      acp_configuration: 1
 end

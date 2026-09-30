@@ -106,6 +106,10 @@ for line in sys.stdin:
                     "protocolVersion": 1,
                     "agentCapabilities": {
                         "loadSession": True,
+                        "_meta": {"codex": {"isolation": {
+                            "ephemeral": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_EPHEMERAL") == "1",
+                            "ignoreUserConfig": os.environ.get("HARNESS_FIXTURE_ISOLATION_SUPPORT") == "1" and os.environ.get("CODEX_IGNORE_USER_CONFIG") == "1",
+                        }}},
                         "sessionCapabilities": {"close": {}},
                         "promptCapabilities": {"image": True, "embeddedContext": True},
                     },
@@ -155,6 +159,13 @@ for line in sys.stdin:
             for block in message.get("params", {}).get("prompt", [])
             if isinstance(block, dict)
         )
+        if text == "write-isolated-fixture":
+            if os.environ.get("CODEX_EPHEMERAL") != "1" or os.environ.get("CODEX_IGNORE_USER_CONFIG") != "1":
+                sys.exit(1)
+            with open("isolated-result.txt", "w") as result:
+                result.write("workspace remains writable")
+            complete_prompt(request_id)
+            continue
         if text == "exit-with-stderr":
             sys.stderr.write("fixture command failed: " + os.environ.get("HARNESS_FIXTURE_SECRET_TOKEN", "") + "\n")
             sys.stderr.flush()
@@ -188,6 +199,10 @@ for line in sys.stdin:
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        if os.environ.get("HARNESS_FIXTURE_CODEX_CONFIGURATION") == "1" and method == "session/set_config_option":
+            if message["params"].get("configId") not in ["model", "mode", "reasoning_effort"]:
+                send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown Codex config option"}})
+                continue
         record_path = os.environ.get("HARNESS_FIXTURE_CONFIGURATION_LOG")
         if record_path:
             with open(record_path, "a") as record:

@@ -3,6 +3,7 @@ defmodule Jido.Harness.Adapters.Codex do
   @behaviour Jido.Harness.Adapter
 
   alias Jido.Harness.{AdapterSpec, Adapters.Helpers, Capabilities}
+  alias Jido.Harness.Adapters.Codex.Isolation
 
   @impl true
   def spec do
@@ -31,7 +32,9 @@ defmodule Jido.Harness.Adapters.Codex do
             usage: true
           },
           turn_options: [:attachments, :content],
-          configuration_options: [:model, :reasoning_effort, :approval_mode, :sandbox_mode]
+          configuration_options: [:model, :reasoning_effort, :sandbox_mode],
+          session_options: [:provider_session_id, :mcp_config, :approval_mode],
+          session_provider_options: :adapter
         }),
       normalized_options: [
         :model,
@@ -43,8 +46,28 @@ defmodule Jido.Harness.Adapters.Codex do
         :reasoning_effort
       ],
       normalized_values: %{reasoning_effort: [nil, :low, :medium, :high, :xhigh]},
+      provider_options: [:ephemeral, :ignore_user_config],
       install: %{npm: "@openai/codex"}
     }
+  end
+
+  @impl true
+  defdelegate acp_validate_request(request), to: Isolation, as: :validate
+
+  @impl true
+  defdelegate acp_validate_capabilities(request, capabilities), to: Isolation, as: :validate_capabilities
+
+  @impl true
+  def acp_env(request, _config), do: Isolation.environment(request)
+
+  @impl true
+  def acp_configuration(changes) do
+    case Map.pop(changes, :sandbox_mode) do
+      {nil, changes} -> changes
+      {:read_only, changes} -> Map.put(changes, :mode, "read-only")
+      {:workspace_write, changes} -> Map.put(changes, :mode, "agent")
+      {:unrestricted, changes} -> Map.put(changes, :mode, "agent-full-access")
+    end
   end
 
   @impl true

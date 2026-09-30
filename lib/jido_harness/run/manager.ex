@@ -14,6 +14,7 @@ defmodule Jido.Harness.RunManager do
          request = %{request | provider: spec.provider},
          {:ok, session_request, turn_request} <- ACP.prepare(request, spec, acp_agent),
          :ok <- Jido.Harness.SessionManager.validate_request(session_request, spec, acp_agent),
+         :ok <- Jido.Harness.SessionManager.validate_adapter_request(adapter, session_request),
          :ok <-
            RequestValidator.validate_turn_request(
              %{provider: provider, adapter: adapter, acp_agent: acp_agent, request: session_request},
