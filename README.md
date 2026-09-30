@@ -31,6 +31,10 @@ end
 Run `mix deps.get` and commit `mix.lock` to record the selected revision.
 Use `ref:` with a full commit ID when you need a fixed source revision.
 
+Compilation requires `make`, a C++17 compiler, and Erlang's `erl_interface`
+headers and library. Harness builds its bundled native process helper from
+source. See the [dependency reference](guides/reference/dependencies.md#bundled-native-process-engine).
+
 Each provider needs an installed CLI, authentication, and an ACP entry point.
 Some CLIs include ACP. Others need a separate adapter. Preview the installation
 from an Elixir shell started with `iex -S mix`:

@@ -112,7 +112,7 @@ defaults. Memory defaults to 1 MiB.
 ## Test-only process driver
 
 The `:process_driver` key replaces the subprocess driver and exists for
-deterministic tests. Production applications should use the default erlexec
+deterministic tests. Production applications should use the default native process
 driver.
 
 ## Runtime environment

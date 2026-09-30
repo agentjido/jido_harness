@@ -23,11 +23,13 @@ defmodule Jido.Harness.ProcessStartupRegressionTest do
   end
 
   @tag :soak
-  @tag timeout: 60_000
+  @tag timeout: 180_000
   test "short CLI records survive concurrent startup and timeout cleanup" do
     record = Jason.encode!(%{type: "thread.started", thread_id: "startup-regression"}) <> "\n"
 
-    for _batch <- 1..50 do
+    batches = System.get_env("HARNESS_STARTUP_BATCHES", "50") |> String.to_integer()
+
+    for _batch <- 1..batches do
       {:ok, timed_out} =
         NativeProcess.start(%{executable: "/bin/sleep", argv: ["20"], stdin: false, runtime_timeout_ms: 100})
 

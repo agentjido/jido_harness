@@ -1,18 +1,18 @@
 defmodule Jido.Harness.Escript do
   @moduledoc """
-  Bootstraps the native `erlexec` helper from a Mix escript archive.
+  Bootstraps the native process helper from a Mix escript archive.
 
-  Mix can include the `erlexec` private directory in an escript, but the native
-  `exec-port` file cannot run from inside the archive. `bootstrap_erlexec/1`
+  Mix can include the Harness private directory in an escript, but the native
+  `exec-port` file cannot run from inside the archive. `bootstrap_native/1`
   selects the file for the current system architecture, copies it to a private
-  user-cache directory, makes it executable, and configures `:erlexec` to use
+  user-cache directory, makes it executable, and configures Harness to use
   that path.
 
-  Call this function before `:erlexec` or `:jido_harness` starts. The escript
-  must use `app: nil` and `include_priv_for: [:erlexec, :jido_harness]`.
+  Call this function before `:jido_harness` starts. The escript
+  must use `app: nil` and `include_priv_for: [:jido_harness]`.
 
       def main(_args) do
-        with {:ok, _path} <- Jido.Harness.Escript.bootstrap_erlexec(),
+        with {:ok, _path} <- Jido.Harness.Escript.bootstrap_native(),
              {:ok, _apps} <- Application.ensure_all_started(:jido_harness) do
           run_cli()
         end
@@ -27,7 +27,7 @@ defmodule Jido.Harness.Escript do
   @executable "exec-port"
 
   @doc """
-  Extracts and configures the `erlexec` helper for the current escript.
+  Extracts and configures the native process helper for the current escript.
 
   Options:
 
@@ -37,20 +37,21 @@ defmodule Jido.Harness.Escript do
     below an architecture and content-specific subdirectory.
 
   The function is idempotent for the same helper content. It must run before
-  `:erlexec` starts.
+  Harness starts.
   """
-  @spec bootstrap_erlexec(keyword()) :: {:ok, String.t()} | {:error, Error.t()}
-  def bootstrap_erlexec(options \\ [])
+  @spec bootstrap_native(keyword()) :: {:ok, String.t()} | {:error, Error.t()}
+  def bootstrap_native(options \\ [])
 
-  def bootstrap_erlexec(options) when is_list(options) do
+  def bootstrap_native(options) when is_list(options) do
     if Keyword.keyword?(options) do
       with {:ok, escript_path} <- option_path(options, :escript_path, default_escript_path()),
            {:ok, cache_dir} <- option_path(options, :cache_dir, default_cache_dir()),
-           :ok <- ensure_erlexec_stopped(),
+           :ok <- ensure_native_stopped(),
            {:ok, archive} <- extract_archive(escript_path),
            {:ok, helper} <- find_helper(archive),
            {:ok, path} <- cache_helper(cache_dir, helper) do
-        Application.put_env(:erlexec, :portexe, path)
+        settings = Application.get_env(:jido_harness, :native_process, [])
+        Application.put_env(:jido_harness, :native_process, Keyword.put(settings, :portexe, path))
         {:ok, path}
       end
     else
@@ -58,20 +59,24 @@ defmodule Jido.Harness.Escript do
     end
   rescue
     exception ->
-      configuration_error("could not bootstrap erlexec from the escript",
+      configuration_error("could not bootstrap the native helper from the escript",
         cause: exception,
         details: %{message: Exception.message(exception)}
       )
   catch
     kind, reason ->
-      configuration_error("could not bootstrap erlexec from the escript",
+      configuration_error("could not bootstrap the native helper from the escript",
         cause: {kind, reason},
         details: %{reason: inspect(reason)}
       )
   end
 
-  def bootstrap_erlexec(_options),
+  def bootstrap_native(_options),
     do: configuration_error("escript bootstrap options must be a keyword list")
+
+  @doc "Compatibility name for `bootstrap_native/1`."
+  @spec bootstrap_erlexec(keyword()) :: {:ok, String.t()} | {:error, Error.t()}
+  def bootstrap_erlexec(options \\ []), do: bootstrap_native(options)
 
   defp default_escript_path, do: :escript.script_name()
   defp default_cache_dir, do: :filename.basedir(:user_cache, "jido_harness")
@@ -84,9 +89,9 @@ defmodule Jido.Harness.Escript do
     end
   end
 
-  defp ensure_erlexec_stopped do
-    if not is_nil(Process.whereis(:exec)) or application_started?(:erlexec) do
-      configuration_error("erlexec is already started; bootstrap it before starting jido_harness")
+  defp ensure_native_stopped do
+    if not is_nil(Process.whereis(:jido_harness_exec)) or application_started?(:jido_harness) do
+      configuration_error("native process manager is already started; bootstrap it before starting jido_harness")
     else
       :ok
     end
@@ -144,12 +149,12 @@ defmodule Jido.Harness.Escript do
         {:ok, %{architecture: architecture, binary: binary}}
 
       [] ->
-        configuration_error("escript does not contain an erlexec helper for the current architecture",
+        configuration_error("escript does not contain a native process helper for the current architecture",
           details: %{architecture: architecture, entries: Enum.map(helpers, &elem(&1, 0))}
         )
 
       many ->
-        configuration_error("escript contains multiple erlexec helpers for the current architecture",
+        configuration_error("escript contains multiple native process helpers for the current architecture",
           details: %{architecture: architecture, entries: Enum.map(many, &elem(&1, 0))}
         )
     end
@@ -158,13 +163,13 @@ defmodule Jido.Harness.Escript do
   defp helper_for_architecture?(path, architecture) do
     path
     |> String.split("/", trim: true)
-    |> Enum.chunk_every(4, 1, :discard)
-    |> Enum.any?(&(&1 == ["erlexec", "priv", architecture, @executable]))
+    |> Enum.chunk_every(5, 1, :discard)
+    |> Enum.any?(&(&1 == ["jido_harness", "priv", "native", architecture, @executable]))
   end
 
   defp cache_helper(cache_dir, %{architecture: architecture, binary: binary}) do
     fingerprint = "#{byte_size(binary)}-#{Integer.to_string(:erlang.phash2(binary), 16)}"
-    directory = Path.join([cache_dir, "erlexec", architecture, fingerprint])
+    directory = Path.join([cache_dir, "native", architecture, fingerprint])
     target = Path.join(directory, @executable)
 
     with :ok <- File.mkdir_p(directory),
@@ -174,7 +179,7 @@ defmodule Jido.Harness.Escript do
       {:ok, target}
     else
       {:error, reason} ->
-        configuration_error("could not write the erlexec helper to the cache",
+        configuration_error("could not write the native helper to the cache",
           details: %{path: target, reason: inspect(reason)}
         )
     end

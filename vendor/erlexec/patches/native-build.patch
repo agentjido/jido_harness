@@ -1,0 +1,11 @@
+--- a/c_src/Makefile
++++ b/c_src/Makefile
+@@ -105,7 +105,7 @@
+   endif
+ else ifeq ($(TARGET_SYS),darwin)
+   CXXFLAGS += -DHAVE_SETREUID
+-  LDFLAGS  += -flat_namespace -undefined suppress $(X64)
++  LDFLAGS  += $(X64)
+ else ifeq ($(TARGET_SYS),solaris)
+   CXXFLAGS += -dhave_setreuid
+   LDFLAGS  += -lrt $(x64)

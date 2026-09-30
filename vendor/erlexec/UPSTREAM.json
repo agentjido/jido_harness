@@ -1,0 +1,29 @@
+{
+  "package": "erlexec",
+  "version": "2.5.0",
+  "upstream_commit": "d5c6d4ec2b5dd899c496e78c0aaa393651f80fdc",
+  "hex_checksum": "a0c603f3903421db16d6a4f49862f4cb7431d1aa17b4b3d7f3f5e2fe20905121",
+  "license": "BSD-3-Clause",
+  "original_sha256": {
+    "LICENSE": "4fa3fe63742b9f9fe89e4fe7e4ec52f3775c8cb78480ca455e57b9d64b04976f",
+    "c_src/Makefile": "9ea9c627be32cf634b36793080b75db486dfe22d1f87fdc8d50267cb61e85c78",
+    "c_src/ei++.cpp": "1b24d67a35c25a5f761361518811c5cb0fafdd94df07f2e30781f5bc7264acc9",
+    "c_src/ei++.hpp": "58d55e4cd206bbe8f6412383060a7b8d12ab75c1ec556df8cffb098b2ae1e28b",
+    "c_src/exec.cpp": "d5f1ba8c86b7cb420b72aabcf73057fb7ea7887b63bd5f886f183c8e951bc2aa",
+    "c_src/exec.hpp": "26718902ee2b47c817a31912e21760e779551f8cc10c5380e3f55ff6968c5fb4",
+    "c_src/exec_impl.cpp": "849ba30755bfd296e856475bfe6efdfd650a5d006421d0d2f15de90df1818219",
+    "c_src/poll_handler.hpp": "f86ed6c99826b70e25f59094092449cc9a5272ff6806f3ef542231d793cc1620",
+    "c_src/select_handler.hpp": "9e619de0be9700c5fb654d740dd64416b88a5d0395aa8811e3b7fd3d410ac37f",
+    "c_src/ttymodes.hpp": "45f6a7a3ca55f6dc3047d1563c2973640f325a061a44e6322fabaabd9c84403c",
+    "include/exec.hrl": "00a7002f0d399d897745bf81bffaa0319600753836bcb6094358a422438df5d6",
+    "src/exec.erl": "70653cccdec1902184e504536091922eb5415b56c0b65b15bd6be73b510371f4",
+    "src/exec_app.erl": "b54d87b625c48b516ff3626cc68c53e29f26fdd00373507730d1f9953e55e410",
+    "src/exec_util.erl": "831d6cf406c45132e1cecf5d082f59917702952538340e52f529c37c730fe98f"
+  },
+  "patches": [
+    "patches/process-group-startup.patch",
+    "patches/group-diagnostics.patch",
+    "patches/private-runtime.patch",
+    "patches/native-build.patch"
+  ]
+}

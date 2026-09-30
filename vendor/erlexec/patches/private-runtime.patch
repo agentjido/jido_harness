@@ -1,0 +1,954 @@
+--- a/src/exec.erl
++++ b/src/exec.erl
+@@ -1,62 +1,61 @@
+ %%% vim:ts=4:sw=4:et
+--module(exec).
+--moduledoc """
+-OS shell command runner.
+-It communicates with a separate C++ port process `exec-port`
+-spawned by this module, which is responsible
+-for starting, killing, listing, terminating, and notifying of
+-state changes.
+-
+-The port program serves as a middle-man between
+-the OS and the virtual machine to carry out OS-specific low-level
+-process control.  The Erlang/C++ protocol is described in the
+-`exec.cpp` file.  The `exec` application can execute tasks by
+-impersonating as a different effective user.  This impersonation
+-can be accomplished in one of the following two ways (assuming
+-that the emulator is not running as `root`:
+-
+-- Having the user account running the erlang emulator added to
+-  the `/etc/sudoers` file, so that it can execute `exec-port`
+-  task as `root`. (Preferred option)
+-- Setting `root` ownership on `exec-port`, and setting the
+-  SUID bit: `chown root:root exec-port; chmod 4755 exec-port`.
+-  (This option is discouraged as it's less secure).
+-
+-In either of these two cases, `exec:start/1` must be started
+-with options `[root, {user, User}, {limit_users, Users}]`,
+-so that `exec-port` process will not actually run as
+-root but will switch to the effective `User`, and set the kernel
+-capabilities so that it's able to start processes as other
+-effective users given in the `Users` list and adjust process
+-priorities.
+-
+-Though, in the initial design, `exec` prohibited such use, upon
+-user requests a feature was added (in order to support `docker`
+-deployment and CI testing) to be able to execute `exec-port` as
+-`root` without switching the effective user to anying other than
+-`root`. To accomplish this use the following options to start
+-`exec`: `[root, {user, "root"}, {limit_users, ["root"]}]`.
+-
+-At exit the port program makes its best effort to perform
+-clean shutdown of all child OS processes.
+-Every started OS process is linked to a spawned light-weight
+-Erlang process returned by the run/2, run_link/2 command.
+-The application ensures that termination of spawned OsPid
+-leads to termination of the associated Erlang Pid, and vice
+-versa.
+-
+-## Debugging
+-
+-`exec` supports several debugging options passed to `exec:start/1`:
+-
+-* `{debug, Level}` - turns on debug verbosity in the port program.
+-* `verbose`        - turns on verbosity in the Erlang code.
+-* `valgrind`       - runs exec under the Valgrind tool, which needs
+-  to be installed in the OS. This generates a local
+-  `valgrind.YYYYMMDDhhmmss.log` file containing Valgrind's output.
+-  If you need to customize the Valgrind command options, use
+-  `{valgrind, "/path/to/valgrind Args ..."}` option.
+-""".
++-module(jido_harness_exec).
++-moduledoc false.
++%% OS shell command runner.
++%% It communicates with a separate C++ port process `exec-port`
++%% spawned by this module, which is responsible
++%% for starting, killing, listing, terminating, and notifying of
++%% state changes.
++%%
++%% The port program serves as a middle-man between
++%% the OS and the virtual machine to carry out OS-specific low-level
++%% process control.  The Erlang/C++ protocol is described in the
++%% `exec.cpp` file.  The `exec` application can execute tasks by
++%% impersonating as a different effective user.  This impersonation
++%% can be accomplished in one of the following two ways (assuming
++%% that the emulator is not running as `root`:
++%%
++%% - Having the user account running the erlang emulator added to
++%%   the `/etc/sudoers` file, so that it can execute `exec-port`
++%%   task as `root`. (Preferred option)
++%% - Setting `root` ownership on `exec-port`, and setting the
++%%   SUID bit: `chown root:root exec-port; chmod 4755 exec-port`.
++%%   (This option is discouraged as it's less secure).
++%%
++%% In either of these two cases, `jido_harness_exec:start/1` must be started
++%% with options `[root, {user, User}, {limit_users, Users}]`,
++%% so that `exec-port` process will not actually run as
++%% root but will switch to the effective `User`, and set the kernel
++%% capabilities so that it's able to start processes as other
++%% effective users given in the `Users` list and adjust process
++%% priorities.
++%%
++%% Though, in the initial design, `exec` prohibited such use, upon
++%% user requests a feature was added (in order to support `docker`
++%% deployment and CI testing) to be able to execute `exec-port` as
++%% `root` without switching the effective user to anying other than
++%% `root`. To accomplish this use the following options to start
++%% `exec`: `[root, {user, "root"}, {limit_users, ["root"]}]`.
++%%
++%% At exit the port program makes its best effort to perform
++%% clean shutdown of all child OS processes.
++%% Every started OS process is linked to a spawned light-weight
++%% Erlang process returned by the run/2, run_link/2 command.
++%% The application ensures that termination of spawned OsPid
++%% leads to termination of the associated Erlang Pid, and vice
++%% versa.
++%%
++%% ## Debugging
++%%
++%% `exec` supports several debugging options passed to `jido_harness_exec:start/1`:
++%%
++%% * `{debug, Level}` - turns on debug verbosity in the port program.
++%% * `verbose`        - turns on verbosity in the Erlang code.
++%% * `valgrind`       - runs exec under the Valgrind tool, which needs
++%%   to be installed in the OS. This generates a local
++%%   `valgrind.YYYYMMDDhhmmss.log` file containing Valgrind's output.
++%%   If you need to customize the Valgrind command options, use
++%%   `{valgrind, "/path/to/valgrind Args ..."}` option.
+ -author('saleyn@gmail.com').
+ 
+ -behaviour(gen_server).
+@@ -373,7 +372,7 @@
+     is started with a root suid bit set.
+ - `stdin | {stdin, null | close | Filename}`
+   : Enable communication with an OS process via its `stdin`. The
+-    input to the process is sent by `exec:send(OsPid, Data)`.
++    input to the process is sent by `jido_harness_exec:send(OsPid, Data)`.
+     When specified as a tuple, `null` means redirection from `/dev/null`,
+     `close` means to close `stdin` stream, and `Filename` means to
+     take input from file.
+@@ -712,7 +711,7 @@
+     stop_and_wait(OsPid, Timeout);
+ 
+ stop_and_wait(OsPid, Timeout) when is_integer(OsPid) ->
+-    case ets:lookup(exec_mon, OsPid) of
++    case ets:lookup(jido_harness_exec_mon, OsPid) of
+     [{_, Pid}] ->
+         stop_and_wait(Pid, Timeout);
+     [] ->
+@@ -892,6 +891,12 @@
+ signal_to_int(sigrtmin)   -> 34;
+ signal_to_int(sigrtmax)   -> 64.
+ 
++native_priv_dir() ->
++    case code:priv_dir(jido_harness) of
++    {error, _} = Error -> Error;
++    Priv -> filename:join(Priv, "native")
++    end.
++
+ %%-------------------------------------------------------------------------
+ %% Provide default value of a given option.
+ %%-------------------------------------------------------------------------
+@@ -908,7 +913,7 @@
+      {capabilities, []}]. % Capabilities to set on port program (empty = defaults)
+ default(portexe) ->
+     % Retrieve the Priv directory
+-    case code:priv_dir(erlexec) of
++    case native_priv_dir() of
+     {error, _} ->
+         error_logger:warning_msg("Priv directory not available", []),
+         "";
+@@ -997,7 +1002,7 @@
+             all -> " -cap all";
+             []  -> "";
+             CapList when is_list(CapList) ->
+-                CL = exec_util:validate_capabilities(CapList),
++                CL = jido_harness_exec_util:validate_capabilities(CapList),
+                 " -cap " ++ lists:flatten(lists:join(",", [atom_to_list(C) || C <- CL]))
+             end,
+     Valgr = case proplists:get_value(valgrind, Options) of
+@@ -1032,7 +1037,7 @@
+             true ->
+                 Valgr++Exe1++Args++Caps
+             end,
+-    debug(Debug, "exec: ~s~sport program: ~s\n~s",
++    debug(Debug, "jido_harness_exec: ~s~sport program: ~s\n~s",
+         [if SUID -> "[SUID] "; true -> "" end,
+          if (Root orelse IsRoot) andalso User =:= [] -> "[ROOT] "; true -> "" end,
+          Exe,
+@@ -1044,7 +1049,7 @@
+             {Port, {exit_status, Status}} ->
+                 {stop, {port_exited_with_status, Status}}
+         after 350 ->
+-            Tab = ets:new(exec_mon, [protected,named_table]),
++            Tab = ets:new(jido_harness_exec_mon, [protected,named_table]),
+             {ok, #state{port=Port, limit_users=Users, debug=Debug, registry=Tab, root=Root}}
+         end
+     catch
+@@ -1076,7 +1081,7 @@
+     end;
+ 
+ handle_call({pid, OsPid}, _From, State) ->
+-    case ets:lookup(exec_mon, OsPid) of
++    case ets:lookup(jido_harness_exec_mon, OsPid) of
+     [{_, Pid}] -> {reply, Pid, State};
+     _          -> {reply, undefined, State}
+     end;
+@@ -1231,7 +1236,7 @@
+     Self = self(),
+     LWP  = spawn_link(fun() -> ospid_init(Pid, OsPid, MonType, Sync, Self, PidOpts, Debug) end),
+     debug(Debug, "~w added monitor ~p for OsPid ~w", [?MODULE, LWP, OsPid]),
+-    ets:insert(exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
++    ets:insert(jido_harness_exec_mon, [{OsPid, LWP}, {LWP, OsPid}]),
+     {ok, LWP, OsPid, Sync};
+ maybe_add_monitor(Reply, _Pid, _MonType, _Sync, _PidOpts, _Debug) ->
+     Reply.
+@@ -1306,19 +1311,19 @@
+ 
+ notify_ospid_owner(OsPid, Status) ->
+     % See if there is a Pid owner of this OsPid. If so, sent the 'DOWN' message.
+-    case ets:lookup(exec_mon, OsPid) of
++    case ets:lookup(jido_harness_exec_mon, OsPid) of
+     [{_OsPid, Pid}] ->
+         unlink(Pid),
+         Pid ! {'DOWN', OsPid, {exit_status, Status}},
+-        ets:delete(exec_mon, Pid),
+-        ets:delete(exec_mon, OsPid);
++        ets:delete(jido_harness_exec_mon, Pid),
++        ets:delete(jido_harness_exec_mon, OsPid);
+     [] ->
+         %error_logger:warning_msg("Owner ~w not found\n", [OsPid]),
+         ok
+     end.
+ 
+ send_to_ospid_owner(OsPid, Msg) ->
+-    case ets:lookup(exec_mon, OsPid) of
++    case ets:lookup(jido_harness_exec_mon, OsPid) of
+     [{_, Pid}] -> Pid ! Msg;
+     _ -> ok
+     end.
+@@ -1377,11 +1382,11 @@
+ -spec do_unlink_ospid(Pid::pid(), term(), State::#state{}) ->
+         ok | true.
+ do_unlink_ospid(Pid, _Reason, State) ->
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{_Pid, OsPid}] when is_integer(OsPid) ->
+         debug(State#state.debug, "Pid ~p died. Killing linked OsPid ~w\n", [Pid, OsPid]),
+-        ets:delete(exec_mon, Pid),
+-        ets:delete(exec_mon, OsPid),
++        ets:delete(jido_harness_exec_mon, Pid),
++        ets:delete(jido_harness_exec_mon, OsPid),
+         erlang:port_command(State#state.port, term_to_binary({0, {stop, OsPid}}));
+     _ ->
+         ok
+@@ -1420,7 +1425,7 @@
+ is_port_command({stop, OsPid}=T, _Pid, _State) when is_integer(OsPid) ->
+     {ok, T, undefined, undefined, []};
+ is_port_command({stop, Pid}, _Pid, _State) when is_pid(Pid) ->
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{_StoredPid, OsPid}] -> {ok, {stop, OsPid}, undefined, undefined, []};
+     []              -> throw({error, no_process})
+     end;
+@@ -1429,7 +1434,7 @@
+     {ok, {manage, OsPid, PortOpts}, Link, Sync, []};
+ is_port_command({send, Pid, Data}, _Pid, _State)
+   when is_pid(Pid), is_binary(Data) orelse Data =:= eof ->
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{Pid, OsPid}]  -> {ok, {stdin, OsPid, Data}};
+     []              -> throw({error, no_process})
+     end;
+@@ -1438,7 +1443,7 @@
+     {ok, {stdin, OsPid, Data}};
+ is_port_command({winsz, Pid, Rows, Cols}, _Pid, _State)
+   when is_pid(Pid), is_integer(Rows), is_integer(Cols) ->
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{Pid, OsPid}]  -> {ok, {winsz, OsPid, Rows, Cols}, undefined, undefined, []};
+     []              -> throw({error, no_process})
+     end;
+@@ -1448,7 +1453,7 @@
+ is_port_command({pty_opts, Pid, Opts}, _Pid, _State)
+   when is_pid(Pid), is_list(Opts) ->
+     ok = check_pty_opts(Opts),
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{Pid, OsPid}]  -> {ok, {pty_opts, OsPid, Opts}, undefined, undefined, []};
+     []              -> throw({error, no_process})
+     end;
+@@ -1461,7 +1466,7 @@
+ is_port_command({setpgid, OsPid, Gid}=T, _Pid, _State) when is_integer(OsPid),is_integer(Gid) ->
+     {ok, T, undefined, undefined, []};
+ is_port_command({kill, Pid, Sig}, _Pid, _State) when is_pid(Pid),is_integer(Sig) ->
+-    case ets:lookup(exec_mon, Pid) of
++    case ets:lookup(jido_harness_exec_mon, Pid) of
+     [{Pid, OsPid}]  -> {ok, {kill, OsPid, Sig}, undefined, undefined, []};
+     []              -> throw({error, no_process})
+     end;
+@@ -1523,7 +1528,7 @@
+ check_cmd_options([{capabilities, all}=H|T], Pid, State, PortOpts, OtherOpts) ->
+     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+ check_cmd_options([{capabilities, Caps}=H|T], Pid, State, PortOpts, OtherOpts) when is_list(Caps) ->
+-    exec_util:validate_capabilities(Caps),
++    jido_harness_exec_util:validate_capabilities(Caps),
+     check_cmd_options(T, Pid, State, [H|PortOpts], OtherOpts);
+ check_cmd_options([{cgroup, PathOrMap}=H|T], Pid, State, PortOpts, OtherOpts)
+   when is_binary(PathOrMap); is_list(PathOrMap); is_map(PathOrMap) ->
+@@ -1763,7 +1768,7 @@
+                     false -> Opts;
+                     _     -> [{debug, 1}, verbose | Opts]
+                 end,
+-            {ok, Pid} = exec:start(Opts1),
++            {ok, Pid} = jido_harness_exec:start(Opts1),
+             Pid
+         end,
+ 
+@@ -1810,7 +1815,7 @@
+             end,
+     M     = N*2,
+     {setup,
+-        fun()    -> {ok, Pid} = exec:start([{debug, Level}]), Pid end,
++        fun()    -> {ok, Pid} = jido_harness_exec:start([{debug, Level}]), Pid end,
+         fun(Pid) -> exit(Pid, kill) end,
+         [
+             {timeout, 200,
+@@ -1831,64 +1836,64 @@
+     case os:getenv("NO_ROOT_TESTS") of
+         false ->
+             ?AssertMatch({error, "Cannot specify effective user"++_},
+-                         exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
++                         jido_harness_exec:start([{user, "xxxx"}, {limit_users, [yyyy]}])),
+             ?AssertMatch({error, "Cannot restrict users"++_},
+-                         exec:start([{limit_users, [yyyy]}])),
++                         jido_harness_exec:start([{limit_users, [yyyy]}])),
+             ?AssertMatch({error, "Not allowed to run without restricting effective users"++_},
+-                         exec:start([root, {user, "xxxx"}])),
++                         jido_harness_exec:start([root, {user, "xxxx"}])),
+             ?AssertMatch({error, "Not allowed to run without providing effective user "++_},
+-                         exec:start([root, {limit_users, [yyyy]}]));
++                         jido_harness_exec:start([root, {limit_users, [yyyy]}]));
+         _ ->
+             ok
+     end.
+ 
+ test_monitor() ->
+-    {ok, P, _} = exec:run("echo ok", [{stdout, null}, monitor]),
++    {ok, P, _} = jido_harness_exec:run("echo ok", [{stdout, null}, monitor]),
+     ?receivePattern({'DOWN', _, process, P, normal}, 5000).
+ 
+ test_sync() ->
+     ?AssertMatch({ok, [{stdout, [<<"Test\n">>]}, {stderr, [<<"ERR\n">>]}]},
+-        exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
++        jido_harness_exec:run("echo Test; echo ERR 1>&2", [stdout, stderr, sync])),
+     ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
+-         exec:run([<<"/bin/echo">>], [sync, stdout])),
++         jido_harness_exec:run([<<"/bin/echo">>], [sync, stdout])),
+     ?AssertMatch({ok,[{stdout,[<<"\n">>]}]},
+-         exec:run(["/bin/echo"], [sync, stdout])).
++         jido_harness_exec:run(["/bin/echo"], [sync, stdout])).
+ 
+ 
+ test_winsz() ->
+-    {ok, P, I} = exec:run(
++    {ok, P, I} = jido_harness_exec:run(
+         ["/bin/bash", "-i", "-c", "echo started; read x; echo LINES=$(tput lines) COLUMNS=$(tput cols)"],
+         [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}]),
+     ?receiveBytes({stdout, I, <<"started\r\n">>}, 3000),
+-    ok = exec:winsz(I, 99, 88),
+-    ok = exec:send(I, <<"\n">>),
++    ok = jido_harness_exec:winsz(I, 99, 88),
++    ok = jido_harness_exec:send(I, <<"\n">>),
+     ?receiveBytes({stdout, I, <<"LINES=99 COLUMNS=88\r\n">>}, 3000),
+     ?receivePattern({'DOWN', _, process, P, normal}, 5000),
+     % can set size on run
+-    {ok, P2, I2} = exec:run(
++    {ok, P2, I2} = jido_harness_exec:run(
+         ["/bin/bash", "-i", "-c", "echo LINES=$(tput lines) COLUMNS=$(tput cols)\n"],
+         [stdin, stdout, {stderr, stdout}, monitor, pty, {env, [{"TERM", "xterm"}]}, {winsz, {99, 88}}]),
+     ?receiveBytes({stdout, I2, <<"LINES=99 COLUMNS=88\r\n">>}, 5000),
+     ?receivePattern({'DOWN', _, process, P2, normal}, 5000).
+ 
+ test_stdin() ->
+-    {ok, P, I} = exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
+-    ok = exec:send(I, <<"Test data\n">>),
++    {ok, P, I} = jido_harness_exec:run("read x; echo \"Got: $x\"", [stdin, stdout, monitor]),
++    ok = jido_harness_exec:send(I, <<"Test data\n">>),
+     ?receiveBytes({stdout,I,<<"Got: Test data\n">>}, 3000),
+     ?receivePattern({'DOWN', _, process, P, normal}, 5000).
+ 
+ test_large_stdin() ->
+-    {ok, Pid, _} = exec:run("cat", [stdin, stdout, stderr]),
+-    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,65511)]))),
+-    ?assertEqual(ok, exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,256*1024)]))).
++    {ok, Pid, _} = jido_harness_exec:run("cat", [stdin, stdout, stderr]),
++    ?assertEqual(ok, jido_harness_exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,65511)]))),
++    ?assertEqual(ok, jido_harness_exec:send(Pid, erlang:list_to_binary([A rem 250 || A <- lists:seq(1,256*1024)]))).
+ 
+ test_stdin_eof() ->
+     case os:find_executable("tac") of
+     false ->
+         ok;
+     _ ->
+-        {ok, P, I} = exec:run("tac", [stdin, stdout, monitor]),
+-        [ok = exec:send(I, Data)
++        {ok, P, I} = jido_harness_exec:run("tac", [stdin, stdout, monitor]),
++        [ok = jido_harness_exec:send(I, Data)
+          || Data <- [<<"foo\n">>, <<"bar\n">>, <<"baz\n">>, eof]],
+         ?receiveBytes({stdout,I,<<"baz\nbar\nfoo\n">>}, 3000),
+         ?receivePattern({'DOWN', _, process, P, normal}, 5000)
+@@ -1899,19 +1904,19 @@
+              stderr -> " 1>&2";
+              stdout -> ""
+              end,
+-    {ok, _, I} = exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
++    {ok, _, I} = jido_harness_exec:run("for i in 1 2; do echo TEST$i; sleep 0.05; done" ++ Suffix, [Stream]),
+     ?receiveBytes({Stream,I,<<"TEST1\n">>}, 5000),
+     ?receiveBytes({Stream,I,<<"TEST2\n">>}, 5000),
+ 
+     Filename = temp_file(),
+     try
+-        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
++        ?AssertMatch({ok, []}, jido_harness_exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+         ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+ 
+-        ?AssertMatch({ok, []}, exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
++        ?AssertMatch({ok, []}, jido_harness_exec:run("echo Test"++Suffix, [{Stream, Filename}, sync])),
+         ?AssertMatch({ok, <<"Test\n">>}, file:read_file(Filename)),
+ 
+-        ?AssertMatch({ok, []}, exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
++        ?AssertMatch({ok, []}, jido_harness_exec:run("echo Test2"++Suffix, [{Stream, Filename, [append]}, sync])),
+         ?AssertMatch({ok, <<"Test\nTest2\n">>}, file:read_file(Filename))
+ 
+     after
+@@ -1922,27 +1927,27 @@
+     % Cmd given as string
+     ?AssertMatch(
+         {ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run("/bin/echo ok", [sync, stdout])),
++        jido_harness_exec:run("/bin/echo ok", [sync, stdout])),
+     ?AssertMatch(
+         {ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run(<<"/bin/echo ok">>, [sync, stdout])),
++        jido_harness_exec:run(<<"/bin/echo ok">>, [sync, stdout])),
+     % Cmd given as list
+     ?AssertMatch(
+         {ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
++        jido_harness_exec:run(["/bin/bash", "-c", "echo ok"], [sync, stdout])),
+     ?AssertMatch(
+         {ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
++        jido_harness_exec:run([<<"/bin/bash">>, <<"-c">>, <<"echo ok">>], [sync, stdout])),
+     ?AssertMatch(
+         {ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run(["/bin/echo", "ok"], [sync, stdout])).
++        jido_harness_exec:run(["/bin/echo", "ok"], [sync, stdout])).
+ 
+ test_executable() ->
+     % Cmd given as string
+     ?AssertMatch(
+         [<<"Pid ", _/binary>>, <<" cannot execute '00kuku00': No such file or directory\n">>],
+         (fun() ->
+-            case exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]) of
++            case jido_harness_exec:run("ls", [sync, {executable, "00kuku00"}, stdout, stderr]) of
+                 {error,[{exit_status,256},{stderr, [E]}]} ->
+                     binary:split(E, <<":">>);
+                 {error, Other} ->
+@@ -1952,20 +1957,20 @@
+ 
+     ?AssertMatch(
+         {ok, [{stdout,[<<"ok\n">>]}]},
+-        exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
++        jido_harness_exec:run("echo ok", [sync, {executable, "/bin/sh"}, stdout, stderr])),
+ 
+     ?AssertMatch(
+         {ok, [{stdout,[<<"ok\n">>]}]},
+-        exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
++        jido_harness_exec:run(<<"echo ok">>, [sync, {executable, <<"/bin/sh">>}, stdout, stderr])),
+ 
+     % Cmd given as list
+     ?AssertMatch(
+         {ok, [{stdout,[<<"ok\n">>]}]},
+-        exec:run(["/bin/bash", "-c", "/bin/echo ok"],
++        jido_harness_exec:run(["/bin/bash", "-c", "/bin/echo ok"],
+                  [sync, {executable, "/bin/sh"}, stdout, stderr])),
+     ?AssertMatch(
+         {ok, [{stdout,[<<"XYZ\n">>]}]},
+-        exec:run(["/bin/echoXXXX abc", "XYZ"],
++        jido_harness_exec:run(["/bin/echoXXXX abc", "XYZ"],
+                  [sync, {executable, "/bin/echo"}, stdout, stderr])),
+ 
+     % Cmd given as a unicode string
+@@ -1975,48 +1980,48 @@
+         ok = file:change_mode(File, 8#755),
+         ?AssertMatch(
+            {ok, [{stdout,[<<"ok\n">>]}]},
+-           exec:run(File, [sync, stdout, stderr])),
++           jido_harness_exec:run(File, [sync, stdout, stderr])),
+         ?AssertMatch(
+            {ok, [{stdout,[<<"ok\n">>]}]},
+-           exec:run([<<"/bin/bash">>, <<"-c">>, File], [sync, stdout, stderr]))
++           jido_harness_exec:run([<<"/bin/bash">>, <<"-c">>, File], [sync, stdout, stderr]))
+     after
+         ok = file:delete(File)
+     end.
+ 
+ test_redirect() ->
+     ?AssertMatch({ok,[{stderr,[<<"TEST1\n">>]}]},
+-        exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
++        jido_harness_exec:run("echo TEST1", [stderr, {stdout, stderr}, sync])),
+     ?AssertMatch({ok,[{stdout,[<<"TEST2\n">>]}]},
+-        exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
++        jido_harness_exec:run("echo TEST2 1>&2", [stdout, {stderr, stdout}, sync])),
+     ok.
+ 
+ test_redirect_stdin() ->
+     ?AssertMatch("ttt\n",
+         os:cmd("echo ttt > /tmp/output.txt; cat /tmp/output.txt")),
+     ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+-        exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
++        jido_harness_exec:run("cat", [{stdin, "/tmp/output.txt"}, sync, stdout])),
+     ?AssertMatch({ok,[{stdout,[<<"ttt\n">>]}]},
+-        exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
++        jido_harness_exec:run("cat", [{stdin, <<"/tmp/output.txt">>}, sync, stdout])),
+     file:delete("/tmp/output.txt").
+ 
+ test_env() ->
+     ?AssertMatch({ok, [{stdout, [<<"X-Y\n">>]}]},
+-        exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
++        jido_harness_exec:run("echo $XXX-$YYY", [stdout, {env, [{"XXX", "X"}, {<<"YYY">>, <<"Y">>}]}, sync])).
+ 
+ test_kill_timeout() ->
+-    %{ok, _OldDebug} = exec:debug(3),
+-    {ok, P2, I2} = exec:run("trap 'echo Got signal' SIGTERM; sleep 15", [{kill_timeout, 1}, stdout, monitor]),
++    %{ok, _OldDebug} = jido_harness_exec:debug(3),
++    {ok, P2, I2} = jido_harness_exec:run("trap 'echo Got signal' SIGTERM; sleep 15", [{kill_timeout, 1}, stdout, monitor]),
+     timer:sleep(200),
+-    exec:stop(I2),
++    jido_harness_exec:stop(I2),
+     timer:sleep(50),
+-    %exec:debug(_OldDebug),
++    %jido_harness_exec:debug(_OldDebug),
+     ?receivePattern({'DOWN', I2, process, P2, normal}, 5000).
+ 
+ test_setpgid() ->
+     % Cmd given as string
+-    {ok, P0, P} = exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
+-    {ok, P1, _} = exec:run("sleep 15", [{group, P}, monitor]),
+-    {ok, P2, _} = exec:run("sleep 15", [{group, P}, monitor]),
++    {ok, P0, P} = jido_harness_exec:run("sleep  1", [{group, 0}, kill_group, monitor]),
++    {ok, P1, _} = jido_harness_exec:run("sleep 15", [{group, P}, monitor]),
++    {ok, P2, _} = jido_harness_exec:run("sleep 15", [{group, P}, monitor]),
+     ?receivePattern({'DOWN',_,process, P0, normal}, 5000),
+     ?receivePattern({'DOWN',_,process, P1, {exit_status, 15}}, 5000),
+     ?receivePattern({'DOWN',_,process, P2, {exit_status, 15}}, 5000).
+@@ -2025,24 +2030,24 @@
+     % Regression test: Verify that kill_group with an arbitrary group doesn't kill the port
+     % This test ensures the port process stays alive after a kill_group operation.
+     % The child process should be killed with kill_group, but the port should stay alive.
+-    {ok, P, _OsPid} = exec:run("sleep 1", [stdout, kill_group, monitor]),
++    {ok, P, _OsPid} = jido_harness_exec:run("sleep 1", [stdout, kill_group, monitor]),
+     ?receivePattern({'DOWN', _, process, P, normal}, 5000),
+     % Verify the exec port is still alive by running another command
+     % If the port crashed, this next command would fail with 'noproc'
+     ?AssertMatch({ok, [{stdout, [<<"ok\n">>]}]},
+-        exec:run("echo ok", [stdout, sync])).
++        jido_harness_exec:run("echo ok", [stdout, sync])).
+ 
+ test_kill_group_with_nonzero_group() ->
+     % Verify that kill_group with a non-zero group doesn't kill the port.
+     % The returned error is due to the fact that the child process doesn't have
+     % permissions to set group ID to 100.
+     ?AssertMatch({error, [{exit_status, 256}]},
+-        exec:run("sleep 1", [stdout, {group, 100}, kill_group, sync])).
++        jido_harness_exec:run("sleep 1", [stdout, {group, 100}, kill_group, sync])).
+ 
+ test_pty() ->
+     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+-        exec:run("tty", [stdin, stdout, sync])),
+-    ?assert(case exec:run("tty", [stdin, stdout, pty, sync]) of
++        jido_harness_exec:run("tty", [stdin, stdout, sync])),
++    ?assert(case jido_harness_exec:run("tty", [stdin, stdout, pty, sync]) of
+         {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+             true;
+         % on macos, the pty has the format /dev/ttysXXX
+@@ -2050,8 +2055,8 @@
+             true;
+         _ -> false
+     end),
+-    {ok, P, I} = exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
+-    ok = exec:send(I, <<"echo ok\n">>),
++    {ok, P, I} = jido_harness_exec:run("/bin/bash --norc -i", [stdin, stdout, pty, monitor]),
++    ok = jido_harness_exec:send(I, <<"echo ok\n">>),
+     receive
+     {stdout, I, <<"echo ok\r\n">>} ->
+         ?receiveBytes({stdout, I, <<"ok\r\n">>}, 1000);
+@@ -2060,12 +2065,12 @@
+     after 1000 ->
+         ?AssertMatch({stdout, I, <<"ok\r\n">>}, timeout)
+     end,
+-    ok = exec:send(I, <<"exit\n">>),
++    ok = jido_harness_exec:send(I, <<"exit\n">>),
+     ?receivePattern({'DOWN', _, process, P, normal}, 1000).
+ 
+ test_pty_echo() ->
+     % without echo
+-    {ok, _, I} = exec:run("echo started && cat", [
++    {ok, _, I} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2073,11 +2078,11 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I, <<"test\n">>),
++    ok = jido_harness_exec:send(I, <<"test\n">>),
+     ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+-    ok = exec:kill(I, 9),
++    ok = jido_harness_exec:kill(I, 9),
+     % with echo
+-    {ok, _, I2} = exec:run("echo started && cat", [
++    {ok, _, I2} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2086,13 +2091,13 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I2, <<"test\n">>),
++    ok = jido_harness_exec:send(I2, <<"test\n">>),
+     ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000).
+ 
+ test_pty_opts() ->
+     ?AssertMatch({error,[{exit_status,256},{stdout,[<<"not a tty\n">>]}]},
+-        exec:run("tty", [stdin, stdout, sync])),
+-    ?assert(case exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
++        jido_harness_exec:run("tty", [stdin, stdout, sync])),
++    ?assert(case jido_harness_exec:run("tty", [stdin, stdout, {pty, []}, sync]) of
+         {ok,[{stdout,[<<"/dev/pts/", _/binary>>|_]}]} ->
+             true;
+         {ok,[{stdout,[<<"/dev/ttys", _/binary>>|_]}]} ->
+@@ -2100,7 +2105,7 @@
+         _ -> false
+     end),
+     % without echo
+-    {ok, P, I} = exec:run("echo started && cat", [
++    {ok, P, I} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2108,12 +2113,12 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I, <<"test\n">>),
++    ok = jido_harness_exec:send(I, <<"test\n">>),
+     ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+-    ok = exec:kill(I, 9),
++    ok = jido_harness_exec:kill(I, 9),
+     ?receivePattern({'DOWN', I, process, P, {exit_status, 9}}, 5000),
+     % with echo
+-    {ok, P2, I2} = exec:run("echo started && cat", [
++    {ok, P2, I2} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2121,14 +2126,14 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I2, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I2, <<"test\n">>),
++    ok = jido_harness_exec:send(I2, <<"test\n">>),
+     ?receiveBytes({stdout, I2, <<"test\r\ntest\r\n">>}, 5000),
+     % send ^C
+-    ok = exec:send(I2, <<3>>),
++    ok = jido_harness_exec:send(I2, <<3>>),
+     ?receiveBytes({stdout, I2, <<"^C">>}, 1000),
+     ?receivePattern({'DOWN', I2, process, P2, {exit_status, 2}}, 5000),
+     % vintr test
+-    {ok, P3, I3} = exec:run("echo started && cat", [
++    {ok, P3, I3} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2136,13 +2141,13 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I3, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I3, <<"test">>),
++    ok = jido_harness_exec:send(I3, <<"test">>),
+     ?receiveBytes({stdout, I3, <<"test">>}, 5000),
+     % send ^C (3), should not interrupt
+-    ok = exec:send(I3, <<3>>),
++    ok = jido_harness_exec:send(I3, <<3>>),
+     ?receiveBytes({stdout, I3, <<"^C">>}, 5000),
+     % send ^B (2), should interrupt
+-    ok = exec:send(I3, <<2>>),
++    ok = jido_harness_exec:send(I3, <<2>>),
+     ?receiveBytes({stdout, I3, <<"^B">>}, 5000),
+     ?receivePattern({'DOWN', I3, process, P3, {exit_status, 2}}, 5000),
+     % opts validation
+@@ -2150,7 +2155,7 @@
+         {error,{invalid_pty_value,[{vintr,false},
+                                    {tty_op_ispeed,-1},
+                                    {invalid,1}]}},
+-        exec:run("echo not ok", [
++        jido_harness_exec:run("echo not ok", [
+             sync,
+             stdin,
+             stdout,
+@@ -2166,7 +2171,7 @@
+ 
+ test_dynamic_pty_opts() ->
+     % without echo
+-    {ok, P, I} = exec:run("echo started && cat", [
++    {ok, P, I} = jido_harness_exec:run("echo started && cat", [
+         stdin,
+         stdout,
+         {stderr, stdout},
+@@ -2174,19 +2179,19 @@
+         monitor
+     ]),
+     ?receiveBytes({stdout, I, <<"started\r\n">>}, 5000),
+-    ok = exec:send(I, <<"test\n">>),
++    ok = jido_harness_exec:send(I, <<"test\n">>),
+     ?receiveBytes({stdout, I, <<"test\r\n">>}, 5000),
+-    ok = exec:send(I, <<2>>),
+-    ok = exec:send(I, <<"\n">>),
++    ok = jido_harness_exec:send(I, <<2>>),
++    ok = jido_harness_exec:send(I, <<"\n">>),
+     ?receiveBytes({stdout, I, <<2, 13, 10>>}, 5000),
+     % change echo to 1, interrupt to ^B
+-    ok = exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
++    ok = jido_harness_exec:pty_opts(I, [{echo, 1}, {vintr, 2}]),
+     % opts validation
+     ?AssertMatch(
+         {error,{invalid_pty_value,[{vintr,false},
+                                    {tty_op_ispeed,-1},
+                                    {invalid,1}]}},
+-        exec:pty_opts(I, [
++        jido_harness_exec:pty_opts(I, [
+             {echo, true},
+             {echoke, 0},
+             {echoe, false},
+@@ -2195,10 +2200,10 @@
+             {tty_op_ispeed, -1},
+             {invalid, 1}
+         ])),
+-    ok = exec:send(I, <<"test\n">>),
++    ok = jido_harness_exec:send(I, <<"test\n">>),
+     ?receiveBytes({stdout, I, <<"test\r\ntest\r\n">>}, 5000),
+     % send ^B
+-    ok = exec:send(I, <<2>>),
++    ok = jido_harness_exec:send(I, <<2>>),
+     ?receiveBytes({stdout, I, <<"^B">>}, 5000),
+     ?receivePattern({'DOWN', I, process, P, {exit_status, 2}}, 5000).
+ 
+@@ -2206,7 +2211,7 @@
+     case build_pty_group_zero_harness() of
+         {ok, PreloadPath} ->
+             PidFile = temp_file(),
+-            ExecPid = case exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]) of
++            ExecPid = case jido_harness_exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]) of
+                 {ok, Pid} -> Pid;
+                 {error, {already_started, Pid}} ->
+                     Ref = monitor(process, Pid),
+@@ -2216,14 +2221,14 @@
+                     after 30000 ->
+                         erlang:error({test_pty_group_zero_kill_group, timeout})
+                     end,
+-                    {ok, Pid2} = exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
++                    {ok, Pid2} = jido_harness_exec:start([{env, [{"LD_PRELOAD", PreloadPath}]}]),
+                     Pid2
+             end,
+             try
+                 Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+-                {ok, P, I} = exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
++                {ok, P, I} = jido_harness_exec:run(Cmd, [monitor, pty, {group, 0}, kill_group]),
+                 ChildPid = read_pid_file(PidFile),
+-                ok = exec:stop(I),
++                ok = jido_harness_exec:stop(I),
+                 ?receivePattern({'DOWN', I, process, P, normal}, 5000),
+                 wait_until_pid_stops(ChildPid)
+             after
+@@ -2238,7 +2243,7 @@
+     end.
+ 
+ test_port_runs_in_own_process_group() ->
+-    {ok, ExecPid} = exec:start([]),
++    {ok, ExecPid} = jido_harness_exec:start([]),
+     try
+         OsPid = exec_port_os_pid(ExecPid),
+         case os_process_group_id(OsPid) of
+@@ -2258,7 +2263,7 @@
+                 without_error_logger(fun() ->
+                     ?assertMatch(
+                         {error, {port_exited_with_status, 4}},
+-                        exec:start([
++                        jido_harness_exec:start([
+                             {portexe, WrapperPath},
+                             {env, [
+                                 {"ERLEXEC_REAL_PORTEXE", default(portexe)},
+@@ -2278,10 +2283,10 @@
+ 
+ test_finalize_shutdown_kills_shell_descendants() ->
+     PidFile = temp_file(),
+-    {ok, ExecPid} = exec:start([]),
++    {ok, ExecPid} = jido_harness_exec:start([]),
+     try
+         Cmd = lists:flatten(io_lib:format("sleep 20 & echo $! > ~s; wait", [PidFile])),
+-        {ok, _, _} = exec:run(Cmd, []),
++        {ok, _, _} = jido_harness_exec:run(Cmd, []),
+         ChildPid = read_pid_file(PidFile),
+         ok = gen_server:stop(ExecPid),
+         ?assertEqual(false, os_pid_running(ChildPid))
+@@ -2291,19 +2296,19 @@
+     end.
+ 
+ default_portexe_no_priv_dir_test_() ->
+-    Priv = code:priv_dir(erlexec),
++    Priv = native_priv_dir(),
+     {setup,
+         fun() -> ok = backup_dir(Priv) end,
+         fun(_) -> ok = restore_backup_dir(Priv) end,
+         fun() ->
+             without_error_logger(fun() ->
+                 ?assert(not filelib:is_dir(Priv)),
+-                ?assertMatch("", exec:default(portexe))
++                ?assertMatch("", jido_harness_exec:default(portexe))
+                                  end)
+         end}.
+ 
+ default_portexe_invalid_file_test_() ->
+-    Priv = code:priv_dir(erlexec),
++    Priv = native_priv_dir(),
+     RandomFile = filename:join(Priv, "random-file"),
+     ArchDir = filename:join(Priv, erlang:system_info(system_architecture)),
+ 
+@@ -2323,12 +2328,12 @@
+             without_error_logger(fun() ->
+                 {ok, Entries} = file:list_dir(Priv),
+                 ?assertEqual(lists:sort(["random-file", erlang:system_info(system_architecture)]), lists:sort(Entries)),
+-                ?assertEqual("", exec:default(portexe))
++                ?assertEqual("", jido_harness_exec:default(portexe))
+                                  end)
+         end}.
+ 
+ default_portexe_invalid_parent_dir_test_() ->
+-    Priv = code:priv_dir(erlexec),
++    Priv = native_priv_dir(),
+     BinFile = filename:join(Priv, "exec-port"),
+     ArchDir = filename:join(Priv, "only-arch"),
+     RandomFile = filename:join(ArchDir, "random-file"),
+@@ -2350,12 +2355,12 @@
+             without_error_logger(fun() ->
+                 {ok, Entries} = file:list_dir(Priv),
+                 ?assertEqual(["exec-port", "only-arch"], lists:sort(Entries)),
+-                ?assertMatch("", exec:default(portexe))
++                ?assertMatch("", jido_harness_exec:default(portexe))
+                                  end)
+         end}.
+ 
+ default_portexe_single_execport_file_test_() ->
+-    Priv = code:priv_dir(erlexec),
++    Priv = native_priv_dir(),
+     ArchDir = filename:join(Priv, "only-arch"),
+     BinFile = filename:join(ArchDir, "exec-port"),
+ 
+@@ -2375,12 +2380,12 @@
+             without_error_logger(fun() ->
+                 {ok, Entries} = file:list_dir(Priv),
+                 ?assertEqual(["only-arch"], Entries),
+-                ?assert(lists:suffix("/priv/only-arch/exec-port", exec:default(portexe)))
++                ?assert(lists:suffix("/priv/native/only-arch/exec-port", jido_harness_exec:default(portexe)))
+                                  end)
+         end}.
+ 
+ default_portexe_multiple_portexec_files_test_() ->
+-    Priv = code:priv_dir(erlexec),
++    Priv = native_priv_dir(),
+     Arch = erlang:system_info(system_architecture),
+     ArchDir = filename:join(Priv, Arch),
+     OtherArchDir = filename:join(Priv, "unknown-arch"),
+@@ -2405,7 +2410,7 @@
+             without_error_logger(fun() ->
+                 {ok, Entries} = file:list_dir(Priv),
+                 ?assertEqual(lists:sort([Arch, "unknown-arch"]), lists:sort(Entries)),
+-                ?assert(lists:suffix("/priv/" ++ Arch ++ "/exec-port", exec:default(portexe)))
++                ?assert(lists:suffix("/priv/native/" ++ Arch ++ "/exec-port", jido_harness_exec:default(portexe)))
+                                  end)
+         end}.
+ 
+@@ -2522,7 +2527,7 @@
+     end.
+ 
+ compile_setpgid_failure_harness(Cc) ->
+-    PrivDir = code:priv_dir(erlexec),
++    PrivDir = native_priv_dir(),
+     Base = integer_to_list(erlang:unique_integer([positive])),
+     PreloadPath = filename:join(PrivDir, "deny_setpgid_" ++ Base ++ ".so"),
+     WrapperPath = filename:join(PrivDir, "exec_port_fork_wrapper_" ++ Base),
+@@ -2543,7 +2548,7 @@
+     end.
+ 
+ compile_pty_group_zero_harness(Cc) ->
+-    PrivDir = code:priv_dir(erlexec),
++    PrivDir = native_priv_dir(),
+     Base = integer_to_list(erlang:unique_integer([positive])),
+     PreloadPath = filename:join(PrivDir, "delay_setsid_deny_child_setpgid_" ++ Base ++ ".so"),
+     TestDir = filename:join(PrivDir, "test"),
+--- a/src/exec_app.erl
++++ b/src/exec_app.erl
+@@ -10,7 +10,8 @@
+ %%% Created: 2003-06-25 by Serge Aleynikov <saleyn@gmail.com>
+ %%% $URL$
+ %%%------------------------------------------------------------------------
+--module(exec_app).
++-module(jido_harness_exec_app).
++-moduledoc false.
+ -author('saleyn@gmail.com').
+ -id    ("$Id$").
+ 
+@@ -59,20 +60,20 @@
+     Options =
+         lists:foldl(
+             fun(I, Acc) -> add_option(I, Acc) end,
+-            [], [I || {I, _} <- exec:default()]),
++            [], [I || {I, _} <- jido_harness_exec:default()]),
+     {ok, {
+         {one_for_one, 3, 30},               % Allow MaxR restarts within MaxT seconds
+-        [{  exec,                           % Id       = internal id
+-            {exec, start_link, [Options]},  % StartFun = {M, F, A}
++        [{  jido_harness_exec,                           % Id       = internal id
++            {jido_harness_exec, start_link, [Options]},  % StartFun = {M, F, A}
+             permanent,                      % Restart  = permanent | transient | temporary
+             10000,                          % Shutdown - wait 10 seconds, to give child processes time to be killed off.
+             worker,                         % Type     = worker | supervisor
+-            [exec]                          % Modules  = [Module] | dynamic
++            [jido_harness_exec]                          % Modules  = [Module] | dynamic
+         }]
+     }}.
+ 
+ add_option(Option, Acc) ->
+-    case application:get_env(erlexec, Option) of
+-    {ok, Value} -> [{Option, Value} | Acc];
+-    undefined   -> Acc
++    case lists:keyfind(Option, 1, application:get_env(jido_harness, native_process, [])) of
++    {Option, Value} -> [{Option, Value} | Acc];
++    false       -> Acc
+     end.
+--- a/src/exec_util.erl
++++ b/src/exec_util.erl
+@@ -1,4 +1,5 @@
+--module(exec_util).
++-module(jido_harness_exec_util).
++-moduledoc false.
+ -export([
+     capability_to_index/1, index_to_capability/1, index_to_capability/2,
+     is_capability_set/2, validate_capabilities/1

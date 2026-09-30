@@ -23,6 +23,10 @@ The escript fixture verifies native-helper extraction in a separate VM. The
 load its published source. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup,
 coverage limits, and required checks.
 
+The coverage percentage excludes imported Erlang engine source. The 70% floor
+continues to apply to Harness code. Native behavior has separate forced-error,
+process lifecycle, and package checks.
+
 The default Antigravity tests use a small protocol fixture. CI also installs
 the pinned Node wrapper in a temporary directory and runs it against the fake
 ACP backend. To run the same check locally, set
@@ -128,11 +132,16 @@ Run the short startup regression check first:
 mix test --no-cover --include soak test/jido_harness/process_startup_regression_test.exs
 ```
 
-It runs 50 timeouts and 400 short CLI processes without retries. A failure
-includes the process state, stderr, and terminal events. The manual CI run
-also runs this check on macOS with unmodified dependencies. It is excluded
-from the default suite because erlexec 2.5.0 can fail this check on macOS;
-see [Native process startup](reference/dependencies.md#native-process-startup).
+The local check runs 50 timeouts and 400 short CLI processes without retries.
+CI uses 250 timeouts and 2,000 short processes. A failure
+includes the process state, stderr, and terminal events. Native CI runs this
+check on macOS and Linux on every pull request and main push. It is excluded
+from the default suite to keep local checks short.
+
+The default suite also forces both child process-group outcomes in separate
+Erlang VMs. A correct group must allow startup; a wrong group must prevent the
+command from running. See the
+[bundled native engine](reference/dependencies.md#bundled-native-process-engine).
 
 For the longer retention and cleanup check:
 

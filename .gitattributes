@@ -1,0 +1,4 @@
+# Retain upstream bytes and intentional patch context whitespace.
+vendor/erlexec/LICENSE -text whitespace=cr-at-eol,-blank-at-eol
+vendor/erlexec/c_src/ei++.* whitespace=-blank-at-eof
+vendor/erlexec/patches/*.patch whitespace=-blank-at-eol
