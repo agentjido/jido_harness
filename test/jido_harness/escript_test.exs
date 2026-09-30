@@ -90,11 +90,13 @@ defmodule Jido.Harness.EscriptTest do
   defp build_escript(directory) do
     fixture = Path.expand("../support/fixtures/escript", __DIR__)
     escript_path = Path.join(directory, "jido-harness-escript-fixture")
+    build_path = Path.join(directory, "build")
+    File.cp_r!(Path.expand("_build/test", File.cwd!()), build_path, dereference_symlinks: true)
 
     environment = [
       {"JIDO_HARNESS_ESCRIPT_CACHE_DIR", directory},
       {"JIDO_HARNESS_ESCRIPT_PATH", escript_path},
-      {"MIX_BUILD_PATH", Path.expand("_build/test", File.cwd!())},
+      {"MIX_BUILD_PATH", build_path},
       {"MIX_DEPS_PATH", Path.expand("deps", File.cwd!())},
       {"MIX_ENV", "test"},
       {"SHELL", System.get_env("SHELL") || "/bin/sh"}

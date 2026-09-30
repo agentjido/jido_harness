@@ -176,7 +176,10 @@ for line in sys.stdin:
             sys.stderr.write("fixture command failed: " + os.environ.get("HARNESS_FIXTURE_SECRET_TOKEN", "") + "\n")
             sys.stderr.flush()
             sys.exit(1)
-        if text in ["fail", "raise", "terminal-fail"]:
+        if "harness-provider-panic" in text:
+            sys.stderr.write("panic: could not find doneCh for checkpoint\n")
+            sys.stderr.flush()
+        elif text in ["fail", "raise", "terminal-fail"]:
             send(
                 {
                     "jsonrpc": "2.0",

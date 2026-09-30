@@ -27,7 +27,7 @@ config :jido_harness,
   }
 ```
 
-The map merges over the ten built-ins. A matching key explicitly overrides a
+The map merges over the eleven built-ins. A matching key explicitly overrides a
 built-in adapter. Each value must implement the v3 `Jido.Harness.Adapter`
 contract.
 

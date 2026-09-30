@@ -3,11 +3,12 @@ defmodule Jido.Harness.RegistryTest do
 
   alias Jido.Harness.{AdapterSpec, Error, Registry, RequestResolver}
 
-  test "registers all ten built-in harnesses and no shell provider" do
+  test "registers all eleven built-in harnesses and no shell provider" do
     providers = Registry.providers()
 
     assert Map.keys(providers) |> Enum.sort() == [
              :amp,
+             :antigravity,
              :claude,
              :codex,
              :cursor,

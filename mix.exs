@@ -118,6 +118,7 @@ defmodule Jido.Harness.MixProject do
           ],
           "Built-in adapters": [
             Jido.Harness.Adapters.Amp,
+            Jido.Harness.Adapters.Antigravity,
             Jido.Harness.Adapters.Claude,
             Jido.Harness.Adapters.Codex,
             Jido.Harness.Adapters.Cursor,
@@ -147,6 +148,7 @@ defmodule Jido.Harness.MixProject do
           "usage-rules.md",
           "guides",
           "lib",
+          "priv/acp",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],

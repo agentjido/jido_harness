@@ -1,6 +1,6 @@
 # Providers and capabilities
 
-Harness includes ten provider profiles. Every run and session uses ACP through
+Harness includes eleven provider profiles. Every run and session uses ACP through
 ExMCP. ACP can be part of the base CLI or a separate adapter program.
 
 Use `Jido.Harness.providers/0` to inspect the bundled declarations. These
@@ -11,6 +11,7 @@ describe the selected Harness profile, not every feature of the base CLI.
 | Provider | Atom | Base CLI | ACP entry point | Source | Profile maturity |
 | --- | --- | --- | --- | --- | --- |
 | Amp | `:amp` | `amp` | `amp-acp` | adapter | experimental |
+| Antigravity CLI | `:antigravity` | `agy` | `refined-antigravity-acp` | adapter | experimental |
 | Claude Code | `:claude` | `claude` | `claude-agent-acp` | adapter | stable |
 | Codex | `:codex` | `codex` | `codex-acp` | adapter | stable |
 | Cursor CLI | `:cursor` | `cursor-agent` | `cursor-agent acp` | native | experimental |
@@ -25,6 +26,61 @@ Maturity is profile metadata. It does not establish that live tests ran for
 every installed CLI version. Use [Testing](testing.md) to verify the providers
 required by a release.
 
+### Antigravity setup
+
+Antigravity's `agy` CLI exposes no ACP mode, so this profile runs the
+`refined-antigravity-acp` adapter, which drives Google's official
+`agy_acp_server` binary. Two setup steps are required beyond installing the
+adapter package.
+
+First, provision the ACP server binary with the adapter's setup command. Read
+and accept the Google Antigravity Terms of Service when it prompts:
+
+```sh
+refined-antigravity-acp setup
+```
+
+Setup also writes an editor profile for Zed and a Paseo configuration, and it
+creates `~/.config/zed` when that directory is absent. Harness needs only the
+binary, so expect those extra files on a harness-only machine.
+
+Second, the ACP server authenticates separately from the `agy` CLI. It reads
+its own `~/.gemini/antigravity-acp/settings.json` and ignores the CLI's keyring
+session, so signing in with `agy` is not sufficient. For a Gemini API key,
+merge this block into the settings file and export `GEMINI_API_KEY`:
+
+```json
+{"auth": {"type": "gemini-api-key"}}
+```
+
+For Agent Platform, use `auth.type: "agent-platform"` and `GOOGLE_API_KEY`,
+or configure a project, location, and Application Default Credentials.
+`GEMINI_HOME` changes the settings path to
+`$GEMINI_HOME/antigravity-acp/settings.json`. Provider-configured environment
+values also apply to readiness checks. A key alone is insufficient: readiness
+reports authentication as false until a supported method is selected.
+
+For Google OAuth, use an ACP client with browser-login support to authenticate
+once through the same wrapper and with the same `GEMINI_HOME`. The wrapper
+uses file credential storage. Harness reports configured OAuth as `:unknown`;
+only a live request can prove the stored credentials work. Harness sends no
+ACP `authenticate` method for this provider.
+
+Model ids differ between the two layers. The CLI flattens reasoning effort into
+the id, as in `gemini-3.8-flash-high`, while the adapter splits it apart. Pass
+the base id as `model` and the effort as `reasoning_effort`. The adapter is
+community maintained, so this profile is experimental. See the
+[Antigravity CLI documentation](https://antigravity.google/docs/cli/install/).
+
+Harness includes a crash guard for wrapper version 1.2.11. The wrapper can
+otherwise report a server panic as a successful turn. The guard changes that
+response to an ACP error and preserves the wrapper's recovery state. It is
+loaded only for Antigravity through `NODE_OPTIONS`, which retains explicit
+request values over provider configuration and the ambient environment.
+Other Node packages inherit the module but receive no patch. An untested
+version of the wrapper fails at startup. Recheck the guard when changing the
+package pin.
+
 ## Separate ACP packages
 
 `Jido.Harness.install/2` installs both the base CLI and these pinned ACP packages:
@@ -32,6 +88,7 @@ required by a release.
 | Provider | ACP package |
 | --- | --- |
 | Amp | `amp-acp@0.9.0` |
+| Antigravity CLI | `@simonepri/refined-antigravity-acp@1.2.11` |
 | Claude Code | `@agentclientprotocol/claude-agent-acp@0.70.0` |
 | Codex | `@agentclientprotocol/codex-acp@1.6.2` |
 | Pi | `pi-acp@0.0.33` |

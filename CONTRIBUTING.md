@@ -13,6 +13,7 @@ mix setup
 ```
 
 Local unit tests use fake CLIs. They do not need provider credentials.
+Install Python 3 and Node.js 22 or later to run the executable fixtures.
 
 ## Find the right files
 
@@ -21,6 +22,7 @@ Local unit tests use fake CLIs. They do not need provider credentials.
 | `lib/jido_harness.ex` | Public facade |
 | `lib/jido_harness/` | Adapters, public types, and resource lifecycle |
 | `lib/mix/tasks/` | Provider readiness and one-request smoke tasks |
+| `priv/acp/` | Bundled provider compatibility modules |
 | `config/config.exs` | Repository logging, commit checks, and release tools |
 | `guides/` | Getting started, workflows, shared concepts, and operations |
 | `guides/reference/` | Configuration, events, telemetry, architecture, and dependencies |
@@ -99,7 +101,7 @@ Run the four checks above and the affected live provider profiles. Review the
 [current provider limits](guides/providers.md). A local patch does not fix the
 published dependency for package consumers.
 
-The Hex package contains runtime source and documentation. Repository
+The Hex package contains runtime source, provider assets, and documentation. Repository
 configuration, tests, and test fixtures stay in the source repository.
 Inspect `mix hex.build` output before publication.
 

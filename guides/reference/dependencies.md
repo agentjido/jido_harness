@@ -83,6 +83,17 @@ do not address these findings.
 
 ## Dependency changes
 
+Antigravity uses the pinned `@simonepri/refined-antigravity-acp@1.2.11`
+Node package. Its supervisor converts a known server panic to `end_turn`.
+The bundled module at `priv/acp/antigravity.mjs` changes that response to an
+ACP error before Harness receives it. The installed Node package stays
+unchanged. This version-specific correction is included in the Hex package
+and release assets; it is separate from the private erlexec patch.
+
+The Antigravity CI job runs the actual pinned wrapper against a fake backend.
+It checks a failed turn and recovery on the next requested turn without
+credentials, model requests, or automatic task retries.
+
 A source override is appropriate only for a verified lifecycle or protocol
 compatibility correction. Review shared dependency requirements before adding
 an override in a host application.

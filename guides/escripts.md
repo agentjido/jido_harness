@@ -8,7 +8,7 @@ Extract and configure the helper before applications start.
 
 First add Harness as described in [Getting started](getting_started.md).
 In your Mix project, set `app: nil` so Mix does not start erlexec before the
-main function. Include its native helper:
+main function. Include the native helper and Harness provider assets:
 
 ```elixir
 def project do
@@ -19,7 +19,7 @@ def project do
     escript: [
       main_module: MyCLI,
       app: nil,
-      include_priv_for: [:erlexec]
+      include_priv_for: [:erlexec, :jido_harness]
     ]
   ]
 end
@@ -69,6 +69,9 @@ mix escript.build
 
 The provider CLI and ACP executable must still be installed and authenticated
 on the target host. The archive does not include them.
+
+The Antigravity crash guard is read from the archive and passed to Node as a
+module source. It does not require an extra file extraction step.
 
 The target architecture must match the included native helper. Build a
 separate artifact for each supported architecture.

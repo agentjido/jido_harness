@@ -28,6 +28,38 @@ jobs:
       test_matrix: '[{"otp":"28","elixir":"1.19"},{"otp":"29","elixir":"1.20"}]'
       test_command: mix test
 
+  antigravity:
+    name: Antigravity ACP compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29"
+          elixir-version: "1.20"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Install Mix tools
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+      - run: mix deps.get
+      - name: Install pinned ACP wrapper without package scripts
+        run: >-
+          npm install --prefix "$RUNNER_TEMP/antigravity-acp"
+          --ignore-scripts --no-audit --no-fund
+          @simonepri/refined-antigravity-acp@1.2.11
+      - name: Test wrapper failures and session recovery without model requests
+        env:
+          HARNESS_TEST_ANTIGRAVITY_ACP_PATH: ${{ runner.temp }}/antigravity-acp/node_modules/.bin/refined-antigravity-acp
+        run: >-
+          mix test --no-cover --include antigravity_wrapper
+          test/jido_harness/antigravity_test.exs
+
   macos:
     name: macOS process lifecycle
     if: github.event_name == 'workflow_dispatch'

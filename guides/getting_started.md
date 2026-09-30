@@ -29,7 +29,7 @@ mix compile
 ```
 
 Jido.Harness starts its registries, dynamic supervisors, task supervisors, and
-retention worker with the application. The ten built-in adapters require no
+retention worker with the application. The eleven built-in adapters require no
 registration.
 
 ## Install and authenticate a provider CLI

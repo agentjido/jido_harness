@@ -23,6 +23,17 @@ The escript fixture verifies native-helper extraction in a separate VM. The
 load its published source. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup,
 coverage limits, and required checks.
 
+The default Antigravity tests use a small protocol fixture. CI also installs
+the pinned Node wrapper in a temporary directory and runs it against the fake
+ACP backend. To run the same check locally, set
+`HARNESS_TEST_ANTIGRAVITY_ACP_PATH` to the installed wrapper executable:
+
+```console
+mix test --no-cover --include antigravity_wrapper test/jido_harness/antigravity_test.exs
+```
+
+This check sends no model request and needs no credentials.
+
 ## Provider readiness
 
 ```console
