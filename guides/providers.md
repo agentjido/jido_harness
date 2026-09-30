@@ -97,7 +97,8 @@ The ACP adapter must report the applied controls in
 before opening a session when a requested control is unavailable. The pinned
 Codex ACP 1.6.2 package does not support these controls. An adapter with the
 isolation extension can be selected with `acp_path`. Until upstream publishes
-this extension, build the reviewed upstream change and use its executable.
+this extension, build [Codex ACP PR #569](https://github.com/agentclientprotocol/codex-acp/pull/569)
+and use its executable.
 Do not assume that an older adapter applies these environment controls.
 
 ```elixir

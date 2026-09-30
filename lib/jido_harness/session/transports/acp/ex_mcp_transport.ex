@@ -90,7 +90,8 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
          stop_notified?: false,
          stderr: TextTail.new(@stderr_bytes),
          lifecycle: [],
-         secrets: Redaction.secrets_from_env(if(process_spec, do: process_spec.env, else: %{}))
+         secrets:
+           Redaction.secrets_from_env(Map.merge(System.get_env(), if(process_spec, do: process_spec.env, else: %{})))
        }, {:continue, :start_reader}}
     else
       {:error, reason} -> {:stop, reason}
@@ -231,15 +232,32 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   end
 
   defp diagnostics(state, type, data) do
+    stderr = state.stderr.data
+    stderr = if state.stderr.truncated?, do: redact_clipped_secrets(stderr, state.secrets), else: stderr
+    stderr = TextTail.new(@stderr_bytes) |> TextTail.append(Redaction.redact(stderr, state.secrets))
+
     %{
       "process_id" => state.process_id,
       "state" => Atom.to_string(type),
       "details" => data,
-      "stderr" => state.stderr.data,
-      "stderr_truncated" => state.stderr.truncated?,
+      "stderr" => stderr.data,
+      "stderr_truncated" => state.stderr.truncated? or stderr.truncated?,
       "lifecycle" => state.lifecycle
     }
     |> Redaction.redact(state.secrets)
+  end
+
+  defp redact_clipped_secrets(value, secrets) do
+    Enum.reduce(secrets, value, fn secret, value ->
+      maximum = min(byte_size(secret) - 1, byte_size(value))
+
+      overlap =
+        Enum.find(maximum..1//-1, fn size ->
+          String.starts_with?(value, binary_part(secret, byte_size(secret) - size, size))
+        end)
+
+      if overlap, do: "[REDACTED]" <> binary_part(value, overlap, byte_size(value) - overlap), else: value
+    end)
   end
 
   defp stop_for_process_event(%{status: :open} = state, type, data) do

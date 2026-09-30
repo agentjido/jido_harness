@@ -27,11 +27,11 @@ defmodule Jido.Harness.ACPTransportTest do
     end
   end
 
-  setup do
+  setup context do
     options = [
       process_manager: ControlledProcessManager,
       process_owner: self(),
-      process_spec: nil,
+      process_spec: %{env: context[:env] || %{}},
       listener: self()
     ]
 
@@ -79,6 +79,26 @@ defmodule Jido.Harness.ACPTransportTest do
     assert byte_size(diagnostics["stderr"]) <= 4_096
     assert diagnostics["stderr_truncated"]
     assert String.ends_with?(diagnostics["stderr"], "last error")
+  end
+
+  @tag env: %{"SECRET_TOKEN" => "abcd"}
+  test "redaction does not expand diagnostics beyond the stderr limit", %{bridge: bridge, reader: reader} do
+    send(reader, {:process_events, [event(:stderr, String.duplicate("abcd", 1_024)), event(:failed, %{})]})
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    assert byte_size(diagnostics["stderr"]) <= 4_096
+    assert diagnostics["stderr_truncated"]
+    refute diagnostics["stderr"] =~ "abcd"
+  end
+
+  @tag env: %{"SECRET_TOKEN" => "token1234567890"}
+  test "stderr truncation does not expose a clipped secret", %{bridge: bridge, reader: reader} do
+    data = "token1234567890" <> String.duplicate("x", 4_090)
+    send(reader, {:process_events, [event(:stderr, data), event(:failed, %{})]})
+    await(fn -> not Bridge.connected?(bridge) end)
+    assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
+    refute diagnostics["stderr"] =~ "67890"
+    assert byte_size(diagnostics["stderr"]) <= 4_096
   end
 
   defp event(type, data) do

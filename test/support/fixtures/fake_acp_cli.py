@@ -12,6 +12,7 @@ if os.environ.get("HARNESS_FIXTURE_EXIT_BEFORE_INIT") == "1":
 session_id = "acp-fixture-session"
 pending_prompt = None
 authenticated = False
+configured_mode = None
 
 
 def send(value, fragmented=False):
@@ -93,6 +94,7 @@ for line in sys.stdin:
     request_id = message.get("id")
 
     if method == "initialize":
+        time.sleep(float(os.environ.get("HARNESS_FIXTURE_INITIALIZE_DELAY", "0")))
         auth_method = os.environ.get("HARNESS_FIXTURE_REQUIRE_AUTH_METHOD")
         auth_methods = []
         if auth_method:
@@ -160,7 +162,7 @@ for line in sys.stdin:
             if isinstance(block, dict)
         )
         if text == "write-isolated-fixture":
-            if os.environ.get("CODEX_EPHEMERAL") != "1" or os.environ.get("CODEX_IGNORE_USER_CONFIG") != "1":
+            if os.environ.get("CODEX_EPHEMERAL") != "1" or os.environ.get("CODEX_IGNORE_USER_CONFIG") != "1" or configured_mode != "agent":
                 sys.exit(1)
             with open("isolated-result.txt", "w") as result:
                 result.write("workspace remains writable")
@@ -199,6 +201,8 @@ for line in sys.stdin:
         else:
             complete_prompt(request_id)
     elif method in ["session/set_model", "session/set_config_option", "session/set_mode"]:
+        if method == "session/set_config_option" and message["params"].get("configId") == "mode":
+            configured_mode = message["params"].get("value")
         if os.environ.get("HARNESS_FIXTURE_CODEX_CONFIGURATION") == "1" and method == "session/set_config_option":
             if message["params"].get("configId") not in ["model", "mode", "reasoning_effort"]:
                 send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown Codex config option"}})

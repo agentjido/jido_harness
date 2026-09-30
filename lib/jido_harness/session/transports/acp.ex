@@ -25,6 +25,10 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
        owner: context.owner,
        provider: context.provider,
        client: nil,
+       client_starter: nil,
+       client_starter_monitor: nil,
+       initialize_from: nil,
+       startup_timer: nil,
        provider_session_id: request.provider_session_id,
        active_turn_id: nil,
        prompt_task: nil,
@@ -37,14 +41,16 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   @impl true
-  def handle_call({:initialize, request}, _from, state) do
-    with {:ok, process_spec} <- process_spec(request, state.context) do
-      case start_client(state, process_spec) do
-        {:ok, client} -> initialize_session(client, request, state)
-        {:error, reason} -> {:reply, {:error, process_error(reason, state.provider)}, state}
-      end
+  def handle_call({:initialize, request}, from, state) do
+    with {:ok, process_spec} <- process_spec(request, state.context),
+         {:ok, starter} <- start_client(state, process_spec) do
+      timer = Process.send_after(self(), :acp_startup_timeout, @startup_timeout)
+      monitor = Process.monitor(starter)
+
+      {:noreply,
+       %{state | client_starter: starter, client_starter_monitor: monitor, initialize_from: from, startup_timer: timer}}
     else
-      {:error, reason} -> {:reply, {:error, reason}, state}
+      {:error, reason} -> {:reply, {:error, process_error(reason, state.provider)}, state}
     end
   end
 
@@ -102,6 +108,34 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   @impl true
+  def handle_info({:acp_client_starting, client}, %{initialize_from: from} = state) when not is_nil(from),
+    do: {:noreply, %{state | client: client}}
+
+  def handle_info({:acp_client_ready, starter, client}, %{client_starter: starter, initialize_from: from} = state)
+      when not is_nil(from) do
+    Process.cancel_timer(state.startup_timer)
+    Process.demonitor(state.client_starter_monitor, [:flush])
+    Process.link(client)
+    state = %{state | client: client, client_starter_monitor: nil, initialize_from: nil, startup_timer: nil}
+    {:reply, result, state} = initialize_session(client, state.request, state)
+    GenServer.reply(from, result)
+    {:noreply, state}
+  end
+
+  def handle_info({:acp_client_failed, starter, reason}, %{client_starter: starter, initialize_from: from} = state)
+      when not is_nil(from),
+      do: {:noreply, fail_startup(state, reason)}
+
+  def handle_info(
+        {:DOWN, monitor, :process, starter, reason},
+        %{client_starter_monitor: monitor, client_starter: starter, initialize_from: from} = state
+      )
+      when not is_nil(from),
+      do: {:noreply, fail_startup(state, reason)}
+
+  def handle_info(:acp_startup_timeout, %{initialize_from: from} = state) when not is_nil(from),
+    do: {:noreply, fail_startup(state, :init_timeout)}
+
   def handle_info({:acp_session_update, provider_session_id, update}, state) do
     pending_update = {provider_session_id, update, state.active_turn_id}
     {:noreply, %{state | pending_updates: enqueue_pending_update(state.pending_updates, pending_update)}}
@@ -154,6 +188,9 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     {:noreply, state}
   end
 
+  def handle_info({:acp_process_stopped, type, data}, %{initialize_from: from} = state) when not is_nil(from),
+    do: {:noreply, fail_startup(state, {:process_stopped, type, data})}
+
   def handle_info({:acp_process_stopped, type, data}, %{closing?: false} = state) do
     if state.active_turn_id do
       emit(state, :turn_failed, %{"error" => "ACP process #{type}", "process" => data}, turn_id: state.active_turn_id)
@@ -193,7 +230,14 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   def terminate(_reason, state) do
     state = state |> deny_pending_approvals() |> cancel_prompt_wait()
     stop_prompt_task(state.prompt_task)
-    stop_client(state.client, state.provider_session_id)
+
+    if state.initialize_from do
+      stop_starting_client(state)
+    else
+      stop_client(state.client, state.provider_session_id)
+      stop_client_starter(state.client_starter)
+    end
+
     :ok
   rescue
     _exception -> :ok
@@ -226,54 +270,40 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)
     ]
 
-    child = Supervisor.child_spec({Client, options}, restart: :temporary)
+    owner = self()
 
-    task =
-      Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
-        DynamicSupervisor.start_child(Jido.Harness.SessionTransportSupervisor, child)
-      end)
+    Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
+      owner_monitor = Process.monitor(owner)
 
-    deadline = System.monotonic_time(:millisecond) + @startup_timeout
-    await_client(task, nil, state, deadline)
+      case Client.start_link(options) do
+        {:ok, client} ->
+          send(owner, {:acp_client_ready, self(), client})
+
+          receive do
+            {:DOWN, ^owner_monitor, :process, ^owner, _reason} -> stop_client(client)
+          end
+
+        {:error, reason} ->
+          send(owner, {:acp_client_failed, self(), reason})
+      end
+    end)
   end
 
-  defp await_client(%Task{ref: task_ref} = task, client, state, deadline) do
-    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
-
-    receive do
-      {:acp_client_starting, client} ->
-        await_client(task, client, state, deadline)
-
-      {^task_ref, {:ok, client} = result} ->
-        Task.ignore(task)
-        Process.link(client)
-        result
-
-      {^task_ref, result} ->
-        Task.ignore(task)
-        result
-
-      {:DOWN, ^task_ref, :process, _pid, reason} ->
-        {:error, reason}
-
-      {:acp_process_stderr, data} ->
-        emit(state, :provider_event, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
-        await_client(task, client, state, deadline)
-
-      {:acp_process_stopped, type, details} ->
-        stop_starting_client(task, client)
-        {:error, {:process_stopped, type, details}}
-    after
-      remaining ->
-        stop_starting_client(task, client)
-        {:error, :init_timeout}
-    end
+  defp fail_startup(state, reason) do
+    if state.startup_timer, do: Process.cancel_timer(state.startup_timer)
+    if state.client_starter_monitor, do: Process.demonitor(state.client_starter_monitor, [:flush])
+    stop_starting_client(state)
+    GenServer.reply(state.initialize_from, {:error, process_error(reason, state.provider)})
+    %{state | client: nil, client_starter: nil, client_starter_monitor: nil, initialize_from: nil, startup_timer: nil}
   end
 
-  defp stop_starting_client(task, client) do
-    if is_pid(client), do: Process.exit(client, :kill)
-    Task.shutdown(task, :brutal_kill)
+  defp stop_starting_client(state) do
+    if is_pid(state.client), do: Process.exit(state.client, :kill)
+    stop_client_starter(state.client_starter)
   end
+
+  defp stop_client_starter(nil), do: :ok
+  defp stop_client_starter(starter), do: Process.exit(starter, :kill)
 
   defp initialize_session(client, request, state) do
     with :ok <- validate_provider_capabilities(client, request, state.context.adapter),

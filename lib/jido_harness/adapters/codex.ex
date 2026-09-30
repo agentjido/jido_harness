@@ -64,6 +64,7 @@ defmodule Jido.Harness.Adapters.Codex do
   def acp_configuration(changes) do
     case Map.pop(changes, :sandbox_mode) do
       {nil, changes} -> changes
+      {:default, changes} -> changes
       {:read_only, changes} -> Map.put(changes, :mode, "read-only")
       {:workspace_write, changes} -> Map.put(changes, :mode, "agent")
       {:unrestricted, changes} -> Map.put(changes, :mode, "agent-full-access")
