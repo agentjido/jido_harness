@@ -130,6 +130,12 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   def handle_call(:connected?, _from, state), do: {:reply, state.status == :open, state}
 
   def handle_call(:close, _from, state) do
+    _ = state.process_manager.cancel_process(state.process_id)
+
+    if function_exported?(state.process_manager, :await_process, 2) do
+      _ = state.process_manager.await_process(state.process_id, 2_000)
+    end
+
     state = close_state(state, :closed, true)
     {:stop, :normal, :ok, state}
   end

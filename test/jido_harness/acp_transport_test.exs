@@ -6,7 +6,16 @@ defmodule Jido.Harness.ACPTransportTest do
 
   defmodule ControlledProcessManager do
     def start_owned_process(_spec, owner), do: {:ok, owner}
-    def cancel_process(_owner), do: :ok
+
+    def cancel_process(owner) do
+      send(owner, :process_cancelled)
+      :ok
+    end
+
+    def await_process(owner, timeout) do
+      send(owner, {:process_awaited, timeout})
+      {:ok, %{state: :cancelled}}
+    end
 
     def stream_process(owner) do
       stream =
@@ -99,6 +108,12 @@ defmodule Jido.Harness.ACPTransportTest do
     assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
     refute diagnostics["stderr"] =~ "67890"
     assert byte_size(diagnostics["stderr"]) <= 4_096
+  end
+
+  test "close waits for process shutdown before returning", %{bridge: bridge} do
+    assert :ok = Bridge.close(bridge)
+    assert_received :process_cancelled
+    assert_received {:process_awaited, 2_000}
   end
 
   defp event(type, data) do
