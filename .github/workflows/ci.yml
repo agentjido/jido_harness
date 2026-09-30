@@ -82,6 +82,8 @@ jobs:
           mix local.rebar --force
       - run: mix deps.get
       - name: Test native startup, process groups, PTY, and packaged helper
+        env:
+          HARNESS_STARTUP_BATCHES: "250"
         run: >-
           mix test
           --no-cover

@@ -132,7 +132,8 @@ Run the short startup regression check first:
 mix test --no-cover --include soak test/jido_harness/process_startup_regression_test.exs
 ```
 
-It runs 50 timeouts and 400 short CLI processes without retries. A failure
+The local check runs 50 timeouts and 400 short CLI processes without retries.
+CI uses 250 timeouts and 2,000 short processes. A failure
 includes the process state, stderr, and terminal events. Native CI runs this
 check on macOS and Linux on every pull request and main push. It is excluded
 from the default suite to keep local checks short.
