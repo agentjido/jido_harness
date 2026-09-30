@@ -1,6 +1,8 @@
 # Build artifacts
 /_build/
 /deps/
+/.local-workarounds/
+__pycache__/
 
 # Coverage
 /cover/

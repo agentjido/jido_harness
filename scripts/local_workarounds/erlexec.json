@@ -1,0 +1,8 @@
+{
+  "package": "erlexec",
+  "version": "2.5.0",
+  "upstream_commit": "d5c6d4ec2b5dd899c496e78c0aaa393651f80fdc",
+  "file": "c_src/exec_impl.cpp",
+  "original_sha256": "849ba30755bfd296e856475bfe6efdfd650a5d006421d0d2f15de90df1818219",
+  "patched_sha256": "e7c4403a79a7f4cdd19f78c56b7c54ae8b575375ee0b033c5eafaad1cfed737e"
+}

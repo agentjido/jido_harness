@@ -34,6 +34,7 @@ defmodule Jido.Harness.MixProject do
           "guides/getting_started.md",
           "guides/choosing_a_workflow.md",
           "guides/providers.md",
+          "guides/local_workarounds.md",
           "guides/one_shot_requests.md",
           "guides/detached_runs.md",
           "guides/interactive_sessions.md",
@@ -88,6 +89,7 @@ defmodule Jido.Harness.MixProject do
           ],
           "Operating and extending": [
             "guides/operations.md",
+            "guides/local_workarounds.md",
             "guides/testing.md",
             "guides/custom_adapters.md"
           ],
