@@ -16,9 +16,9 @@ defmodule Jido.Harness.ProcessDriver.Erlexec do
         |> maybe_stdin(spec.stdin, spec.pty)
         |> add_env(spec.env_mode, spec.env)
 
-      case :exec.run(command, options, spec.startup_timeout_ms) do
+      case :jido_harness_exec.run(command, options, spec.startup_timeout_ms) do
         {:ok, _exec_pid, os_pid} = result ->
-          if spec.pty != false and not spec.stdin, do: :exec.send(os_pid, <<4>>)
+          if spec.pty != false and not spec.stdin, do: :jido_harness_exec.send(os_pid, <<4>>)
           result
 
         error ->
@@ -36,17 +36,17 @@ defmodule Jido.Harness.ProcessDriver.Erlexec do
   end
 
   @impl true
-  def send_input(process, data), do: :exec.send(process, data)
+  def send_input(process, data), do: :jido_harness_exec.send(process, data)
 
   @impl true
   def signal(os_pid, signal) when is_integer(os_pid) do
     case :os.type() do
       {:unix, _name} -> signal_process_group(os_pid, signal)
-      _other -> :exec.kill(os_pid, signal)
+      _other -> :jido_harness_exec.kill(os_pid, signal)
     end
   end
 
-  def signal(process, signal), do: :exec.kill(process, signal)
+  def signal(process, signal), do: :jido_harness_exec.kill(process, signal)
 
   defp maybe_stdin(options, true, _pty), do: [:stdin | options]
   defp maybe_stdin(options, false, false), do: [{:stdin, :close} | options]

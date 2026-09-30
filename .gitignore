@@ -7,6 +7,7 @@
 
 # Dialyzer PLT files
 /priv/plts/
+/priv/native/
 *.plt
 *.plt.hash
 

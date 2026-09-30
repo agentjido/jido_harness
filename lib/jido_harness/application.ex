@@ -5,6 +5,7 @@ defmodule Jido.Harness.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      %{id: :jido_harness_exec_app, start: {:jido_harness_exec_app, :start, [:normal, []]}, type: :supervisor},
       {Registry, keys: :unique, name: Jido.Harness.ProcessRegistry},
       {Registry, keys: :unique, name: Jido.Harness.RunRegistry},
       {Registry, keys: :unique, name: Jido.Harness.SessionRegistry},

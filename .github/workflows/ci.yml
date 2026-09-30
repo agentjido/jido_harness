@@ -60,10 +60,13 @@ jobs:
           mix test --no-cover --include antigravity_wrapper
           test/jido_harness/antigravity_test.exs
 
-  macos:
-    name: macOS process lifecycle
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-latest
+  native:
+    name: Native process lifecycle (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
       MIX_ENV: test
@@ -84,6 +87,11 @@ jobs:
           --no-cover
           --include soak
           test/jido_harness/process_startup_regression_test.exs
+          test/jido_harness/native_runtime_test.exs
           test/jido_harness/process_manager_test.exs
           test/jido_harness/environment_mode_test.exs
           test/jido_harness/escript_test.exs
+      - name: Build the source package
+        run: mix hex.build
+      - name: Test a clean package consumer, escript, and erlexec coexistence
+        run: python3 test/support/fixtures/escript/verify_package.py jido_harness-*.tar

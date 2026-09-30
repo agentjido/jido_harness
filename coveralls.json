@@ -1,4 +1,5 @@
 {
+  "skip_files": ["vendor/erlexec/src/"],
   "coverage_options": {
     "minimum_coverage": 70
   }

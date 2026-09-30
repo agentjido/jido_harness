@@ -1,13 +1,13 @@
 # Escript packaging
 
-Harness uses erlexec's native `exec-port` helper to manage OS processes. An
+Harness includes a native `exec-port` helper to manage OS processes. An
 escript can include this file, but it cannot execute a file inside its archive.
 Extract and configure the helper before applications start.
 
 ## Configure the escript
 
 First add Harness as described in [Getting started](getting_started.md).
-In your Mix project, set `app: nil` so Mix does not start erlexec before the
+In your Mix project, set `app: nil` so Mix does not start Harness before the
 main function. Include the native helper and Harness provider assets:
 
 ```elixir
@@ -19,7 +19,7 @@ def project do
     escript: [
       main_module: MyCLI,
       app: nil,
-      include_priv_for: [:erlexec, :jido_harness]
+      include_priv_for: [:jido_harness]
     ]
   ]
 end
@@ -32,7 +32,7 @@ This example checks Codex readiness without sending a prompt:
 ```elixir
 defmodule MyCLI do
   def main(_args) do
-    with {:ok, _helper} <- Jido.Harness.Escript.bootstrap_erlexec(),
+    with {:ok, _helper} <- Jido.Harness.Escript.bootstrap_native(),
          {:ok, _applications} <- Application.ensure_all_started(:jido_harness),
          {:ok, status} <- Jido.Harness.status(:codex) do
       IO.inspect(status, label: "Codex readiness")
@@ -46,18 +46,18 @@ defmodule MyCLI do
 end
 ```
 
-The bootstrap selects `erlexec/priv/SYSTEM_ARCH/exec-port` from the archive.
+The bootstrap selects `jido_harness/priv/native/SYSTEM_ARCH/exec-port` from the archive.
 It writes the helper under the private user-cache directory with mode `0700`
-and sets `:erlexec, :portexe`. Calls with the same content reuse the cached
+and sets `:jido_harness, :native_process`. Calls with the same content reuse the cached
 file.
 
 Set `cache_dir: path` when the default cache is unsuitable:
 
 ```elixir
-Jido.Harness.Escript.bootstrap_erlexec(cache_dir: cache_dir)
+Jido.Harness.Escript.bootstrap_native(cache_dir: cache_dir)
 ```
 
-Do not bootstrap after erlexec starts. Its running port cannot change the
+Do not bootstrap after Harness starts. Its running port cannot change the
 executable path.
 
 ## Build and verify
@@ -79,3 +79,6 @@ separate artifact for each supported architecture.
 The fixture under `test/support/fixtures/escript/` builds and executes a real
 escript to check native extraction and managed processes. See
 [Testing](testing.md#unit-and-fixture-checks) for verification.
+
+`bootstrap_erlexec/1` remains as a compatibility name for `bootstrap_native/1`.
+The external erlexec application is not required.

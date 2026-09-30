@@ -1,3 +1,5 @@
+Code.require_file("vendor/erlexec/compiler.exs", __DIR__)
+
 defmodule Jido.Harness.MixProject do
   use Mix.Project
 
@@ -66,6 +68,10 @@ defmodule Jido.Harness.MixProject do
         ]
       ],
       elixirc_paths: elixirc_paths(Mix.env()),
+      erlc_paths: ["vendor/erlexec/src"],
+      erlc_include_path: "vendor/erlexec/include",
+      erlc_options: [:debug_info, :warnings_as_errors],
+      compilers: [:harness_native] ++ Mix.compilers(),
       test_ignore_filters: [&String.starts_with?(&1, "test/support/fixtures/")],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -149,10 +155,11 @@ defmodule Jido.Harness.MixProject do
           "guides",
           "lib",
           "priv/acp",
+          "vendor/erlexec",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],
-        licenses: ["Apache-2.0"],
+        licenses: ["Apache-2.0", "BSD-3-Clause"],
         links: %{
           "Changelog" => "https://github.com/agentjido/jido_harness/blob/main/CHANGELOG.md",
           "Discord" => "https://jido.run/discord",
@@ -179,7 +186,7 @@ defmodule Jido.Harness.MixProject do
   def application do
     [
       mod: {Jido.Harness.Application, []},
-      extra_applications: [:logger, :erlexec]
+      extra_applications: [:logger]
     ]
   end
 
@@ -192,7 +199,6 @@ defmodule Jido.Harness.MixProject do
       {:zoi, ">= 0.17.1 and < 0.19.0"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
-      {:erlexec, "~> 2.5"},
       {:ex_mcp, "~> 1.3"},
 
       # Dev/Test

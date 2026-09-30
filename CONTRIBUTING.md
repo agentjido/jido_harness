@@ -14,6 +14,8 @@ mix setup
 
 Local unit tests use fake CLIs. They do not need provider credentials.
 Install Python 3 and Node.js 22 or later to run the executable fixtures.
+Native builds require make, a C++17 compiler, and the Erlang `erl_interface`
+headers and library. macOS users can install the Xcode Command Line Tools.
 
 ## Find the right files
 
@@ -23,6 +25,7 @@ Install Python 3 and Node.js 22 or later to run the executable fixtures.
 | `lib/jido_harness/` | Adapters, public types, and resource lifecycle |
 | `lib/mix/tasks/` | Provider readiness and one-request smoke tasks |
 | `priv/acp/` | Bundled provider compatibility modules |
+| `vendor/erlexec/` | Pinned native engine source, license, patch records, and build task |
 | `config/config.exs` | Repository logging, commit checks, and release tools |
 | `guides/` | Getting started, workflows, shared concepts, and operations |
 | `guides/reference/` | Configuration, events, telemetry, architecture, and dependencies |
@@ -98,10 +101,9 @@ components and runs the same ExUnit contracts.
 
 Run the four checks above and the affected live provider profiles. Review the
 [dependency audit exceptions](guides/reference/dependencies.md#audit-exceptions) and
-[current provider limits](guides/providers.md). A local patch does not fix the
-published dependency for package consumers.
+[current provider limits](guides/providers.md). Verify the bundled native engine from a clean source package.
 
-The Hex package contains runtime source, provider assets, and documentation. Repository
+The Hex package contains runtime source, vendored native source, provider assets, and documentation. Repository
 configuration, tests, and test fixtures stay in the source repository.
 Inspect `mix hex.build` output before publication.
 

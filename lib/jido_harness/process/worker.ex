@@ -424,9 +424,9 @@ defmodule Jido.Harness.ProcessWorker do
   defp error_reason(_status, _exit_status, _reason), do: nil
 
   defp decode_wait_status(status) do
-    case :exec.status(status) do
+    case :jido_harness_exec.status(status) do
       {:status, exit_status} -> exit_status
-      {:signal, signal, _core?} -> 128 + :exec.signal_to_int(signal)
+      {:signal, signal, _core?} -> 128 + :jido_harness_exec.signal_to_int(signal)
     end
   rescue
     _error -> status

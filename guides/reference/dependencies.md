@@ -7,7 +7,6 @@ They must preserve the [architecture boundary](architecture.md).
 
 | Dependency | Purpose |
 | --- | --- |
-| `erlexec` | Subprocesses, stdin, PTY, process groups, and signals |
 | `ex_mcp` | ACP messages, protocol validation, and request correlation |
 | `telemetry` | Runtime observation |
 | `zoi` | Validation and construction of public structs |
@@ -21,27 +20,37 @@ Harness does not require provider SDKs, `jido`, `jido_shell`, Sprites, or
 Splode. Provider routing, workspace provisioning, retries, and durable job
 storage belong to the host application.
 
-## Native process startup
+## Bundled native process engine
 
-Harness requires erlexec `~> 2.5` for its PTY and process-group cleanup fixes.
-The published 2.5.0 source can still fail a short non-PTY process on macOS
-with `Cannot set effective group to 0: Operation not permitted`. The startup
-regression test reproduced this after concurrent process starts and timeout
-cleanup. A passing default unit suite does not rule out this failure.
+Harness includes a private copy of erlexec 2.5.0 in `vendor/erlexec/`. It owns
+subprocess pipes, PTY handling, process groups, signals, and cleanup. The Hex
+package no longer depends on the external erlexec application.
 
-A local erlexec patch was tested with 100 timeouts and 800 short processes.
-It accepts a failed child group call only when the child already belongs to
-the requested group. Tests also force a wrong group and require startup to
-fail. The patch adds no retry. Additional failure logging confirmed that the
-requested group was already set when the system call returned `EPERM`.
-The cause of that system call failure and the older Codex failure in
-[issue #71](https://github.com/agentjido/jido_harness/issues/71) remain open.
+The source is pinned to upstream commit
+`d5c6d4ec2b5dd899c496e78c0aaa393651f80fdc`. `UPSTREAM.json` records the source
+hashes and local patches. The original BSD license is included. Private
+Erlang module and process names allow another application to use erlexec in
+the same VM without a conflict.
 
-The patch is outside the Harness repository and Hex package. A package
-consumer gets the published dependency, so macOS release verification
-remains open. Do not replace pipe streams with a PTY, omit process-group
-creation, or retry failed starts to make the test pass. Those changes alter
-output or cancellation behavior.
+A Mix compiler builds the C++17 helper from this source. Builds require make,
+a C++17 compiler, and the Erlang `erl_interface` headers and library. Releases
+include the built helper. Escripts use the [bootstrap function](../escripts.md)
+to extract it before Harness starts.
+
+The bundled source includes the process-group startup correction submitted
+in [erlexec PR #210](https://github.com/saleyn/erlexec/pull/210). If a child
+group assignment fails, it continues only when the requested group is already
+set. A wrong group still causes startup to fail. There is no retry.
+
+CI checks both outcomes with forced native errors on macOS and Linux. It also
+checks concurrent startup, timeout cleanup, PTY behavior, and packaged helper
+execution. The correction is part of the package; consumers need no private
+patch installer.
+
+The older Codex observation in
+[issue #71](https://github.com/agentjido/jido_harness/issues/71) had no captured
+stderr. Its cause remains unproven. Harness retains bounded process stderr
+and lifecycle events for any recurrence.
 
 ## Audit exceptions
 
@@ -78,8 +87,8 @@ requires valid cookie names and values before encoding. Host applications
 that use these HTTP functions must check their own input paths and options.
 
 Remove an exception when a supported dependency update resolves it. Then run
-audit, package, protocol, and lifecycle checks. Local native-process patches
-do not address these findings.
+audit, package, protocol, and lifecycle checks. The bundled native process correction
+does not address these findings.
 
 ## Dependency changes
 
@@ -88,7 +97,7 @@ Node package. Its supervisor converts a known server panic to `end_turn`.
 The bundled module at `priv/acp/antigravity.mjs` changes that response to an
 ACP error before Harness receives it. The installed Node package stays
 unchanged. This version-specific correction is included in the Hex package
-and release assets; it is separate from the private erlexec patch.
+and release assets alongside the native process helper.
 
 The Antigravity CI job runs the actual pinned wrapper against a fake backend.
 It checks a failed turn and recovery on the next requested turn without
