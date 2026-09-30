@@ -16,12 +16,14 @@ defmodule Jido.Harness.Registry do
     zai: Jido.Harness.Adapters.Zai
   }
 
+  @doc "Returns built-in providers with application overrides applied."
   @spec providers() :: %{optional(atom()) => module()}
   def providers do
     overrides = Application.get_env(:jido_harness, :providers, %{}) |> Map.new()
     Map.merge(@builtins, overrides)
   end
 
+  @doc "Returns a registered adapter after checking its version 3 callbacks."
   @spec lookup(atom()) :: {:ok, module()} | {:error, Error.t()}
   def lookup(provider) when is_atom(provider) do
     with {:ok, adapter} <- Map.fetch(providers(), provider),
@@ -39,6 +41,7 @@ defmodule Jido.Harness.Registry do
   def lookup(provider),
     do: {:error, Error.validation("provider must be an atom", details: %{provider: inspect(provider)})}
 
+  @doc "Returns the validated specification for a registered provider."
   @spec spec(atom()) :: {:ok, AdapterSpec.t()} | {:error, term()}
   def spec(provider) do
     with {:ok, adapter} <- lookup(provider),
@@ -62,8 +65,12 @@ defmodule Jido.Harness.Registry do
     end
   end
 
+  @doc "Returns the configured default provider, or `nil` when none is set."
+  @spec default_provider() :: atom() | nil
   def default_provider, do: Application.get_env(:jido_harness, :default_provider)
 
+  @doc "Returns provider configuration as a map, or an empty map when absent."
+  @spec provider_config(atom()) :: map()
   def provider_config(provider) do
     :jido_harness
     |> Application.get_env(:provider_config, %{})

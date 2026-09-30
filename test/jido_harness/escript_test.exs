@@ -88,7 +88,7 @@ defmodule Jido.Harness.EscriptTest do
   end
 
   defp build_escript(directory) do
-    fixture = Path.expand("../../fixtures/escript_fixture", __DIR__)
+    fixture = Path.expand("../support/fixtures/escript", __DIR__)
     escript_path = Path.join(directory, "jido-harness-escript-fixture")
 
     environment = [

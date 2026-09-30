@@ -1,4 +1,4 @@
-# Structured Output Execution Contract
+# Version 2.1 structured output (historical)
 
 > Version 3 status: unavailable. Current ACP profiles do not advertise
 > structured output. This document records the version 2.1 direct-Codex

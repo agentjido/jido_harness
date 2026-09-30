@@ -5,10 +5,13 @@ prompt, and makes one live normalized request.
 
 ## Add the dependency
 
+Use the Git dependency to test the version 3 release candidate. Commit your
+application's `mix.lock` so that it records the selected revision.
+
 ```elixir
 def deps do
   [
-    {:jido_harness, "~> 3.0"}
+    {:jido_harness, github: "agentjido/jido_harness", branch: "main"}
   ]
 end
 ```
@@ -109,11 +112,11 @@ config :jido_harness,
   provider_config: %{
     codex: %{
       request_defaults: %{
-        sandbox_mode: :workspace_write,
-        approval_mode: :prompt
+        sandbox_mode: :workspace_write
       },
       session_defaults: %{
-        sandbox_mode: :workspace_write
+        sandbox_mode: :workspace_write,
+        approval_mode: :prompt
       }
     }
   }

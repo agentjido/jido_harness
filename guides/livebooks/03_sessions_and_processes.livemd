@@ -15,8 +15,8 @@ By the end you will have:
 - started a local process without a shell command;
 - consumed normalized stdout, stderr, and exit events.
 
-Read the [interactive-session guide](../guides/interactive_sessions.md) and
-[managed-process guide](../guides/managed_processes.md) for the corresponding
+Read the [interactive-session guide](../interactive_sessions.md) and
+[managed-process guide](../managed_processes.md) for the corresponding
 API contracts.
 
 > The session section invokes a real provider and may consume API or
@@ -45,7 +45,7 @@ path =
 System.put_env("PATH", path)
 
 Mix.install([
-  {:jido_harness, path: Path.expand("..", __DIR__)}
+  {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
 
 defmodule JidoHarnessLivebook do
@@ -66,7 +66,7 @@ Choose a provider whose status reports at least one session transport.
 
 ```elixir
 provider = :codex
-cwd = Path.expand("..", __DIR__)
+cwd = Path.expand("../..", __DIR__)
 
 {:ok, status} = Jido.Harness.status(provider)
 ready? = Jido.Harness.ProviderStatus.ready?(status)

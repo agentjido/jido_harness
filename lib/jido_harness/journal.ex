@@ -25,8 +25,10 @@ defmodule Jido.Harness.Journal do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
+  @doc "Returns the validation schema for internal journal state."
   def schema, do: @schema
 
+  @doc "Creates private journal files with configured segment and disk limits."
   @spec open(String.t(), map()) :: {:ok, t()} | {:error, term()}
   def open(id, options \\ %{}) do
     config =
@@ -51,6 +53,7 @@ defmodule Jido.Harness.Journal do
     end
   end
 
+  @doc "Writes a redacted JSON record, rotates segments, and enforces retention limits."
   @spec append(t(), map()) :: {:ok, t()} | {:error, term(), t()}
   def append(%__MODULE__{failed?: true} = state, _record), do: {:error, :journal_unavailable, state}
 
@@ -74,6 +77,7 @@ defmodule Jido.Harness.Journal do
     end
   end
 
+  @doc "Reads records after a sequence cursor and marks the journal failed on read errors."
   @spec replay(t(), non_neg_integer(), pos_integer()) :: {[map()], t()}
   def replay(%__MODULE__{failed?: true} = state, _cursor, _limit), do: {[], state}
 
@@ -95,9 +99,11 @@ defmodule Jido.Harness.Journal do
       {[], %{state | failed?: true}}
   end
 
+  @doc "Removes the journal directory and reports filesystem errors."
   @spec remove(t()) :: :ok | {:error, term()}
   def remove(%__MODULE__{dir: dir}), do: File.rm_rf(dir) |> normalize_rm()
 
+  @doc "Returns the application journal directory below the user cache."
   def default_base_dir do
     :filename.basedir(:user_cache, "jido_harness") |> to_string()
   end

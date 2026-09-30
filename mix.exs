@@ -5,6 +5,68 @@ defmodule Jido.Harness.MixProject do
   @source_url "https://github.com/agentjido/jido_harness"
   @description "Supervised, normalized Elixir runtime for CLI AI coding agents"
 
+  @project_docs ["README.md", "CONTRIBUTING.md", "CHANGELOG.md", "LICENSE"]
+  @guide_groups [
+    {"Start here",
+     [
+       "guides/overview.md",
+       "guides/getting_started.md",
+       "guides/choosing_a_workflow.md",
+       "guides/providers.md"
+     ]},
+    {"Workflows",
+     [
+       "guides/one_shot_requests.md",
+       "guides/detached_runs.md",
+       "guides/interactive_sessions.md",
+       "guides/managed_processes.md",
+       "guides/escripts.md",
+       "guides/recipes/policy_jobs.md"
+     ]},
+    {"Shared concepts",
+     [
+       "guides/normalization_and_data_model.md",
+       "guides/streaming_replay_and_retention.md",
+       "guides/ownership_timeouts_and_cancellation.md",
+       "guides/security.md"
+     ]},
+    {"Operating and extending",
+     [
+       "guides/operations.md",
+       "guides/testing.md",
+       "guides/custom_adapters.md",
+       "guides/local_workarounds.md"
+     ]},
+    {"Reference",
+     [
+       "guides/reference/configuration_reference.md",
+       "guides/reference/event_reference.md",
+       "guides/reference/adapter_contract.md",
+       "guides/reference/process_management.md",
+       "guides/reference/integration_testing.md",
+       "guides/reference/telemetry.md",
+       "guides/reference/dependency_policy.md",
+       "guides/reference/dependency_audit.md"
+     ]},
+    {"Migration",
+     [
+       "guides/migrations/migration_v3.md",
+       "guides/migrations/migration_v2.md",
+       "guides/migrations/structured_output_execution.md"
+     ]},
+    {"Design decisions",
+     [
+       "guides/decisions/exmcp-acp-boundary.md",
+       "guides/decisions/structured-output-schema-isolation.md"
+     ]},
+    {"Livebooks",
+     [
+       "guides/livebooks/01_one_shot_requests.livemd",
+       "guides/livebooks/02_detached_runs.livemd",
+       "guides/livebooks/03_sessions_and_processes.livemd"
+     ]}
+  ]
+
   def project do
     [
       app: :jido_harness,
@@ -13,11 +75,11 @@ defmodule Jido.Harness.MixProject do
       hex: [
         ignore_advisories: [
           "EEF-CVE-2026-43966",
-          "EEF-CVE-2026-43969",
-          "EEF-CVE-2026-43971"
+          "EEF-CVE-2026-43969"
         ]
       ],
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_ignore_filters: [&String.starts_with?(&1, "test/support/fixtures/")],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
@@ -28,91 +90,9 @@ defmodule Jido.Harness.MixProject do
       docs: [
         main: "overview",
         source_ref: "v#{@version}",
-        extras: [
-          "README.md",
-          "guides/overview.md",
-          "guides/getting_started.md",
-          "guides/choosing_a_workflow.md",
-          "guides/providers.md",
-          "guides/local_workarounds.md",
-          "guides/one_shot_requests.md",
-          "guides/detached_runs.md",
-          "guides/interactive_sessions.md",
-          "guides/managed_processes.md",
-          "guides/escripts.md",
-          "guides/normalization_and_data_model.md",
-          "guides/streaming_replay_and_retention.md",
-          "guides/ownership_timeouts_and_cancellation.md",
-          "guides/security.md",
-          "guides/operations.md",
-          "guides/testing.md",
-          "guides/custom_adapters.md",
-          "docs/configuration_reference.md",
-          "docs/event_reference.md",
-          "CHANGELOG.md",
-          "CONTRIBUTING.md",
-          "LICENSE",
-          "docs/adapter_contract.md",
-          "docs/telemetry.md",
-          "docs/dependency_policy.md",
-          "docs/decisions/exmcp-acp-boundary.md",
-          "docs/decisions/acp-v3-open-gaps.md",
-          "docs/process_management.md",
-          "docs/integration_testing.md",
-          "docs/migration_v3.md",
-          "docs/migration_v2.md",
-          "docs/structured_output_execution.md",
-          "docs/decisions/structured-output-schema-isolation.md",
-          "livebooks/01_one_shot_requests.livemd",
-          "livebooks/02_detached_runs.livemd",
-          "livebooks/03_sessions_and_processes.livemd"
-        ],
-        groups_for_extras: [
-          "Start here": [
-            "guides/overview.md",
-            "guides/getting_started.md",
-            "guides/choosing_a_workflow.md",
-            "guides/providers.md"
-          ],
-          "Core workflows": [
-            "guides/one_shot_requests.md",
-            "guides/detached_runs.md",
-            "guides/interactive_sessions.md",
-            "guides/managed_processes.md",
-            "guides/escripts.md"
-          ],
-          "Shared concepts": [
-            "guides/normalization_and_data_model.md",
-            "guides/streaming_replay_and_retention.md",
-            "guides/ownership_timeouts_and_cancellation.md",
-            "guides/security.md"
-          ],
-          "Operating and extending": [
-            "guides/operations.md",
-            "guides/local_workarounds.md",
-            "guides/testing.md",
-            "guides/custom_adapters.md"
-          ],
-          Reference: [
-            "docs/configuration_reference.md",
-            "docs/event_reference.md",
-            "docs/adapter_contract.md",
-            "docs/process_management.md",
-            "docs/integration_testing.md",
-            "docs/telemetry.md",
-            "docs/dependency_policy.md",
-            "docs/decisions/exmcp-acp-boundary.md",
-            "docs/migration_v3.md",
-            "docs/migration_v2.md",
-            "docs/structured_output_execution.md",
-            "docs/decisions/structured-output-schema-isolation.md"
-          ],
-          Livebooks: [
-            "livebooks/01_one_shot_requests.livemd",
-            "livebooks/02_detached_runs.livemd",
-            "livebooks/03_sessions_and_processes.livemd"
-          ]
-        ],
+        extras: @project_docs ++ Enum.flat_map(@guide_groups, &elem(&1, 1)),
+        groups_for_extras: @guide_groups ++ [{"Project", @project_docs}],
+        assets: %{"guides/recipes" => "."},
         groups_for_modules: [
           "Core API": [
             Jido.Harness,
@@ -165,15 +145,7 @@ defmodule Jido.Harness.MixProject do
         ],
         formatters: ["html"]
       ],
-      test_coverage: [
-        tool: ExCoveralls,
-        summary: [threshold: 90],
-        export: "cov",
-        ignore_modules: [
-          Jido.Harness.IntegrationCase,
-          Mix.Tasks.JidoHarness.Chat
-        ]
-      ],
+      test_coverage: [tool: ExCoveralls, export: "cov"],
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
       # Hex packaging
       package: [
@@ -187,11 +159,8 @@ defmodule Jido.Harness.MixProject do
           "README.md",
           "usage-rules.md",
           "config",
-          "docs",
           "guides",
-          "examples",
           "lib",
-          "livebooks",
           "mix.exs"
         ],
         maintainers: ["Agent Jido Team"],
@@ -226,7 +195,7 @@ defmodule Jido.Harness.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "test/support/modules"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do

@@ -98,7 +98,7 @@ Canonical event types cover:
 
 Event payload keys are strings. The envelope and canonical event name are
 stable; payload fields are canonical where the adapter can map them faithfully.
-See the [canonical event reference](../docs/event_reference.md).
+See the [canonical event reference](reference/event_reference.md).
 
 ## Three stability levels
 

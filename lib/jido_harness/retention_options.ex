@@ -8,6 +8,7 @@ defmodule Jido.Harness.RetentionOptions do
   @default_segment_bytes 8 * 1_024 * 1_024
   @default_disk_limit_bytes 256 * 1_024 * 1_024
 
+  @doc "Normalizes retention keys and validates byte limits and the journal directory."
   @spec normalize(map()) :: {:ok, map()} | {:error, Error.t()}
   def normalize(options) when is_map(options) do
     with {:ok, options} <- normalize_keys(options),

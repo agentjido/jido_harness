@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 FILES = ROOT / "scripts" / "local_workarounds"
 
 

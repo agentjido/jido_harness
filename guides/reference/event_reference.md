@@ -101,8 +101,8 @@ the original JSON bytes. For an adapter-backed provider, the adapter constructs
 the ACP message. Provider-native fields that the adapter does not map are not
 present.
 Permission events keep their Harness `request_id`; the provider request ID
-remains in `raw["id"]`. The ExMCP release boundary is described in
-[ACP v3 review status](decisions/acp-v3-open-gaps.md).
+remains in `raw["id"]`. See the
+[ExMCP ACP boundary](../decisions/exmcp-acp-boundary.md) for the protocol boundary.
 
 `acp_session_configuration` events retain provider session-open configuration
 under `payload["configuration"]`. Their source is `session_open`, before

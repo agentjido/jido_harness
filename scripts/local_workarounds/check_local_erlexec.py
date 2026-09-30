@@ -10,8 +10,8 @@ import sys
 import tempfile
 
 
-ROOT = Path(__file__).resolve().parent.parent
-FILES = ROOT / "scripts" / "local_workarounds"
+ROOT = Path(__file__).resolve().parents[2]
+FILES = ROOT / "test" / "support" / "fixtures" / "process_groups"
 
 
 def erlang_string(value):

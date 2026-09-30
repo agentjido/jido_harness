@@ -26,22 +26,17 @@ jobs:
       matrix:
         include:
           - provider: amp
-            package: "@sourcegraph/amp"
           - provider: claude
-            package: "@anthropic-ai/claude-code"
           - provider: codex
-            package: "@openai/codex"
           - provider: gemini
-            package: "@google/gemini-cli"
           - provider: kimi
-            package: "@moonshot-ai/kimi-code"
           - provider: opencode
-            package: "opencode-ai"
           - provider: grok
-            package: "@xai-official/grok"
           - provider: zai
-            package: "@anthropic-ai/claude-code"
     env:
+      JIDO_HARNESS_INTEGRATION_PROFILE: ${{ inputs.profile }}
+      JIDO_HARNESS_INTEGRATION_PROVIDERS: ${{ matrix.provider }}
+      JIDO_HARNESS_INTEGRATION_STRICT: "true"
       AMP_API_KEY: ${{ secrets.AMP_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -59,10 +54,17 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      - run: npm install --global "${{ matrix.package }}"
       - run: mix deps.get
-      - run: >-
-          mix jido_harness.integration
-          --providers "${{ matrix.provider }}"
-          --profile "${{ inputs.profile }}"
-          --strict
+      - name: Install the provider CLI and ACP entry point
+        run: |
+          mix run -e '
+            provider = String.to_existing_atom(System.fetch_env!("JIDO_HARNESS_INTEGRATION_PROVIDERS"))
+            case Jido.Harness.install(provider) do
+              {:ok, _result} -> :ok
+              {:error, error} -> raise inspect(error)
+            end
+          '
+      - name: Run the selected live contracts
+        run: >-
+          mix test --include integration test/integration/providers_test.exs
+          --timeout 7200000

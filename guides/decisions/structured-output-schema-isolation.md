@@ -4,7 +4,7 @@ Status: superseded by the ACP-only version 3 design on 2026-08-25.
 
 Version 3 retains the provider-neutral request types, but no current ACP
 profile advertises structured output. See
-[`migration_v3.md`](../migration_v3.md).
+[`migration_v3.md`](../migrations/migration_v3.md).
 
 This decision establishes the generic Jido.Harness authority for validating a
 caller-supplied output schema, staging it privately for a finite CLI run, and
@@ -87,4 +87,4 @@ must not change authentication, billing, privacy, or model semantics.
 ## Contract
 
 The normative planning contract is
-[`structured_output_execution.md`](../structured_output_execution.md).
+[`structured_output_execution.md`](../migrations/structured_output_execution.md).

@@ -14,8 +14,8 @@ By the end you will have:
 - awaited its normalized terminal result;
 - seen how cancellation and pruning fit the lifecycle.
 
-Read the [detached-runs guide](../guides/detached_runs.md) and
-[retention guide](../guides/streaming_replay_and_retention.md) for the
+Read the [detached-runs guide](../detached_runs.md) and
+[retention guide](../streaming_replay_and_retention.md) for the
 corresponding API contracts.
 
 > Provider run cells may consume API or subscription usage.
@@ -43,7 +43,7 @@ path =
 System.put_env("PATH", path)
 
 Mix.install([
-  {:jido_harness, path: Path.expand("..", __DIR__)}
+  {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
 
 defmodule JidoHarnessLivebook do
@@ -62,7 +62,7 @@ end
 
 ```elixir
 provider = :codex
-cwd = Path.expand("..", __DIR__)
+cwd = Path.expand("../..", __DIR__)
 
 {:ok, provider_status} = Jido.Harness.status(provider)
 

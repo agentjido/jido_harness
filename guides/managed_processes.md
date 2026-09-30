@@ -99,5 +99,5 @@ addressable until explicitly pruned or removed by the terminal-resource TTL.
 Provider-owned process workers additionally bind to their owning run or
 session so an abnormal owner failure cleans up the CLI process group.
 
-See the exact [process management reference](../docs/process_management.md) and
+See the exact [process management reference](reference/process_management.md) and
 [Streaming, replay, and retention](streaming_replay_and_retention.md).

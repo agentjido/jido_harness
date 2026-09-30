@@ -1,7 +1,7 @@
 defmodule Jido.Harness.TestHelpers do
   @moduledoc false
 
-  @fixtures_dir Path.expand("fixtures", __DIR__)
+  @fixtures_dir Path.expand("../fixtures", __DIR__)
 
   def fixture_path(name), do: Path.join(@fixtures_dir, name)
 

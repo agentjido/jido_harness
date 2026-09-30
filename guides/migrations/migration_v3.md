@@ -4,12 +4,9 @@ Version 3 makes ACP the only coding-agent protocol. This is a hard cutover.
 There is no runtime switch for the version 2 direct-CLI or session transport
 paths.
 
-GitHub issue `agentjido/jido_harness#61` owns this change.
-
-PR #64 uses ExMCP 1.3 for ACP message-context callbacks. ExMCP 1.3 contains the
-reviewed PR #32 change and passed its release qualification workflow. The
-current Cowlib audit exception remains in effect.
-See [ACP v3 review status](decisions/acp-v3-open-gaps.md).
+Version 3 uses ExMCP 1.3 or later for ACP message-context callbacks. The dependency
+audit exceptions remain in the project configuration.
+See [Dependency audit exceptions](../reference/dependency_audit.md).
 
 ## Execution model
 
@@ -45,8 +42,9 @@ and process lifecycle.
   approval responses. A finite run approves requests only in `:auto_approve`
   mode and denies them in other modes.
 
-A finite job can still use host policy for approvals. Load
-`examples/policy_job.exs` from the repository and call
+A finite job can still use host policy for approvals. See the
+[bounded policy jobs guide](../recipes/policy_jobs.md). Load
+`guides/recipes/policy_job.exs` from a source checkout and call
 `Jido.Harness.Examples.PolicyJob.run/4`. It uses one session and one bounded turn,
 denies failed or timed-out policy decisions, and closes the session on exit.
 The turn budget begins after startup. This does not add approval callbacks to

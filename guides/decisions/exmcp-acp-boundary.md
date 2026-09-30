@@ -73,7 +73,7 @@ it is the ACP message emitted by that adapter. If an application uses ExMCP's
 selected adapter. It is not a promise to retain the provider's native event.
 Native fields that an adapter does not map are unavailable to Harness.
 The Cowlib audit findings have a temporary, user-approved exception for PR #64.
-See [ACP v3 review status](acp-v3-open-gaps.md).
+See [Dependency audit exceptions](../reference/dependency_audit.md).
 
 ExMCP requires finite internal request deadlines. Harness sets each ExMCP
 deadline after the related Harness deadline so the Harness timer decides the

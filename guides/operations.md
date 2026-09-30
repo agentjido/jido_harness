@@ -41,7 +41,7 @@ Use `:providers` to add or override explicit adapter registrations. Use
 runtime configuration. Use `:process_manager` for journal location, retention
 TTL, sweep interval, and process-manager defaults.
 
-See the [configuration reference](../docs/configuration_reference.md).
+See the [configuration reference](reference/configuration_reference.md).
 
 ## Readiness versus a live smoke request
 
@@ -92,7 +92,7 @@ Attach handlers to run, session, adapter, process, and journal events. Telemetry
 metadata contains identity and lifecycle context but excludes prompts,
 credentials, environment values, and complete argv.
 
-See the [telemetry reference](../docs/telemetry.md).
+See the [telemetry reference](reference/telemetry.md).
 
 ## Retention and disk capacity
 

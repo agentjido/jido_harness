@@ -5,6 +5,7 @@ defmodule Jido.Harness.Adapters.Helpers do
 
   @maximum_timeout_ms 2_147_483_647
 
+  @doc "Keeps supported provider options and converts known string keys to atoms."
   def provider_options(options, allowed) when is_map(options) do
     strings = Map.new(allowed, &{Atom.to_string(&1), &1})
 
@@ -20,9 +21,11 @@ defmodule Jido.Harness.Adapters.Helpers do
     end)
   end
 
+  @doc "Maps an infinite timeout to the largest supported process timer value."
   def finite_timeout(:infinity), do: @maximum_timeout_ms
   def finite_timeout(timeout) when is_integer(timeout), do: timeout
 
+  @doc "Probes CLI installation and compatibility without sending an agent prompt."
   def status(provider, default_executable, auth_env, config, options \\ []) do
     configured = Map.get(config, :cli_path) || Map.get(config, "cli_path")
     env_path = options |> Keyword.get(:cli_path_env) |> then(&if(&1, do: System.get_env(&1)))
@@ -72,6 +75,7 @@ defmodule Jido.Harness.Adapters.Helpers do
     {:ok, ProviderStatus.finalize(status)}
   end
 
+  @doc "Installs an npm package or returns its executable and argv recipe."
   def install_npm(provider, package, options, npm_args \\ []) do
     recipe = %{executable: "npm", argv: ["install", "-g"] ++ npm_args ++ [package], package: package}
 
@@ -89,6 +93,7 @@ defmodule Jido.Harness.Adapters.Helpers do
     end
   end
 
+  @doc "Downloads and runs an installer, or returns its recipe in dry-run mode."
   def install_script(provider, url, options) do
     recipe = %{
       source: url,

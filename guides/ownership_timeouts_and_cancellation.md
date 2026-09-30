@@ -85,4 +85,4 @@ tool subprocesses. Killing only the CLI parent can leave those children alive.
 Terminal resources remain addressable for 24 hours by default. The retention
 worker periodically prunes expired runs, sessions, and processes. Configure the
 TTL and sweep interval under `:process_manager`; see the
-[configuration reference](../docs/configuration_reference.md).
+[configuration reference](reference/configuration_reference.md).

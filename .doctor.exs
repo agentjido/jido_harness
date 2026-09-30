@@ -1,16 +1,13 @@
 %Doctor.Config{
-  ignore_modules: [
-    ~r/^Jido\.Harness\.Adapters\.(CLIStream|Helpers|JSONMapper|SDKMapper)$/,
-    ~r/^Jido\.Harness\.(Buffer|CursorStream|EventLog|ID|Journal|ProcessWorker|Protocol\.JSONL|Redaction|Registry|RequestResolver|Retention|RetentionOptions|RunManager|RunWorker|SessionManager|TextTail|Validation)$/
-  ],
+  ignore_modules: [],
   ignore_paths: [],
-  min_module_doc_coverage: 40,
+  min_module_doc_coverage: 50,
   min_module_spec_coverage: 0,
-  min_overall_doc_coverage: 50,
+  min_overall_doc_coverage: 95,
   min_overall_moduledoc_coverage: 100,
-  min_overall_spec_coverage: 0,
+  min_overall_spec_coverage: 75,
   exception_moduledoc_required: true,
-  raise: false,
+  raise: true,
   reporter: Doctor.Reporters.Full,
   struct_type_spec_required: true,
   umbrella: false

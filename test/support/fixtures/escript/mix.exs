@@ -6,8 +6,8 @@ defmodule JidoHarnessEscriptFixture.MixProject do
       app: :jido_harness_escript_fixture,
       version: "0.0.0",
       elixir: "~> 1.19",
-      lockfile: Path.expand("../../mix.lock", __DIR__),
-      deps: [{:jido_harness, path: Path.expand("../..", __DIR__)}],
+      lockfile: Path.expand("../../../../mix.lock", __DIR__),
+      deps: [{:jido_harness, path: Path.expand("../../../..", __DIR__)}],
       escript: [
         main_module: JidoHarnessEscriptFixture,
         app: nil,

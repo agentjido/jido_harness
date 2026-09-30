@@ -1,6 +1,7 @@
 # Local workarounds
 
-These files provide local fixes for Codex isolation and native process startup.
+These tools require a source checkout of this repository. They provide local
+fixes for Codex isolation and native process startup.
 They do not require an upstream PR or release. Keep the patch manifest and test
 records when you change a dependency.
 
@@ -9,7 +10,7 @@ records when you change a dependency.
 Use the installed Codex CLI for finite isolation tasks:
 
 ```sh
-python3 scripts/codex_isolated.py --cwd /path/to/fixture \
+python3 scripts/local_workarounds/codex_isolated.py --cwd /path/to/fixture \
   --model YOUR_MODEL --effort xhigh "Update the fixture"
 ```
 
@@ -38,7 +39,7 @@ use the helper through the Harness process API:
 {:ok, process_id} = Jido.Harness.Process.start(%{
   executable: System.find_executable("python3"),
   argv: [
-    Path.expand("scripts/codex_isolated.py"),
+    Path.expand("scripts/local_workarounds/codex_isolated.py"),
     "--cwd", "/path/to/fixture",
     "Update the fixture"
   ],
@@ -50,9 +51,9 @@ use the helper through the Harness process API:
 ```
 
 For one live check through this process API, run
-`mix run scripts/check_local_codex.exs`. This uses the CLI default model and
-creates a temporary fixture. The model must write two files and follow the
-fixture's instructions. The check records the helper hash and checks that no
+`mix run scripts/local_workarounds/check_local_codex.exs`. This uses the CLI
+default model and creates a temporary fixture. The model must write two files
+and follow the fixture's instructions. The check records the helper hash and checks that no
 session file contains the returned thread ID. This check sends a billable task.
 
 ## Native process startup
@@ -61,9 +62,9 @@ Apply the local correction after fetching dependencies:
 
 ```sh
 mix deps.get
-python3 scripts/apply_local_erlexec.py
-python3 scripts/check_local_erlexec.py
-mix run scripts/local_process_soak.exs
+python3 scripts/local_workarounds/apply_local_erlexec.py
+python3 scripts/local_workarounds/check_local_erlexec.py
+mix run scripts/local_workarounds/local_process_soak.exs
 ```
 
 The correction is pinned to erlexec 2.5.0. The manifest records the original
@@ -83,6 +84,13 @@ the parent assignment before the test forces a child error. The checks do not
 replace the application's registered server or depend on a fixed delay. The
 soak check runs 100 timed-out processes and 800 native echo processes, without
 retries.
+
+The native test fixtures are in `test/support/fixtures/process_groups/`.
+The Codex helper tests are in `test/scripts/`. Run them without a live provider:
+
+```sh
+python3 -m unittest discover -s test/scripts -v
+```
 
 Run these checks after an upgrade. If a dependency fetch replaces the source,
 apply the patch again before local runs. Review a new dependency version before

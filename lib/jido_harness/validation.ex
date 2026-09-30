@@ -3,6 +3,7 @@ defmodule Jido.Harness.Validation do
 
   alias Jido.Harness.Error
 
+  @doc "Checks that a working-directory value is a non-empty path without null bytes."
   @spec cwd(term()) :: :ok | {:error, Error.t()}
   def cwd(path) do
     if is_binary(path) and byte_size(path) > 0 and not String.contains?(path, <<0>>) do
@@ -12,6 +13,7 @@ defmodule Jido.Harness.Validation do
     end
   end
 
+  @doc "Accepts infinity or a non-negative integer as a waiter timeout."
   @spec await_timeout(term()) :: :ok | {:error, Error.t()}
   def await_timeout(:infinity), do: :ok
   def await_timeout(timeout) when is_integer(timeout) and timeout >= 0, do: :ok
@@ -21,6 +23,7 @@ defmodule Jido.Harness.Validation do
      Error.validation("await timeout must be :infinity or a non-negative integer", details: %{timeout: timeout})}
   end
 
+  @doc "Checks that options form an Elixir keyword list."
   @spec keyword_options(term()) :: {:ok, keyword()} | {:error, Error.t()}
   def keyword_options(options) when is_list(options) do
     if Keyword.keyword?(options),
@@ -30,11 +33,13 @@ defmodule Jido.Harness.Validation do
 
   def keyword_options(_options), do: {:error, Error.validation("options must be a keyword list")}
 
+  @doc "Converts a validated keyword list to a map."
   @spec options_map(term()) :: {:ok, map()} | {:error, Error.t()}
   def options_map(options) do
     with {:ok, options} <- keyword_options(options), do: {:ok, Map.new(options)}
   end
 
+  @doc "Accepts a map or converts a key-value list to a map."
   @spec attributes_map(term(), String.t()) :: {:ok, map()} | {:error, Error.t()}
   def attributes_map(attributes, _name) when is_map(attributes), do: {:ok, attributes}
 

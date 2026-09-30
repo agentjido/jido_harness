@@ -13,8 +13,8 @@ By the end you will have:
 - received a `Jido.Harness.RunResult` instead of provider-specific JSON;
 - inspected the canonical event types behind the final response.
 
-Read the [getting-started guide](../guides/getting_started.md) and
-[normalization guide](../guides/normalization_and_data_model.md) for the
+Read the [getting-started guide](../getting_started.md) and
+[normalization guide](../normalization_and_data_model.md) for the
 corresponding API contracts.
 
 > The final request invokes a real provider CLI and may consume API or
@@ -45,7 +45,7 @@ path =
 System.put_env("PATH", path)
 
 Mix.install([
-  {:jido_harness, path: Path.expand("..", __DIR__)}
+  {:jido_harness, path: Path.expand("../..", __DIR__)}
 ])
 
 defmodule JidoHarnessLivebook do
@@ -67,7 +67,7 @@ the caller's wait; it does not kill a run if the wait expires.
 
 ```elixir
 provider = :codex
-cwd = Path.expand("..", __DIR__)
+cwd = Path.expand("../..", __DIR__)
 prompt = "Reply with exactly: harness-ready"
 await_timeout = 300_000
 

@@ -15,8 +15,10 @@ defmodule Jido.Harness.Buffer do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
+  @doc "Returns the validation schema for the internal event buffer."
   def schema, do: @schema
 
+  @doc "Creates an empty event buffer with a positive byte limit."
   def new(max_bytes) do
     case Zoi.parse(@schema, %{max_bytes: max_bytes}) do
       {:ok, buffer} when is_integer(max_bytes) and max_bytes > 0 -> buffer
@@ -24,12 +26,14 @@ defmodule Jido.Harness.Buffer do
     end
   end
 
+  @doc "Adds an event and drops the oldest events until the byte limit is met."
   def append(%__MODULE__{} = buffer, event) do
     size = event |> :erlang.term_to_binary() |> byte_size()
     buffer = %{buffer | events: :queue.in({event, size}, buffer.events), bytes: buffer.bytes + size}
     trim(buffer)
   end
 
+  @doc "Returns retained events in insertion order."
   def events(%__MODULE__{} = buffer), do: for({event, _size} <- :queue.to_list(buffer.events), do: event)
 
   defp trim(%__MODULE__{bytes: bytes, max_bytes: max} = buffer) when bytes <= max, do: buffer

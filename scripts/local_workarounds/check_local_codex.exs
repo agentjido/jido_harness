@@ -1,6 +1,6 @@
 alias Jido.Harness.Process, as: NativeProcess
 
-root = Path.expand("..", __DIR__)
+root = Path.expand("../..", __DIR__)
 state = Path.join(root, ".local-workarounds")
 File.mkdir_p!(state)
 fixture = Path.join(System.tmp_dir!(), "harness-local-codex-#{System.unique_integer([:positive])}")

@@ -1,7 +1,9 @@
 [
   inputs: [
-    "{mix,.formatter,.credo}.exs",
-    "{config,lib,test}/**/*.{ex,exs}"
+    "{mix,.formatter,.credo,.doctor}.exs",
+    "{config,lib,test}/**/*.{ex,exs}",
+    "guides/recipes/**/*.exs",
+    "scripts/**/*.exs"
   ],
   line_length: 120
 ]

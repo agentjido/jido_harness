@@ -1,6 +1,7 @@
 defmodule Jido.Harness.CursorStream do
   @moduledoc false
 
+  @doc "Builds a pull stream that replays events by cursor until the resource is terminal."
   def build(replay_fun, info_fun, terminal_fun, options \\ []) do
     cursor = Keyword.get(options, :cursor, 0)
     limit = Keyword.get(options, :limit, 100)

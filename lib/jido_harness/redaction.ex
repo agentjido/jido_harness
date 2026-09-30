@@ -4,12 +4,14 @@ defmodule Jido.Harness.Redaction do
   @redacted "[REDACTED]"
   @sensitive_key ~r/(^|_)(authorization|cookie|credential|password|secret|token|api_?key)($|_)/i
 
+  @doc "Removes sensitive fields and replaces known secret strings in nested values."
   @spec redact(term(), [String.t()]) :: term()
   def redact(value, extra_secrets \\ []) do
     secrets = normalize_secrets(extra_secrets ++ system_secrets())
     do_redact(value, secrets)
   end
 
+  @doc "Collects secret strings from environment keys that match sensitive names."
   @spec secrets_from_env(map()) :: [String.t()]
   def secrets_from_env(env) when is_map(env) do
     env

@@ -115,4 +115,4 @@ Before releasing an adapter change:
 3. run lifecycle and interactive profiles when their ACP entry points changed;
 4. run `mix quality`, `mix test`, `mix docs`, and `mix hex.build`.
 
-See the exact [integration testing reference](../docs/integration_testing.md).
+See the exact [integration testing reference](reference/integration_testing.md).

@@ -7,6 +7,7 @@ defmodule Jido.Harness.RunManager do
 
   @max_replay_limit 10_000
 
+  @doc "Validates a resolved request and starts its worker under the run supervisor."
   def start(provider, request) do
     with {:ok, adapter} <- Registry.lookup(provider),
          {:ok, spec} <- Registry.spec(provider),
@@ -46,8 +47,10 @@ defmodule Jido.Harness.RunManager do
     {:error, Error.validation("provider does not expose an ACP agent", provider: spec.provider)}
   end
 
+  @doc "Reads the current information from a registered run worker."
   def info(id), do: call(id, :info)
 
+  @doc "Lists registered runs, optionally filtered by provider or state."
   def list(filters \\ []) do
     providers = Keyword.get(filters, :providers)
     states = Keyword.get(filters, :states)
@@ -65,6 +68,7 @@ defmodule Jido.Harness.RunManager do
     end)
   end
 
+  @doc "Validates the cursor and limit before requesting retained run events."
   def replay(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          cursor = Keyword.get(options, :cursor, 0),
@@ -74,6 +78,7 @@ defmodule Jido.Harness.RunManager do
     end
   end
 
+  @doc "Builds a cursor stream for an existing run."
   def stream(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          {:ok, _info} <- info(id) do
@@ -81,6 +86,7 @@ defmodule Jido.Harness.RunManager do
     end
   end
 
+  @doc "Waits for a run result without cancelling the run when the wait expires."
   def await(id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
       case call(id, :result) do
@@ -92,7 +98,9 @@ defmodule Jido.Harness.RunManager do
     end
   end
 
+  @doc "Requests cancellation from the registered run worker."
   def cancel(id), do: call(id, :cancel)
+  @doc "Requests removal of a terminal run and its retained data."
   def prune(id), do: call(id, :prune)
 
   defp call(id, message) do

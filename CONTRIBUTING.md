@@ -1,46 +1,126 @@
 # Contributing to Jido.Harness
 
-Thank you for your interest in contributing!
+## Set up
 
-## Development Setup
+Use Elixir 1.19 or a compatible later version and its supported Erlang/OTP
+version. Pull-request CI checks Elixir 1.19 with OTP 28 and Elixir 1.20 with
+OTP 29.
 
-```bash
+```console
 git clone https://github.com/agentjido/jido_harness.git
 cd jido_harness
 mix setup
 ```
 
-## Running Tests
+Local unit tests use fake CLIs. They do not need provider credentials.
 
-```bash
+## Find the right files
+
+| Path | Contents |
+| --- | --- |
+| `lib/jido_harness.ex` | Public facade |
+| `lib/jido_harness/` | Adapters, public types, and resource lifecycle |
+| `lib/mix/tasks/` | Provider readiness and one-request smoke tasks |
+| `guides/` | Getting started, workflows, shared concepts, and operations |
+| `guides/reference/` | Configuration, event, process, and dependency contracts |
+| `guides/migrations/` | Version changes and clearly marked historical contracts |
+| `guides/decisions/` | Design decisions and their status |
+| `guides/livebooks/` | Runnable notebooks |
+| `guides/recipes/` | Tested application examples and their instructions |
+| `test/jido_harness/`, `test/mix/` | Unit and fake-CLI tests |
+| `test/integration/` | Optional live provider and long process tests |
+| `test/support/` | Shared test modules and executable fixtures |
+| `test/support/modules/` | Modules compiled with the unit suite |
+| `test/support/fixtures/escript/` | A small Mix project that tests native-helper packaging |
+| `test/scripts/` | Tests for local command helpers |
+| `scripts/local_workarounds/` | Local setup and checks, with versioned patches |
+| `doc/` | Generated API documentation; ignored by Git |
+
+Keep package boundaries clear. Harness owns execution and resource lifetime.
+ExMCP owns ACP protocol handling. Application policy and service integrations
+belong outside Harness.
+
+## Run checks
+
+```console
 mix test
-```
-
-## Quality Checks
-
-```bash
 mix quality
+mix docs --warnings-as-errors
+mix hex.build
 ```
 
-This runs: compile, format check, credo, dialyzer, and doctor.
+`mix quality` checks formatting, compiler warnings, Credo, Dialyzer, and Doctor.
+Doctor checks all modules. Public APIs must have useful docs and typespecs.
+Internal modules use `@moduledoc false` to stay out of the public API docs;
+they do not need entries in an ignore list.
 
-## Commit Messages
+The escript test builds the fixture in `test/support/fixtures/escript/` and
+checks native-helper extraction in a separate VM. The approval-policy tests
+load the recipe in `guides/recipes/policy_job.exs`. Keep these checks when you
+change packaging or session behavior.
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+The default suite currently reports about 72% line coverage. The old Mix
+coverage threshold and module exclusions had no effect with ExCoveralls and
+were removed. ExCoveralls has no enforced minimum yet. The previous 90% target
+remains release work: configure `coverage_options.minimum_coverage` in
+`coveralls.json` and meet that target before a stable release.
 
+For changes to local command helpers, also run:
+
+```console
+python3 -m unittest discover -s test/scripts -v
 ```
-feat(adapter): add streaming support
-fix(registry): handle missing provider config
-docs: update README examples
+
+See [Local workarounds](guides/local_workarounds.md) for the optional native
+process patch and its checks. These tools require a source checkout. They are
+not part of the package runtime.
+
+## Change documentation
+
+Put documentation under `guides/`. Put notebooks under `guides/livebooks/` and
+tested application recipes under `guides/recipes/`. Link related pages with
+relative paths.
+
+Add each published guide to the appropriate `@guide_groups` entry in `mix.exs`.
+That list defines both ExDoc extras and their navigation groups. Do not create
+a second list of guide paths. Root project documents have a separate short
+list in `@project_docs`.
+
+Build docs with `--warnings-as-errors` after moves or API changes. Check links
+in source files as well as in generated HTML. Run Livebooks from their saved
+locations so that their local dependency paths resolve correctly.
+
+## Live provider checks
+
+Live tests need installed CLIs, ACP entry points, and credentials. They can
+consume provider usage. They are excluded from the default unit suite.
+
+Use the [testing guide](guides/testing.md) to select a provider and profile.
+The manually started live-integration workflow installs both provider
+components and runs the same ExUnit contracts.
+
+## Prepare a release
+
+Run the four checks above and the affected live provider profiles. Review the
+[dependency audit exceptions](guides/reference/dependency_audit.md) and
+[current provider limits](guides/providers.md). A local patch does not fix the
+published dependency for package consumers.
+
+The Hex package contains runtime source, configuration, and documentation.
+Tests, test fixtures, and local workaround tools stay in the source repository.
+Inspect `mix hex.build` output before publication.
+
+Do not edit `CHANGELOG.md` by hand. Release automation creates release notes
+from Git history. Use Conventional Commits, for example:
+
+```text
+fix(session): close the process after cancellation
+docs: clarify provider setup
+chore: organize release files
 ```
 
-## Pull Requests
+## Pull requests and license
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Make your changes and ensure `mix quality` passes
-4. Submit a pull request
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the Apache-2.0 License.
+Create a branch, make the change, and run the relevant checks before you submit
+a pull request. Explain the user-visible change and the evidence from tests.
+Contributions use the Apache-2.0 license in [LICENSE](LICENSE).

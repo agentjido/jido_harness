@@ -1,4 +1,4 @@
-Code.require_file("../../examples/policy_job.exs", __DIR__)
+Code.require_file("../../guides/recipes/policy_job.exs", __DIR__)
 
 defmodule Jido.Harness.PolicyJobExampleTest do
   use ExUnit.Case, async: false

@@ -64,7 +64,7 @@ Provider SDK responses and events become:
 - `Jido.Harness.ProviderStatus` and capability structs for discovery.
 
 Code that needs unmapped provider data can handle `:provider_event` explicitly.
-See [Normalization and the data model](../guides/normalization_and_data_model.md).
+See [Normalization and the data model](../normalization_and_data_model.md).
 
 ## Replace identifiers
 

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 
-HELPER = Path(__file__).resolve().parent.parent / "codex_isolated.py"
+HELPER = Path(__file__).resolve().parents[2] / "scripts" / "local_workarounds" / "codex_isolated.py"
 
 
 class IsolatedCodexTest(unittest.TestCase):

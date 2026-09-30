@@ -18,6 +18,7 @@ defmodule Jido.Harness.RequestResolver do
   ]
   @empty_values [nil, [], %{}, :default]
 
+  @doc "Applies request defaults and rejects options outside the selected adapter contract."
   def resolve(provider, %RunRequest{} = request) do
     with {:ok, spec} <- Registry.spec(provider),
          :ok <- validate_supported(request, spec) do

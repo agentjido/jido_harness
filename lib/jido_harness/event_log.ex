@@ -3,6 +3,7 @@ defmodule Jido.Harness.EventLog do
 
   alias Jido.Harness.{Buffer, Journal, Redaction}
 
+  @doc "Opens a journal, or reports the failure through telemetry and returns nil."
   @spec open(String.t(), map()) :: Journal.t() | nil
   def open(owner_id, retention) do
     case Journal.open(owner_id, retention) do
@@ -20,9 +21,11 @@ defmodule Jido.Harness.EventLog do
     end
   end
 
+  @doc "Creates the bounded memory buffer used by a resource event log."
   @spec new_buffer(pos_integer()) :: Buffer.t()
   def new_buffer(memory_bytes), do: Buffer.new(memory_bytes)
 
+  @doc "Retains the original event in memory and writes a redacted copy without raw data."
   @spec append(Buffer.t(), Journal.t() | nil, term(), [String.t()]) :: {Buffer.t(), Journal.t() | nil}
   def append(buffer, journal, event, secrets \\ []) do
     persisted = event |> Map.from_struct() |> Map.put(:raw, nil) |> Redaction.redact(secrets)
@@ -42,6 +45,7 @@ defmodule Jido.Harness.EventLog do
     {Buffer.append(buffer, event), journal}
   end
 
+  @doc "Reads after a cursor from the journal, with memory fallback if the journal is unavailable."
   @spec replay(Buffer.t(), Journal.t() | nil, non_neg_integer(), pos_integer()) ::
           {[term()], Journal.t() | nil, pos_integer()}
   def replay(_buffer, %Journal{failed?: false} = journal, cursor, limit) do
@@ -55,10 +59,12 @@ defmodule Jido.Harness.EventLog do
     {records, journal, available_from}
   end
 
+  @doc "Removes the journal when one exists."
   @spec remove(Journal.t() | nil) :: :ok | {:error, term()}
   def remove(nil), do: :ok
   def remove(journal), do: Journal.remove(journal)
 
+  @doc "Returns the journal directory, or nil when journaling is unavailable."
   @spec dir(Journal.t() | nil) :: String.t() | nil
   def dir(nil), do: nil
   def dir(journal), do: journal.dir

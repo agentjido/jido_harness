@@ -5,6 +5,7 @@ defmodule Jido.Harness.SessionManager do
 
   @max_replay_limit 10_000
 
+  @doc "Validates a session request and starts its worker under the session supervisor."
   def start(provider, request) do
     with {:ok, adapter} <- Registry.lookup(provider),
          {:ok, spec} <- Registry.spec(provider),
@@ -29,8 +30,10 @@ defmodule Jido.Harness.SessionManager do
     end
   end
 
+  @doc "Reads the current information from a registered session worker."
   def info(id), do: call(id, :info)
 
+  @doc "Lists registered sessions, optionally filtered by provider or state."
   def list(filters \\ []) do
     providers = Keyword.get(filters, :providers)
     states = Keyword.get(filters, :states)
@@ -48,6 +51,7 @@ defmodule Jido.Harness.SessionManager do
     end)
   end
 
+  @doc "Validates the cursor and limit before requesting retained session events."
   def replay(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          cursor = Keyword.get(options, :cursor, 0),
@@ -56,6 +60,7 @@ defmodule Jido.Harness.SessionManager do
          do: call(id, {:replay, cursor, limit})
   end
 
+  @doc "Builds a cursor stream for an existing session."
   def stream(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          {:ok, _info} <- info(id) do
@@ -69,16 +74,26 @@ defmodule Jido.Harness.SessionManager do
     end
   end
 
+  @doc "Dispatches a turn request to an idle session worker."
   def send_message(id, request), do: call(id, {:send_message, request})
+  @doc "Queues a turn request through the session worker."
   def follow_up(id, request), do: call(id, {:follow_up, request})
+  @doc "Sends a steering request through the session worker."
   def steer(id, request), do: call(id, {:steer, request})
+  @doc "Requests interruption of the identified active turn."
   def interrupt(id, turn_id), do: call(id, {:interrupt, turn_id})
+  @doc "Forwards an application decision for a pending approval request."
   def respond_approval(id, request_id, response), do: call(id, {:respond_approval, request_id, response})
+  @doc "Forwards provider configuration changes to the session worker."
   def configure(id, changes), do: call(id, {:configure, changes})
+  @doc "Requests graceful session closure."
   def close(id), do: call(id, :close)
+  @doc "Requests forced session cancellation."
   def kill(id), do: call(id, :kill)
+  @doc "Requests removal of a terminal session and its retained data."
   def prune(id), do: call(id, :prune)
 
+  @doc "Waits for a turn result without interrupting it when the wait expires."
   def await_turn(id, turn_id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
       case call(id, {:turn_result, turn_id}) do
