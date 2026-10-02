@@ -48,7 +48,8 @@ defmodule Jido.Harness.ACPFrameLimitTest do
     {bridge, reader} = start_bridge()
     send(reader, {:process_events, [event(String.duplicate("a", 1_048_577) <> "\n")]})
 
-    assert {:error, :frame_too_large} = Bridge.receive_message(bridge)
+    assert {:error, {:process_stopped, :failed}} = Bridge.receive_message(bridge)
+    assert_receive {:acp_process_stopped, :failed, :frame_too_large}
   end
 
   test "a raised limit lets the same frame through" do
