@@ -265,6 +265,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       },
       event_listener: self(),
       protocol_version: 1,
+      max_frame_bytes: ExMCPTransport.max_frame_bytes(),
       initialize_timeout: @startup_timeout,
       pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
       handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)

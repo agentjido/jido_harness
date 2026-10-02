@@ -7,6 +7,21 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport do
   @type t :: %__MODULE__{bridge: pid()}
   defstruct [:bridge]
 
+  @default_max_frame_bytes 1_048_576
+
+  # One ACP message is one line, and a line carrying an image (a tool result
+  # that read one, a prompt with one attached) is larger than the default. The
+  # host application raises it with `config :jido_harness, :acp_max_frame_bytes`.
+  # The limit stays: it bounds what an agent that never ends its line can make
+  # this process hold.
+  @spec max_frame_bytes() :: pos_integer()
+  def max_frame_bytes do
+    case Application.get_env(:jido_harness, :acp_max_frame_bytes, @default_max_frame_bytes) do
+      bytes when is_integer(bytes) and bytes > 0 -> bytes
+      _other -> @default_max_frame_bytes
+    end
+  end
+
   @impl true
   def connect(opts) do
     listener = opts |> Keyword.fetch!(:harness_transport) |> Keyword.fetch!(:listener)
@@ -45,11 +60,10 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   use GenServer
 
   alias Jido.Harness.{ProcessEvent, Redaction, TextTail}
+  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport
 
   @stderr_bytes 4_096
   @lifecycle_limit 8
-
-  @max_frame_bytes 1_048_576
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
   def send_message(bridge, message), do: GenServer.call(bridge, {:send, message}, :infinity)
@@ -213,9 +227,11 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     {lines, [rest]} = Enum.split(parts, -1)
     frames = lines |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
 
+    limit = ExMCPTransport.max_frame_bytes()
+
     cond do
-      Enum.any?(frames, &(byte_size(&1) > @max_frame_bytes)) -> {:error, :frame_too_large}
-      byte_size(rest) > @max_frame_bytes -> {:error, :frame_too_large}
+      Enum.any?(frames, &(byte_size(&1) > limit)) -> {:error, :frame_too_large}
+      byte_size(rest) > limit -> {:error, :frame_too_large}
       true -> {:ok, frames, rest}
     end
   end
