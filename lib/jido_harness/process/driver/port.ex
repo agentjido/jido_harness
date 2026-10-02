@@ -16,6 +16,10 @@ defmodule Jido.Harness.ProcessDriver.Port do
 
   alias Jido.Harness.ProcessSpec
 
+  # Stands for the process id of a process that ended before it could be asked
+  # for: no process has it, and nothing is signalled with it.
+  @ended 0
+
   @impl true
   def start(%ProcessSpec{pty: pty}, _owner) when pty != false do
     {:error, Jido.Harness.Error.validation("this system's process driver has no pseudo-terminal")}
@@ -51,6 +55,8 @@ defmodule Jido.Harness.ProcessDriver.Port do
   def send_input(_process, _data), do: {:error, :not_running}
 
   @impl true
+  def signal(@ended, _signal), do: :ok
+
   def signal(os_pid, signal) when is_integer(os_pid) do
     {executable, arguments} = kill_command(:os.type(), os_pid, signal)
 
@@ -143,8 +149,11 @@ defmodule Jido.Harness.ProcessDriver.Port do
         send(caller, {ref, {:ok, os_pid}})
         loop(port, os_pid, owner)
 
+      # Already over: a port forgets the process id once the process has
+      # ended. Its output and exit code are still to be read from the port.
       nil ->
-        send(caller, {ref, {:error, :not_started}})
+        send(caller, {ref, {:ok, @ended}})
+        loop(port, @ended, owner)
     end
   rescue
     error -> send(caller, {ref, {:error, error}})

@@ -143,7 +143,17 @@ defmodule Jido.Harness.Journal do
     end
   end
 
-  defp segment_paths(dir), do: dir |> Path.join("*.jsonl") |> Path.wildcard() |> Enum.sort()
+  # Listed, not matched with a wildcard: a Windows path has backslashes,
+  # which a wildcard reads as escapes and then matches nothing.
+  defp segment_paths(dir) do
+    case File.ls(dir) do
+      {:ok, names} ->
+        names |> Enum.filter(&String.ends_with?(&1, ".jsonl")) |> Enum.sort() |> Enum.map(&Path.join(dir, &1))
+
+      {:error, _reason} ->
+        []
+    end
+  end
 
   defp first_sequence(nil), do: nil
 
