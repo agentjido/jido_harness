@@ -1,27 +1,13 @@
 defmodule Jido.Harness.PortProcessDriverTest do
   # The driver Windows uses, through the process manager. It runs on every
-  # system, so the child here is the Erlang runtime: the one program certain
-  # to be installed wherever this suite runs.
+  # system, so the child here is the system's own command interpreter, given
+  # the few commands both of them understand.
   use ExUnit.Case, async: false
 
   import Jido.Harness.TestHelpers
 
   alias Jido.Harness.ProcessDriver
   alias Jido.Harness.ProcessDriver.Port, as: PortDriver
-
-  # Repeats each line it reads; "quit" ends it with exit code 3
-  @echo ~S"""
-  F = fun L() ->
-    case io:get_line("") of
-      eof -> halt(0);
-      Line ->
-        case string:trim(Line) of
-          "quit" -> halt(3);
-          Text -> io:put_chars(["echo:", Text, "\n"]), L()
-        end
-    end
-  end, F().
-  """
 
   setup do
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-port-test-#{System.unique_integer([:positive])}")
@@ -47,49 +33,59 @@ defmodule Jido.Harness.PortProcessDriverTest do
   end
 
   test "a process is given input, its output is read and its exit code reported" do
-    {:ok, id} = start_echo()
+    {:ok, id} = start_interpreter()
 
-    assert :ok = Jido.Harness.Process.send_input(id, "one\n")
-    assert :ok = Jido.Harness.Process.send_input(id, "two\n")
+    assert :ok = Jido.Harness.Process.send_input(id, "echo echo:one\n")
+    assert :ok = Jido.Harness.Process.send_input(id, "echo echo:two\n")
     await_output(id, "echo:two")
-    assert :ok = Jido.Harness.Process.send_input(id, "quit\n")
+    assert :ok = Jido.Harness.Process.send_input(id, "exit 3\n")
 
     assert {:ok, info} = Jido.Harness.Process.await(id, 15_000)
     assert info.state == :failed
     assert info.exit_status == 3
-    assert output(id) =~ ~r/echo:one\r?\necho:two/
+    assert output(id) =~ ~r/echo:one.*echo:two/s
   end
 
-  test "arguments, the working directory and the environment reach the process" do
-    cwd = System.tmp_dir!()
-
-    program = ~S"""
-    {ok, Cwd} = file:get_cwd(),
-    io:format("~s|~s|~p|~p~n", [Cwd, os:getenv("HARNESS_SET"), os:getenv("HARNESS_GONE"), init:get_plain_arguments()]),
-    halt(0).
-    """
-
+  test "the working directory and the environment reach the process" do
+    cwd = Path.join(System.tmp_dir!(), "harness port #{System.unique_integer([:positive])}")
+    File.mkdir_p!(cwd)
     System.put_env("HARNESS_GONE", "still here")
-    on_exit(fn -> System.delete_env("HARNESS_GONE") end)
 
-    {:ok, id} =
-      Jido.Harness.Process.start(%{
-        executable: erl(),
-        argv: ["-noshell", "-eval", program, "-extra", "an argument", "two"],
-        cwd: cwd,
-        env: %{"HARNESS_SET" => "a value", "HARNESS_GONE" => nil}
-      })
+    on_exit(fn ->
+      System.delete_env("HARNESS_GONE")
+      File.rm_rf(cwd)
+    end)
 
+    {:ok, id} = start_interpreter(cwd: cwd, env: %{"HARNESS_SET" => "a value", "HARNESS_GONE" => nil})
+
+    {where, variables} =
+      if windows?(),
+        do: {"cd\n", "echo [%HARNESS_SET%] [%HARNESS_GONE%]\n"},
+        else: {"pwd\n", "echo [$HARNESS_SET] [$HARNESS_GONE]\n"}
+
+    assert :ok = Jido.Harness.Process.send_input(id, where <> variables <> "exit 0\n")
     assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 15_000)
-    assert [dir, "a value", "false", arguments] = id |> output() |> String.trim() |> String.split("|")
-    assert Path.basename(dir) == Path.basename(Path.expand(cwd))
-    assert arguments =~ ~s("an argument")
-    assert arguments =~ ~s("two")
+
+    assert output(id) =~ Path.basename(cwd)
+    assert output(id) =~ "[a value]"
+    refute output(id) =~ "still here"
+  end
+
+  test "arguments reach the process as they are, spaces included" do
+    argv =
+      if windows?(),
+        do: ["/d", "/c", "echo", "an argument", "two"],
+        else: ["-c", ~S(printf '"%s" %s' "$1" "$2"), "sh", "an argument", "two"]
+
+    {:ok, id} = Jido.Harness.Process.start(%{executable: interpreter(), argv: argv})
+
+    assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 15_000)
+    assert output(id) =~ ~s("an argument" two)
   end
 
   test "a running process is stopped when it is killed" do
-    {:ok, id} = start_echo()
-    assert :ok = Jido.Harness.Process.send_input(id, "ready\n")
+    {:ok, id} = start_interpreter()
+    assert :ok = Jido.Harness.Process.send_input(id, "echo echo:ready\n")
     await_output(id, "echo:ready")
 
     assert :ok = Jido.Harness.Process.kill(id)
@@ -98,7 +94,7 @@ defmodule Jido.Harness.PortProcessDriverTest do
   end
 
   test "what a port cannot do is refused, not attempted" do
-    {:ok, spec} = Jido.Harness.ProcessSpec.new(%{executable: erl(), pty: true})
+    {:ok, spec} = Jido.Harness.ProcessSpec.new(%{executable: interpreter(), pty: true})
     assert {:error, %Jido.Harness.Error{}} = PortDriver.start(spec, self())
     assert {:error, :unsupported} = PortDriver.send_input(self(), :eof)
   end
@@ -108,17 +104,36 @@ defmodule Jido.Harness.PortProcessDriverTest do
     assert {:ok, %{state: :failed}} = Jido.Harness.Process.await(id, 5_000)
   end
 
+  test "on Windows a batch file is given to the command interpreter, quoted" do
+    assert {:ok, {:spawn, line}} =
+             PortDriver.command({:win32, :nt}, "C:/Program Files/npm/agent.CMD", ["--flag", "a b"])
+
+    assert to_string(line) =~ ~S(/d /s /c ""C:\Program Files\npm\agent.CMD" "--flag" "a b"")
+
+    assert {:ok, {:spawn_executable, ~c"C:/bin/agent.exe"}} =
+             PortDriver.command({:win32, :nt}, "C:/bin/agent.exe", ["x"])
+
+    assert {:ok, {:spawn_executable, ~c"/bin/agent.cmd"}} =
+             PortDriver.command({:unix, :linux}, "/bin/agent.cmd", [])
+
+    for argument <- [~s(say "hi"), "100%", "two\nlines"] do
+      assert {:error, _reason} = PortDriver.command({:win32, :nt}, "C:/agent.cmd", [argument])
+    end
+  end
+
   test "on Windows a process is ended with the processes it started" do
     assert {executable, ["/PID", "42", "/T", "/F"]} = PortDriver.kill_command({:win32, :nt}, 42, :sigint)
     assert executable =~ "taskkill"
     assert {_kill, ["-s", "TERM", "42"]} = PortDriver.kill_command({:unix, :linux}, 42, :sigterm)
   end
 
-  defp start_echo do
-    Jido.Harness.Process.start(%{executable: erl(), argv: ["-noshell", "-eval", @echo]})
+  defp start_interpreter(options \\ []) do
+    argv = if windows?(), do: ["/d", "/q"], else: []
+    Jido.Harness.Process.start(Map.merge(%{executable: interpreter(), argv: argv}, Map.new(options)))
   end
 
-  defp erl, do: System.find_executable("erl")
+  defp interpreter, do: if(windows?(), do: System.get_env("ComSpec") || "cmd.exe", else: "sh")
+  defp windows?, do: match?({:win32, _name}, :os.type())
 
   defp output(id) do
     {:ok, events} = Jido.Harness.Process.replay(id)

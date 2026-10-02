@@ -78,6 +78,35 @@ defmodule Jido.Harness.ProcessDriver.Port do
     {executable, ["-s", signal_name(signal), Integer.to_string(os_pid)]}
   end
 
+  @doc false
+  # Windows starts programs, not batch files: a .cmd or .bat file (what npm
+  # installs a command as) has to be given to the command interpreter. Its
+  # command line is written here, quoted, and not left to the port, whose
+  # quoting the interpreter does not read. `%` and `"` keep their meaning to
+  # the interpreter inside quotes, so an argument with one is refused rather
+  # than passed on as something else.
+  def command({:win32, _name}, executable, argv) do
+    if String.downcase(Path.extname(executable)) in [".cmd", ".bat"] do
+      batch_command(executable, argv)
+    else
+      {:ok, {:spawn_executable, String.to_charlist(executable)}}
+    end
+  end
+
+  def command(_os, executable, _argv), do: {:ok, {:spawn_executable, String.to_charlist(executable)}}
+
+  defp batch_command(executable, argv) do
+    words = [String.replace(executable, "/", "\\") | argv]
+
+    if Enum.any?(words, &String.contains?(&1, ["\"", "%", "\r", "\n"])) do
+      {:error, "a batch file cannot be given an argument with a quote, a percent sign or a line break"}
+    else
+      interpreter = System.get_env("ComSpec") || "cmd.exe"
+      quoted = Enum.map_join(words, " ", &("\"" <> &1 <> "\""))
+      {:ok, {:spawn, String.to_charlist("#{interpreter} /d /s /c \"#{quoted}\"")}}
+    end
+  end
+
   defp signal_name(:sigint), do: "INT"
   defp signal_name(:sigterm), do: "TERM"
   defp signal_name(:sigkill), do: "KILL"
@@ -102,7 +131,12 @@ defmodule Jido.Harness.ProcessDriver.Port do
       env: environment(spec.env_mode, spec.env)
     ]
 
-    port = Port.open({:spawn_executable, String.to_charlist(executable)}, options)
+    port =
+      case command(:os.type(), executable, spec.argv) do
+        {:ok, {:spawn_executable, _path} = name} -> Port.open(name, options)
+        {:ok, {:spawn, _line} = name} -> Port.open(name, Keyword.delete(options, :args))
+        {:error, reason} -> raise ArgumentError, reason
+      end
 
     case Port.info(port, :os_pid) do
       {:os_pid, os_pid} ->
