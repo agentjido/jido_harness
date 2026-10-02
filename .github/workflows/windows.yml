@@ -5,7 +5,7 @@ name: Windows
 # and is not expected to pass here yet.
 on:
   push:
-    branches: ["orrery/**"]
+    branches: ["orrery/**", "orrery-main"]
   workflow_dispatch:
 
 permissions:
