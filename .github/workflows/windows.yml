@@ -1,0 +1,41 @@
+name: Windows
+
+# The port process driver on the system it exists for. The whole suite also
+# runs, for information: it was written against erlexec and Unix fixtures,
+# and is not expected to pass here yet.
+on:
+  push:
+    branches: ["orrery/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  port-driver:
+    name: Port driver
+    runs-on: windows-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: mix deps.get
+
+      - run: mix compile
+
+      - name: The port driver and an ACP session through it
+        run: mix test test/jido_harness/port_process_driver_test.exs test/jido_harness/port_acp_session_test.exs
+
+      - name: The whole suite (for information)
+        continue-on-error: true
+        run: mix test
