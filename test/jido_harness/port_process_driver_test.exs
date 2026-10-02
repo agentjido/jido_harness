@@ -32,6 +32,18 @@ defmodule Jido.Harness.PortProcessDriverTest do
     assert ProcessDriver.default({:unix, :darwin}) == ProcessDriver.Erlexec
   end
 
+  test "the driver hands the owner the output and ends with the exit code" do
+    argv = if windows?(), do: ["/d", "/c", "echo", "direct"], else: ["-c", "echo direct"]
+    {:ok, spec} = Jido.Harness.ProcessSpec.new(%{executable: interpreter(), argv: argv})
+    Process.flag(:trap_exit, true)
+
+    assert {:ok, pid, os_pid} = PortDriver.start(spec, self())
+    assert is_integer(os_pid)
+    assert_receive {:stdout, ^os_pid, data}, 15_000
+    assert data =~ "direct"
+    assert_receive {:EXIT, ^pid, :normal}, 15_000
+  end
+
   test "a process is given input, its output is read and its exit code reported" do
     {:ok, id} = start_interpreter()
 
@@ -141,7 +153,12 @@ defmodule Jido.Harness.PortProcessDriverTest do
   end
 
   defp await_output(id, text, attempts \\ 200)
-  defp await_output(id, text, 0), do: flunk("no #{inspect(text)} in #{inspect(output(id))}")
+
+  defp await_output(id, text, 0) do
+    flunk(
+      "no #{inspect(text)} in #{inspect(Jido.Harness.Process.replay(id))} of #{inspect(Jido.Harness.Process.info(id))}"
+    )
+  end
 
   defp await_output(id, text, attempts) do
     if output(id) =~ text do

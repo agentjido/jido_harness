@@ -134,7 +134,7 @@ defmodule Jido.Harness.ProcessDriver.Port do
     port =
       case command(:os.type(), executable, spec.argv) do
         {:ok, {:spawn_executable, _path} = name} -> Port.open(name, options)
-        {:ok, {:spawn, _line} = name} -> Port.open(name, Keyword.delete(options, :args))
+        {:ok, {:spawn, _line} = name} -> Port.open(name, List.keydelete(options, :args, 0))
         {:error, reason} -> raise ArgumentError, reason
       end
 
