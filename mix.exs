@@ -196,7 +196,7 @@ defmodule Jido.Harness.MixProject do
   defp deps do
     [
       # Runtime
-      {:zoi, ">= 0.17.1 and < 0.19.0"},
+      {:zoi, "~> 0.18.11"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:ex_mcp, "~> 1.3"},
