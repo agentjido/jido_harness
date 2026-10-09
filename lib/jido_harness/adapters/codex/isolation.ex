@@ -70,7 +70,7 @@ defmodule Jido.Harness.Adapters.Codex.Isolation do
           {:halt,
            {:error, Error.validation("duplicate Codex isolation option", provider: :codex, details: %{option: key})}}
 
-        value == :absent ->
+        not Map.has_key?(options, key) and not Map.has_key?(options, string) ->
           {:cont, {:ok, normalized}}
 
         is_boolean(value) ->
