@@ -93,6 +93,35 @@ defmodule Jido.Harness.ACPSessionTest do
              Jido.Harness.Session.await(session_id, turn_id, 2_000)
   end
 
+  test "ACP forks an existing provider session into a new one through ExMCP" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{fork_session_id: "saved-provider-session"})
+
+    assert {:ok, %{provider_session_id: "fork-of-saved-provider-session"}} = await_ready(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "forked")
+
+    assert {:ok, %{status: :completed, text: "fixture-ok"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+  end
+
+  test "a fork fails to open when the ACP agent does not advertise forking" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{
+               fork_session_id: "saved-provider-session",
+               env: %{"HARNESS_FIXTURE_NO_FORK" => "1"}
+             })
+
+    assert {:ok, %{state: :failed}} = await_state(session_id, :failed)
+  end
+
+  test "a request cannot both resume and fork a session" do
+    assert {:error, %Jido.Harness.Error{}} =
+             Jido.Harness.Session.start(:kimi, %{
+               provider_session_id: "saved-provider-session",
+               fork_session_id: "saved-provider-session"
+             })
+  end
+
   test "turn completion waits for queued ExMCP update callbacks" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, _info} = await_ready(session_id)
@@ -216,6 +245,20 @@ defmodule Jido.Harness.ACPSessionTest do
       _ ->
         Process.sleep(20)
         await_ready(session_id, attempts - 1)
+    end
+  end
+
+  defp await_state(session_id, state, attempts \\ 100)
+  defp await_state(_session_id, _state, 0), do: {:error, :timeout}
+
+  defp await_state(session_id, state, attempts) do
+    case Jido.Harness.Session.info(session_id) do
+      {:ok, %{state: ^state}} = result ->
+        result
+
+      _ ->
+        Process.sleep(20)
+        await_state(session_id, state, attempts - 1)
     end
   end
 

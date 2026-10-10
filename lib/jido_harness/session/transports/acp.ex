@@ -364,10 +364,17 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp open_session(client, request) do
     options = [mcp_servers: mcp_servers(request.mcp_config)]
 
-    if is_binary(request.provider_session_id) do
-      Client.load_session(client, request.provider_session_id, request.cwd, options)
-    else
-      Client.new_session(client, request.cwd, options)
+    cond do
+      is_binary(request.fork_session_id) ->
+        # `session/fork` is still unstable in ACP; the client refuses it for an
+        # agent that does not advertise `sessionCapabilities.fork`.
+        Client.fork_session(client, request.fork_session_id, request.cwd, options)
+
+      is_binary(request.provider_session_id) ->
+        Client.load_session(client, request.provider_session_id, request.cwd, options)
+
+      true ->
+        Client.new_session(client, request.cwd, options)
     end
   end
 

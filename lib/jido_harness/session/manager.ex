@@ -128,6 +128,7 @@ defmodule Jido.Harness.SessionManager do
   @manager_fields [
     :provider,
     :cwd,
+    :fork_session_id,
     :env,
     :env_mode,
     :metadata,
@@ -167,6 +168,12 @@ defmodule Jido.Harness.SessionManager do
          Error.validation("ACP agent does not support session loading",
            provider: spec.provider,
            details: %{capability: :load_session}
+         )}
+
+      is_binary(request.provider_session_id) and is_binary(request.fork_session_id) ->
+        {:error,
+         Error.validation("give provider_session_id to resume a session or fork_session_id to fork one, not both",
+           provider: spec.provider
          )}
 
       not is_nil(request.mcp_config) and not acp_agent.capabilities.mcp ->
