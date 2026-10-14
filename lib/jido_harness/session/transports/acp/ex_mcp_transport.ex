@@ -65,9 +65,29 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   @stderr_bytes 4_096
   @lifecycle_limit 8
 
+  # ExMCP's ACP client sends only the requests it knows and keeps only the
+  # parts of the initialize response it knows. An extension request (ACP
+  # `_session/steering`) goes out here instead, with ids of its own whose
+  # responses are taken out of the stream before the client sees them; the
+  # initialize response's `_meta`, where an agent advertises its extensions,
+  # goes to the listener as `{:acp_agent_meta, bridge, meta}`.
+  @extension_id_prefix "jido-harness-ext-"
+
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
   def send_message(bridge, message), do: GenServer.call(bridge, {:send, message}, :infinity)
   def receive_message(bridge), do: GenServer.call(bridge, :receive, :infinity)
+
+  @doc """
+  Sends an ACP extension request and waits at most `timeout` for its
+  result: `{:ok, result}`, or `{:error, error}` with the agent's error.
+  """
+  @spec extension_request(pid(), String.t(), map(), timeout()) :: {:ok, term()} | {:error, term()}
+  def extension_request(bridge, method, params, timeout) do
+    GenServer.call(bridge, {:extension_request, method, params}, timeout)
+  catch
+    :exit, {:timeout, _call} -> {:error, :timeout}
+    :exit, reason -> {:error, {:transport_exit, reason}}
+  end
 
   def close(bridge) do
     GenServer.call(bridge, :close, 5_000)
@@ -105,7 +125,10 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
          stderr: TextTail.new(@stderr_bytes),
          lifecycle: [],
          secrets:
-           Redaction.secrets_from_env(Map.merge(System.get_env(), if(process_spec, do: process_spec.env, else: %{})))
+           Redaction.secrets_from_env(Map.merge(System.get_env(), if(process_spec, do: process_spec.env, else: %{}))),
+         initialized?: false,
+         extension_requests: %{},
+         next_extension_id: 1
        }, {:continue, :start_reader}}
     else
       {:error, reason} -> {:stop, reason}
@@ -130,6 +153,19 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   end
 
   def handle_call({:send, _message}, _from, state), do: {:reply, {:error, :closed}, state}
+
+  def handle_call({:extension_request, method, params}, from, %{status: :open} = state) do
+    id = @extension_id_prefix <> Integer.to_string(state.next_extension_id)
+    message = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params})
+    state = %{state | next_extension_id: state.next_extension_id + 1}
+
+    case state.process_manager.send_input(state.process_id, message <> "\n") do
+      :ok -> {:noreply, %{state | extension_requests: Map.put(state.extension_requests, id, from)}}
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  def handle_call({:extension_request, _method, _params}, _from, state), do: {:reply, {:error, :closed}, state}
 
   def handle_call(:receive, from, state) do
     case :queue.out(state.frames) do
@@ -157,8 +193,12 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   @impl true
   def handle_info({:acp_transport_process_event, %ProcessEvent{type: :stdout, data: data}}, state) do
     case split_frames(state.buffer, data) do
-      {:ok, frames, buffer} -> {:noreply, enqueue_frames(%{state | buffer: buffer}, frames)}
-      {:error, reason} -> {:noreply, stop_for_process_event(state, :failed, reason)}
+      {:ok, frames, buffer} ->
+        {frames, state} = Enum.flat_map_reduce(frames, %{state | buffer: buffer}, &inspect_frame/2)
+        {:noreply, enqueue_frames(state, frames)}
+
+      {:error, reason} ->
+        {:noreply, stop_for_process_event(state, :failed, reason)}
     end
   end
 
@@ -236,6 +276,41 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     end
   end
 
+  # Only a frame that can be one of ours is decoded: frames carry whole files
+  # and images, and the client decodes them again anyway.
+  defp inspect_frame(frame, state) do
+    cond do
+      :binary.match(frame, @extension_id_prefix) != :nomatch -> take_extension_response(frame, state)
+      not state.initialized? and :binary.match(frame, "protocolVersion") != :nomatch -> note_initialize(frame, state)
+      true -> {[frame], state}
+    end
+  end
+
+  defp take_extension_response(frame, state) do
+    with {:ok, %{"id" => id} = message} when not is_map_key(message, "method") <- Jason.decode(frame),
+         {from, requests} when not is_nil(from) <- Map.pop(state.extension_requests, id) do
+      GenServer.reply(from, extension_result(message))
+      {[], %{state | extension_requests: requests}}
+    else
+      _other -> {[frame], state}
+    end
+  end
+
+  defp extension_result(%{"error" => error}), do: {:error, error}
+  defp extension_result(message), do: {:ok, Map.get(message, "result")}
+
+  defp note_initialize(frame, state) do
+    case Jason.decode(frame) do
+      {:ok, %{"result" => %{"protocolVersion" => _version} = result}} ->
+        meta = if is_map(result["_meta"]), do: result["_meta"], else: %{}
+        send(state.listener, {:acp_agent_meta, self(), meta})
+        {[frame], %{state | initialized?: true}}
+
+      _other ->
+        {[frame], state}
+    end
+  end
+
   defp enqueue_frames(state, []), do: state
 
   defp enqueue_frames(%{waiter: waiter} = state, [frame | frames]) when not is_nil(waiter) do
@@ -292,11 +367,13 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   defp close_state(state, reason, clear_frames?) do
     if state.waiter, do: GenServer.reply(state.waiter, {:error, receive_error(reason)})
+    Enum.each(state.extension_requests, fn {_id, from} -> GenServer.reply(from, {:error, :closed}) end)
 
     %{
       state
       | status: reason,
         waiter: nil,
+        extension_requests: %{},
         frames: if(clear_frames?, do: :queue.new(), else: state.frames),
         buffer: ""
     }

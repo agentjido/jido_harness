@@ -163,8 +163,17 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:follow_up, _input}, _from, state), do: {:reply, {:error, :closed}, state}
 
-  def handle_call({:steer, _input}, _from, %{active: active} = state) when not is_nil(active),
-    do: {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
+  def handle_call({:steer, input}, _from, %{active: active} = state) when not is_nil(active) do
+    with {:ok, request} <- TurnRequest.new(input),
+         :ok <- RequestValidator.validate_steer_request(state, request),
+         :ok <- ACP.steer(state.handle, request, active.id) do
+      {:reply, {:ok, active.id}, state}
+    else
+      {:error, :unsupported} -> {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
+      {:error, :not_active} -> {:reply, {:error, :no_active_turn}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
 
   def handle_call({:steer, _input}, _from, state), do: {:reply, {:error, :no_active_turn}, state}
 

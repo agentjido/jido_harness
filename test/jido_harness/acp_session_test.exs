@@ -114,6 +114,37 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{state: :failed}} = await_state(session_id, :failed)
   end
 
+  test "input steers the running turn of an agent that advertises steering" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{env: %{"HARNESS_FIXTURE_STEERING" => "1"}})
+
+    assert {:ok, _info} = await_state(session_id, :idle)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    assert eventually(fn -> match?({:ok, %{state: :running}}, Jido.Harness.Session.info(session_id)) end)
+
+    assert {:ok, ^turn_id} = Jido.Harness.Session.steer(session_id, "use the other file")
+
+    assert {:ok, %{status: :completed, text: "steered: use the other file"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    # Once the turn has ended there is nothing to steer, and the agent starts no turn of its own
+    assert {:error, :no_active_turn} = Jido.Harness.Session.steer(session_id, "late")
+    assert {:ok, %{state: :idle}} = Jido.Harness.Session.info(session_id)
+  end
+
+  test "an agent that does not advertise steering refuses it" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_state(session_id, :idle)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    assert eventually(fn -> match?({:ok, %{state: :running}}, Jido.Harness.Session.info(session_id)) end)
+
+    assert {:error, %Jido.Harness.Error{details: %{capability: :steer}}} =
+             Jido.Harness.Session.steer(session_id, "x")
+
+    assert :ok = Jido.Harness.Session.interrupt(session_id)
+    assert {:ok, %{status: :interrupted}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+  end
+
   test "a request cannot both resume and fork a session" do
     assert {:error, %Jido.Harness.Error{}} =
              Jido.Harness.Session.start(:kimi, %{
