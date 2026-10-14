@@ -78,14 +78,15 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   def receive_message(bridge), do: GenServer.call(bridge, :receive, :infinity)
 
   @doc """
-  Sends an ACP extension request and waits at most `timeout` for its
-  result: `{:ok, result}`, or `{:error, error}` with the agent's error.
+  Sends an ACP extension request and waits at most `timeout` milliseconds
+  for its result: `{:ok, result}`, or `{:error, error}` with the agent's
+  error, `:timeout`, `:closed` or a request that cannot be encoded. The
+  bridge keeps the time, so a request the agent never answers is forgotten.
   """
-  @spec extension_request(pid(), String.t(), map(), timeout()) :: {:ok, term()} | {:error, term()}
+  @spec extension_request(pid(), String.t(), map(), non_neg_integer()) :: {:ok, term()} | {:error, term()}
   def extension_request(bridge, method, params, timeout) do
-    GenServer.call(bridge, {:extension_request, method, params}, timeout)
+    GenServer.call(bridge, {:extension_request, method, params, timeout}, :infinity)
   catch
-    :exit, {:timeout, _call} -> {:error, :timeout}
     :exit, reason -> {:error, {:transport_exit, reason}}
   end
 
@@ -154,18 +155,21 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   def handle_call({:send, _message}, _from, state), do: {:reply, {:error, :closed}, state}
 
-  def handle_call({:extension_request, method, params}, from, %{status: :open} = state) do
+  def handle_call({:extension_request, method, params, timeout}, from, %{status: :open} = state) do
     id = @extension_id_prefix <> Integer.to_string(state.next_extension_id)
-    message = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params})
     state = %{state | next_extension_id: state.next_extension_id + 1}
 
-    case state.process_manager.send_input(state.process_id, message <> "\n") do
-      :ok -> {:noreply, %{state | extension_requests: Map.put(state.extension_requests, id, from)}}
+    with {:ok, message} <- encode_request(id, method, params),
+         :ok <- state.process_manager.send_input(state.process_id, message <> "\n") do
+      timer = Process.send_after(self(), {:extension_timeout, id}, timeout)
+      {:noreply, %{state | extension_requests: Map.put(state.extension_requests, id, {from, timer})}}
+    else
       {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
-  def handle_call({:extension_request, _method, _params}, _from, state), do: {:reply, {:error, :closed}, state}
+  def handle_call({:extension_request, _method, _params, _timeout}, _from, state),
+    do: {:reply, {:error, :closed}, state}
 
   def handle_call(:receive, from, state) do
     case :queue.out(state.frames) do
@@ -238,6 +242,17 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     {:noreply, %{state | reader: nil}}
   end
 
+  def handle_info({:extension_timeout, id}, state) do
+    case Map.pop(state.extension_requests, id) do
+      {{from, _timer}, requests} ->
+        GenServer.reply(from, {:error, :timeout})
+        {:noreply, %{state | extension_requests: requests}}
+
+      {nil, _requests} ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   @impl true
@@ -288,11 +303,21 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   defp take_extension_response(frame, state) do
     with {:ok, %{"id" => id} = message} when not is_map_key(message, "method") <- Jason.decode(frame),
-         {from, requests} when not is_nil(from) <- Map.pop(state.extension_requests, id) do
+         {{from, timer}, requests} <- Map.pop(state.extension_requests, id) do
+      Process.cancel_timer(timer, async: true, info: false)
       GenServer.reply(from, extension_result(message))
       {[], %{state | extension_requests: requests}}
     else
       _other -> {[frame], state}
+    end
+  end
+
+  # Input that is not valid UTF-8 cannot be sent; it is refused, and the
+  # session goes on.
+  defp encode_request(id, method, params) do
+    case Jason.encode(%{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}) do
+      {:ok, message} -> {:ok, message}
+      {:error, error} -> {:error, {:invalid_request, Exception.message(error)}}
     end
   end
 
@@ -367,7 +392,11 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
   defp close_state(state, reason, clear_frames?) do
     if state.waiter, do: GenServer.reply(state.waiter, {:error, receive_error(reason)})
-    Enum.each(state.extension_requests, fn {_id, from} -> GenServer.reply(from, {:error, :closed}) end)
+
+    Enum.each(state.extension_requests, fn {_id, {from, timer}} ->
+      Process.cancel_timer(timer, async: true, info: false)
+      GenServer.reply(from, {:error, :closed})
+    end)
 
     %{
       state

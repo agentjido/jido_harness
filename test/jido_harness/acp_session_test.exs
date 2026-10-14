@@ -132,6 +132,31 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{state: :idle}} = Jido.Harness.Session.info(session_id)
   end
 
+  test "steering input that cannot be sent is refused and the session goes on" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{env: %{"HARNESS_FIXTURE_STEERING" => "1"}})
+
+    assert {:ok, _info} = await_state(session_id, :idle)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    assert eventually(fn -> match?({:ok, %{state: :running}}, Jido.Harness.Session.info(session_id)) end)
+
+    # Not UTF-8: it cannot be written as JSON
+    assert {:error, {:steering_failed, {:invalid_request, _message}}} =
+             Jido.Harness.Session.steer(session_id, <<0xFF, "x">>)
+
+    # An attachment is checked as for any turn
+    assert {:error, %Jido.Harness.Error{details: %{path: _path}}} =
+             Jido.Harness.Session.steer(session_id, %{prompt: "hi", attachments: ["/nope/missing"]})
+
+    assert {:ok, ^turn_id} = Jido.Harness.Session.steer(session_id, "use the other file")
+
+    assert {:ok, %{status: :completed, text: "steered: use the other file"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    assert {:ok, next} = Jido.Harness.Session.send_message(session_id, "again")
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, next, 2_000)
+  end
+
   test "an agent that does not advertise steering refuses it" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, _info} = await_state(session_id, :idle)

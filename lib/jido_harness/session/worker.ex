@@ -163,14 +163,22 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:follow_up, _input}, _from, state), do: {:reply, {:error, :closed}, state}
 
-  def handle_call({:steer, input}, _from, %{active: active} = state) when not is_nil(active) do
+  def handle_call({:steer, input}, from, %{active: active} = state) when not is_nil(active) do
     with {:ok, request} <- TurnRequest.new(input),
-         :ok <- RequestValidator.validate_steer_request(state, request),
-         :ok <- ACP.steer(state.handle, request, active.id) do
-      {:reply, {:ok, active.id}, state}
+         :ok <- RequestValidator.validate_turn_request(state, request),
+         :ok <- RequestValidator.validate_steer_request(state, request) do
+      handle = state.handle
+      unsupported = RequestValidator.unsupported(state, :steer)
+
+      # The agent answers once the input is in the turn. Meanwhile this
+      # process goes on answering approvals and recording the turn's events.
+      {:ok, _pid} =
+        Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
+          GenServer.reply(from, steer_reply(ACP.steer(handle, request, active.id), active.id, unsupported))
+        end)
+
+      {:noreply, state}
     else
-      {:error, :unsupported} -> {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
-      {:error, :not_active} -> {:reply, {:error, :no_active_turn}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
@@ -406,6 +414,11 @@ defmodule Jido.Harness.SessionWorker do
       "executable" => state.acp_agent.executable
     }
   end
+
+  defp steer_reply(:ok, turn_id, _unsupported), do: {:ok, turn_id}
+  defp steer_reply({:error, :unsupported}, _turn_id, unsupported), do: {:error, unsupported}
+  defp steer_reply({:error, :not_active}, _turn_id, _unsupported), do: {:error, :no_active_turn}
+  defp steer_reply({:error, reason}, _turn_id, _unsupported), do: {:error, reason}
 
   defp timestamp, do: DateTime.utc_now() |> DateTime.to_iso8601()
 end
