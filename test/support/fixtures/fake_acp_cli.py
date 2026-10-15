@@ -252,6 +252,8 @@ for line in sys.stdin:
                 }]},
             }})
         send({"jsonrpc": "2.0", "id": request_id, "result": {}})
+        if os.environ.get("HARNESS_FIXTURE_IDLE_PERMISSION") == "1" and message.get("params", {}).get("modelId") == "background-approval":
+            request_permission()
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")
         pending_prompt = None

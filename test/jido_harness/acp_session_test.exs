@@ -7,10 +7,14 @@ defmodule Jido.Harness.ACPSessionTest do
     fixture = Jido.Harness.TestHelpers.fixture_path("fake_acp_cli.py")
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-acp-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:jido_harness, :providers, %{kimi: Jido.Harness.Adapters.Kimi})
+    Application.put_env(:jido_harness, :providers, %{
+      kimi: Jido.Harness.Adapters.Kimi,
+      claude: Jido.Harness.Adapters.Claude
+    })
 
     Application.put_env(:jido_harness, :provider_config, %{
-      kimi: %{acp_path: fixture, retention: %{journal_dir: journal_dir}}
+      kimi: %{acp_path: fixture, retention: %{journal_dir: journal_dir}},
+      claude: %{acp_path: fixture, retention: %{journal_dir: journal_dir}}
     })
 
     on_exit(fn ->
@@ -232,6 +236,73 @@ defmodule Jido.Harness.ACPSessionTest do
     assert approval.raw["providerEnvelope"] == %{"trace" => "permission-envelope"}
     assert approval.raw["params"]["providerParameter"] == "permission-parameter"
     assert approval.raw["params"]["toolCall"] == approval.payload["tool_call"]
+  end
+
+  test "a native background permission between turns reaches host policy and returns to idle" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:claude, %{env: %{"HARNESS_FIXTURE_IDLE_PERMISSION" => "1"}})
+    assert {:ok, _info} = await_ready(session_id)
+    assert :ok = Jido.Harness.Session.configure(session_id, %{model: "background-approval"})
+    assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
+    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
+    assert %{turn_id: nil} = approval = Enum.find(events, &(&1.type == :approval_requested))
+    refute Enum.any?(events, &(&1.payload["kind"] == "stale_approval_denied"))
+    assert :ok = Jido.Harness.Session.respond_approval(session_id, approval.request_id, :approve)
+    assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "continue")
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+  end
+
+  test "a background approval timeout settles back to idle" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:claude, %{
+               approval_timeout_ms: 100,
+               env: %{"HARNESS_FIXTURE_IDLE_PERMISSION" => "1"}
+             })
+
+    assert {:ok, _info} = await_ready(session_id)
+    assert :ok = Jido.Harness.Session.configure(session_id, %{model: "background-approval"})
+
+    assert eventually(fn ->
+             {:ok, events} = Jido.Harness.Session.replay(session_id)
+             Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["reason"] == "timeout"))
+           end)
+
+    assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
+  end
+
+  test "closing an idle session denies its pending background permission" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:claude, %{env: %{"HARNESS_FIXTURE_IDLE_PERMISSION" => "1"}})
+    assert {:ok, _info} = await_ready(session_id)
+    assert :ok = Jido.Harness.Session.configure(session_id, %{model: "background-approval"})
+    assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
+    assert :ok = Jido.Harness.Session.close(session_id)
+    assert {:ok, %{state: :closed, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
+    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
+    assert Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["decision"] == "deny"))
+  end
+
+  test "an approval explicitly tied to a completed turn is still denied" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi)
+    assert {:ok, _info} = await_ready(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "done")
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    [{worker, _}] = Registry.lookup(Jido.Harness.SessionRegistry, session_id)
+
+    send(
+      worker,
+      {:session_adapter_event,
+       Jido.Harness.Event.new!(
+         type: :approval_requested,
+         provider: :kimi,
+         turn_id: turn_id,
+         request_id: "stale-request",
+         payload: %{}
+       )}
+    )
+
+    assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
+    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
+    assert Enum.any?(events, &(&1.payload["kind"] == "stale_approval_denied"))
   end
 
   test "approval timeouts deny the provider request without closing the session" do

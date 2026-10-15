@@ -196,7 +196,14 @@ defmodule Jido.Harness.Session.Lifecycle do
     event = %{event | request_id: request_id}
     active_turn_id = state.active && state.active.id
 
-    if is_nil(active_turn_id) or event.turn_id != active_turn_id or stale_turn_event?(state, event) do
+    # A native background callback can ask permission between harness turns.
+    # Forward that session-level request to the host; a concrete old turn
+    # still has no authority to ask after it ended.
+    stale =
+      event.turn_id != active_turn_id or stale_turn_event?(state, event) or
+        (is_nil(active_turn_id) and state.status not in [:idle, :awaiting_approval])
+
+    if stale do
       _ = deny_approval(state, request_id, "stale approval request")
 
       EventStore.append(

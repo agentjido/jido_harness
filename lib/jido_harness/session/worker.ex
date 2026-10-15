@@ -215,8 +215,7 @@ defmodule Jido.Harness.SessionWorker do
         )
 
       state = %{state | pending_approvals: Map.delete(state.pending_approvals, request_id)} |> append(event)
-      status = if map_size(state.pending_approvals) == 0, do: :running, else: :awaiting_approval
-      {:reply, :ok, %{state | status: status}}
+      {:reply, :ok, after_approval(state)}
     else
       :error -> {:reply, {:error, :not_found}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
@@ -353,8 +352,7 @@ defmodule Jido.Harness.SessionWorker do
             payload: %{"decision" => "deny", "scope" => "once", "reason" => "timeout"}
           )
 
-        status = if map_size(approvals) == 0, do: :running, else: :awaiting_approval
-        {:noreply, %{append(state, event) | pending_approvals: approvals, status: status}}
+        {:noreply, after_approval(%{append(state, event) | pending_approvals: approvals})}
     end
   end
 
@@ -371,6 +369,20 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp after_approval(state) do
+    cond do
+      map_size(state.pending_approvals) > 0 ->
+        %{state | status: :awaiting_approval}
+
+      state.active ->
+        %{state | status: :running}
+
+      true ->
+        send(self(), :start_next)
+        Timers.schedule_session_idle(%{state | status: :idle})
+    end
+  end
 
   defp handle_turn_event(state, event) do
     if stale_turn_event?(state, event) do
