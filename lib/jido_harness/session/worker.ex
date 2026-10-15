@@ -163,8 +163,25 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:follow_up, _input}, _from, state), do: {:reply, {:error, :closed}, state}
 
-  def handle_call({:steer, _input}, _from, %{active: active} = state) when not is_nil(active),
-    do: {:reply, {:error, RequestValidator.unsupported(state, :steer)}, state}
+  def handle_call({:steer, input}, from, %{active: active} = state) when not is_nil(active) do
+    with {:ok, request} <- TurnRequest.new(input),
+         :ok <- RequestValidator.validate_turn_request(state, request),
+         :ok <- RequestValidator.validate_steer_request(state, request) do
+      handle = state.handle
+      unsupported = RequestValidator.unsupported(state, :steer)
+
+      # The agent answers once the input is in the turn. Meanwhile this
+      # process goes on answering approvals and recording the turn's events.
+      {:ok, _pid} =
+        Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
+          GenServer.reply(from, steer_reply(ACP.steer(handle, request, active.id), active.id, unsupported))
+        end)
+
+      {:noreply, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
 
   def handle_call({:steer, _input}, _from, state), do: {:reply, {:error, :no_active_turn}, state}
 
@@ -198,8 +215,7 @@ defmodule Jido.Harness.SessionWorker do
         )
 
       state = %{state | pending_approvals: Map.delete(state.pending_approvals, request_id)} |> append(event)
-      status = if map_size(state.pending_approvals) == 0, do: :running, else: :awaiting_approval
-      {:reply, :ok, %{state | status: status}}
+      {:reply, :ok, after_approval(state)}
     else
       :error -> {:reply, {:error, :not_found}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
@@ -336,8 +352,7 @@ defmodule Jido.Harness.SessionWorker do
             payload: %{"decision" => "deny", "scope" => "once", "reason" => "timeout"}
           )
 
-        status = if map_size(approvals) == 0, do: :running, else: :awaiting_approval
-        {:noreply, %{append(state, event) | pending_approvals: approvals, status: status}}
+        {:noreply, after_approval(%{append(state, event) | pending_approvals: approvals})}
     end
   end
 
@@ -354,6 +369,20 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp after_approval(state) do
+    cond do
+      map_size(state.pending_approvals) > 0 ->
+        %{state | status: :awaiting_approval}
+
+      state.active ->
+        %{state | status: :running}
+
+      true ->
+        send(self(), :start_next)
+        Timers.schedule_session_idle(%{state | status: :idle})
+    end
+  end
 
   defp handle_turn_event(state, event) do
     if stale_turn_event?(state, event) do
@@ -397,6 +426,11 @@ defmodule Jido.Harness.SessionWorker do
       "executable" => state.acp_agent.executable
     }
   end
+
+  defp steer_reply(:ok, turn_id, _unsupported), do: {:ok, turn_id}
+  defp steer_reply({:error, :unsupported}, _turn_id, unsupported), do: {:error, unsupported}
+  defp steer_reply({:error, :not_active}, _turn_id, _unsupported), do: {:error, :no_active_turn}
+  defp steer_reply({:error, reason}, _turn_id, _unsupported), do: {:error, reason}
 
   defp timestamp, do: DateTime.utc_now() |> DateTime.to_iso8601()
 end

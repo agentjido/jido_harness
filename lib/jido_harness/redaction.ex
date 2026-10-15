@@ -2,6 +2,12 @@ defmodule Jido.Harness.Redaction do
   @moduledoc false
 
   @redacted "[REDACTED]"
+
+  # "Bearer" in any case, spelled as character classes instead of with the
+  # caseless flag: the flag leaves the regex engine without a first character
+  # to look for, and it then takes seconds per megabyte of text that holds no
+  # match, such as an image in base64.
+  @bearer ~r/\b[Bb][Ee][Aa][Rr][Ee][Rr]\s+[^\s,;]+/
   @sensitive_key ~r/(^|_)(authorization|cookie|credential|password|secret|token|api_?key)($|_)/i
 
   @doc "Removes sensitive fields and replaces known secret strings in nested values."
@@ -31,7 +37,7 @@ defmodule Jido.Harness.Redaction do
   defp do_redact(list, secrets) when is_list(list), do: Enum.map(list, &do_redact(&1, secrets))
 
   defp do_redact(value, secrets) when is_binary(value) do
-    value = Regex.replace(~r/\bBearer\s+[^\s,;]+/i, value, "Bearer #{@redacted}")
+    value = Regex.replace(@bearer, value, "Bearer #{@redacted}")
     Enum.reduce(secrets, value, &String.replace(&2, &1, @redacted))
   end
 

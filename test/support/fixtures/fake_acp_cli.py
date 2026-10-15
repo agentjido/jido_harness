@@ -28,6 +28,13 @@ def send(value, fragmented=False):
     sys.stdout.flush()
 
 
+def session_capabilities():
+    capabilities = {"close": {}}
+    if os.environ.get("HARNESS_FIXTURE_NO_FORK") != "1":
+        capabilities["fork"] = {}
+    return capabilities
+
+
 def complete_prompt(request_id, text="fixture-ok", stop_reason="end_turn"):
     send(
         {
@@ -116,11 +123,12 @@ for line in sys.stdin:
                     "agentCapabilities": {
                         "loadSession": True,
                         "_meta": {"codex": codex_meta},
-                        "sessionCapabilities": {"close": {}},
+                        "sessionCapabilities": session_capabilities(),
                         "promptCapabilities": {"image": True, "embeddedContext": True},
                     },
                     "agentInfo": {"name": "fixture-acp", "version": "1.0.0"},
                     "authMethods": auth_methods,
+                    "_meta": {"steering": {"supported": os.environ.get("HARNESS_FIXTURE_STEERING") == "1"}},
                 },
             }
         )
@@ -156,6 +164,9 @@ for line in sys.stdin:
                     "options": [{"value": "fixture-effective-model", "name": "Fixture model"}],
                 }]
             send({"jsonrpc": "2.0", "id": request_id, "result": result})
+    elif method == "session/fork":
+        session_id = "fork-of-" + message.get("params", {}).get("sessionId", "")
+        send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
     elif method == "session/load":
         session_id = message.get("params", {}).get("sessionId", session_id)
         send({"jsonrpc": "2.0", "id": request_id, "result": {"sessionId": session_id}})
@@ -241,9 +252,27 @@ for line in sys.stdin:
                 }]},
             }})
         send({"jsonrpc": "2.0", "id": request_id, "result": {}})
+        params = message.get("params", {})
+        model = params.get("modelId") or (params.get("value") if params.get("configId") == "model" else None)
+        if os.environ.get("HARNESS_FIXTURE_IDLE_PERMISSION") == "1" and model == "background-approval":
+            request_permission()
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")
         pending_prompt = None
+    elif method == "_session/steering":
+        # As claude-agent-acp does: the input joins the running turn, which
+        # ends once it has been read; without one the host is told to prompt.
+        text = " ".join(
+            block.get("text", "")
+            for block in message.get("params", {}).get("prompt", [])
+            if isinstance(block, dict)
+        )
+        if pending_prompt is None:
+            send({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "promptRequired", "reason": "noRunningTurn"}})
+        else:
+            send({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "injected"}})
+            complete_prompt(pending_prompt, text="steered: " + text)
+            pending_prompt = None
     elif method == "session/close":
         send({"jsonrpc": "2.0", "id": request_id, "result": {}})
     elif request_id == 99 and pending_prompt is not None:

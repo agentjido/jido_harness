@@ -958,13 +958,29 @@ pid_t start_child(CmdOptions& op, std::string& error)
     }
   }
 
+  // Complete the parent's group assignment before the child attempts its own.
+  // Concurrent setpgid calls can both fail on macOS during rapid startup.
+  int group_ready[2] = {-1, -1};
+  pid_t group_parent = getpid();
+  if (!op.pty_owns_group() && op.group() != std::numeric_limits<int>::max()) {
+    if (open_pipe(group_ready, "process group startup", err) < 0) {
+      if (group_ready[RD] >= 0) close(group_ready[RD]);
+      if (group_ready[WR] >= 0) close(group_ready[WR]);
+      error = err.c_str();
+      return -1;
+    }
+  }
+
   pid_t pid = fork();
 
   if (pid < 0) {
     error = strerror(errno);
+    if (group_ready[RD] >= 0) close(group_ready[RD]);
+    if (group_ready[WR] >= 0) close(group_ready[WR]);
     return pid;
   } else if (pid == 0) {
     // I am the child
+    if (group_ready[WR] >= 0) close(group_ready[WR]);
     if (op.pty()) {
       int fds;
 
@@ -1070,6 +1086,20 @@ pid_t start_child(CmdOptions& op, std::string& error)
 
     // PTY children that own their session/group already got it from setsid().
     if (!op.pty_owns_group() && op.group() != std::numeric_limits<int>::max()) {
+      // Closing the parent's write end releases this gate without a pipe write
+      // that could send SIGPIPE to the helper if the child has already failed.
+      char unused;
+      ssize_t ready;
+      do {
+        ready = read(group_ready[RD], &unused, 1);
+      } while (ready < 0 && errno == EINTR);
+      close(group_ready[RD]);
+      if (ready != 0 || getppid() != group_parent) {
+        err.write("Process group startup parent unavailable");
+        errno = EIO;
+        perror(err.c_str());
+        exit(EXIT_FAILURE);
+      }
       pid_t gid = op.group() ? op.group() : getpid();
       if (setpgid(0, gid) < 0) {
         int group_errno = errno;
@@ -1163,6 +1193,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
   }
 
   // I am the parent
+  if (group_ready[RD] >= 0) close(group_ready[RD]);
 
   #ifdef __APPLE__
   // Close the pre-opened slave fd; the child has inherited it and uses it directly.
@@ -1191,6 +1222,7 @@ pid_t start_child(CmdOptions& op, std::string& error)
           pid, gid, strerror(errno));
     else
       DEBUG(debug, "  Set group of pid %d to %d", pid, gid);
+    close(group_ready[WR]);
   }
 
   for (int i=STDIN_FILENO; i <= STDERR_FILENO; i++) {

@@ -71,7 +71,7 @@ defmodule Jido.Harness.MixProject do
       erlc_paths: ["vendor/erlexec/src"],
       erlc_include_path: "vendor/erlexec/include",
       erlc_options: [:debug_info, :warnings_as_errors],
-      compilers: [:harness_native] ++ Mix.compilers(),
+      compilers: native_compilers() ++ Mix.compilers(),
       test_ignore_filters: [&String.starts_with?(&1, "test/support/fixtures/")],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -190,13 +190,17 @@ defmodule Jido.Harness.MixProject do
     ]
   end
 
+  # The native process helper is not built for Windows: processes run through
+  # Jido.Harness.ProcessDriver.Port there.
+  defp native_compilers, do: if(match?({:win32, _name}, :os.type()), do: [], else: [:harness_native])
+
   defp elixirc_paths(:test), do: ["lib", "test/support/modules"]
   defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
     [
       # Runtime
-      {:zoi, ">= 0.17.1 and < 0.19.0"},
+      {:zoi, "~> 0.18.11"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:ex_mcp, "~> 1.3"},

@@ -5,12 +5,14 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   alias ExMCP.ACP.Client
   alias Jido.Harness.{ApprovalResponse, Error, Event, ID, TurnRequest}
   alias Jido.Harness.SessionAdapters.ACP.{ExMCPHandler, ExMCPTransport}
+  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge
 
   @startup_timeout 30_000
   @handler_flush_timeout 1_000
   @max_pending_update_markers 32
   @protocol_timeout_margin 5_000
   @maximum_protocol_timeout 4_294_967_295
+  @steer_timeout 10_000
 
   def start_link({request, context}), do: GenServer.start_link(__MODULE__, {request, context})
 
@@ -36,6 +38,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
        pending_prompt_result: nil,
        handler_flush_timer: nil,
        approvals: %{},
+       # the transport bridge, when the agent advertised ACP steering
+       steering: nil,
        closing?: false
      }}
   end
@@ -69,6 +73,34 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
     {:reply, :ok, %{state | active_turn_id: turn_id, prompt_task: task}}
   end
+
+  def handle_call({:steer, _request, _turn_id}, _from, %{steering: nil} = state),
+    do: {:reply, {:error, :unsupported}, state}
+
+  def handle_call({:steer, %TurnRequest{} = turn, turn_id}, from, %{active_turn_id: turn_id} = state)
+      when not is_nil(turn_id) do
+    params = %{
+      "sessionId" => state.provider_session_id,
+      "prompt" => prompt_blocks(turn, state.request.cwd),
+      # Never a turn of its own: one that the harness did not start would
+      # run unseen. Without a running turn the caller queues the input.
+      "_meta" => %{"steering" => %{"idleBehavior" => "promptRequired"}}
+    }
+
+    bridge = state.steering
+
+    # The agent answers once the input is in the turn; meanwhile this process
+    # keeps relaying the turn's updates.
+    {:ok, _pid} =
+      Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
+        result = Bridge.extension_request(bridge, "_session/steering", params, @steer_timeout)
+        GenServer.reply(from, steer_outcome(result))
+      end)
+
+    {:noreply, state}
+  end
+
+  def handle_call({:steer, _request, _turn_id}, _from, state), do: {:reply, {:error, :not_active}, state}
 
   def handle_call({:interrupt, requested}, _from, %{active_turn_id: turn_id} = state)
       when requested in [:active, turn_id] and not is_nil(turn_id) do
@@ -183,6 +215,11 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
      }}
   end
 
+  def handle_info({:acp_agent_meta, bridge, meta}, state) do
+    steering = if get_in(meta, ["steering", "supported"]) == true, do: bridge
+    {:noreply, %{state | steering: steering}}
+  end
+
   def handle_info({:acp_process_stderr, data}, state) do
     emit(state, :provider_event, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
     {:noreply, state}
@@ -265,6 +302,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       },
       event_listener: self(),
       protocol_version: 1,
+      max_frame_bytes: ExMCPTransport.max_frame_bytes(),
       initialize_timeout: @startup_timeout,
       pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
       handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)
@@ -363,10 +401,17 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp open_session(client, request) do
     options = [mcp_servers: mcp_servers(request.mcp_config)]
 
-    if is_binary(request.provider_session_id) do
-      Client.load_session(client, request.provider_session_id, request.cwd, options)
-    else
-      Client.new_session(client, request.cwd, options)
+    cond do
+      is_binary(request.fork_session_id) ->
+        # `session/fork` is still unstable in ACP; the client refuses it for an
+        # agent that does not advertise `sessionCapabilities.fork`.
+        Client.fork_session(client, request.fork_session_id, request.cwd, options)
+
+      is_binary(request.provider_session_id) ->
+        Client.load_session(client, request.provider_session_id, request.cwd, options)
+
+      true ->
+        Client.new_session(client, request.cwd, options)
     end
   end
 
@@ -493,6 +538,13 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
     %{state | pending_updates: pending_updates, pending_prompt_result: nil, handler_flush_timer: nil}
   end
+
+  # "startedNewTurn" is the agent's answer when the turn ended as the input
+  # arrived and it ignores `idleBehavior`: the input is read all the same.
+  defp steer_outcome({:ok, %{"outcome" => outcome}}) when outcome in ["injected", "startedNewTurn"], do: :ok
+  defp steer_outcome({:ok, %{"outcome" => "promptRequired"}}), do: {:error, :no_active_turn}
+  defp steer_outcome({:ok, result}), do: {:error, {:steering_failed, result}}
+  defp steer_outcome({:error, reason}), do: {:error, {:steering_failed, reason}}
 
   defp error_message(%{"message" => message}) when is_binary(message), do: message
   defp error_message(%{message: message}) when is_binary(message), do: message

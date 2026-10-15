@@ -5,7 +5,7 @@ defmodule Jido.Harness.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      %{id: :jido_harness_exec_app, start: {:jido_harness_exec_app, :start, [:normal, []]}, type: :supervisor},
+      native_process_engine(:os.type()),
       {Registry, keys: :unique, name: Jido.Harness.ProcessRegistry},
       {Registry, keys: :unique, name: Jido.Harness.RunRegistry},
       {Registry, keys: :unique, name: Jido.Harness.SessionRegistry},
@@ -18,6 +18,13 @@ defmodule Jido.Harness.Application do
       Jido.Harness.Retention
     ]
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: Jido.Harness.Supervisor)
+    Supervisor.start_link(List.flatten(children), strategy: :one_for_one, name: Jido.Harness.Supervisor)
   end
+
+  # The native helper is not built for Windows, where processes run through
+  # Jido.Harness.ProcessDriver.Port.
+  defp native_process_engine({:win32, _name}), do: []
+
+  defp native_process_engine(_os),
+    do: %{id: :jido_harness_exec_app, start: {:jido_harness_exec_app, :start, [:normal, []]}, type: :supervisor}
 end

@@ -44,6 +44,10 @@ defmodule Jido.Harness.SessionAdapters.ACP do
     do: Jido.Harness.SessionAdapter.call(handle, {:send, request, turn_id})
 
   @impl true
+  def steer(handle, request, turn_id),
+    do: Jido.Harness.SessionAdapter.call(handle, {:steer, request, turn_id})
+
+  @impl true
   def interrupt(handle, turn_id),
     do: Jido.Harness.SessionAdapter.call(handle, {:interrupt, turn_id})
 
