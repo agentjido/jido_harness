@@ -78,6 +78,20 @@ Finite request precedence is:
 `cli_path` selects the base CLI for readiness checks. `acp_path` selects the
 executable that performs model work.
 
+## `:acp_max_frame_bytes`
+
+```elixir
+config :jido_harness, :acp_max_frame_bytes, 128 * 1_024 * 1_024
+```
+
+The largest ACP message, in bytes, that the harness reads from an agent;
+the default is 1 MiB. An ACP message is one line of JSON, and an image
+travels inside one as base64: a prompt with a screenshot attached, or a tool
+result that read one, can exceed the default, which ends the session.
+Applications that send or read images should raise it. The limit stays in
+place so that an agent that never ends its line cannot make the harness hold
+unbounded output.
+
 ## `:process_manager`
 
 ```elixir
@@ -109,11 +123,18 @@ Per-resource retention can set `journal_dir`, `memory_bytes`, `segment_bytes`,
 and `disk_limit_bytes`. Per-resource values override process-manager journal
 defaults. Memory defaults to 1 MiB.
 
-## Test-only process driver
+## Process driver
+
+The harness starts provider processes through the bundled native engine,
+except on Windows, where that engine is not built: there it uses a driver
+that runs processes through an Erlang port. `.cmd` and `.bat` executables,
+which is how npm installs commands, are started through the command
+interpreter. A port has no pseudo-terminal, does
+not capture standard error separately and cannot close standard input on its
+own; signals end the process and its children.
 
 The `:process_driver` key replaces the subprocess driver and exists for
-deterministic tests. Production applications should use the default native process
-driver.
+deterministic tests. Production applications should use the default driver.
 
 ## Runtime environment
 

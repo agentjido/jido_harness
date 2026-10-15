@@ -27,6 +27,27 @@ Starting returns a worker ID before ACP initialization finishes. The info
 call can wait for startup and confirms the idle state before input. A startup
 failure leaves a terminal session with its error and retained events.
 
+## Resume or fork a provider conversation
+
+A session request with `provider_session_id` loads that provider
+conversation (ACP `session/load`) and continues it. A request with
+`fork_session_id` opens a new, independent conversation that starts as a copy
+of that one (ACP `session/fork`):
+
+```elixir
+{:ok, side_id} =
+  Jido.Harness.Session.start(:claude, %{
+    cwd: File.cwd!(),
+    fork_session_id: info.provider_session_id
+  })
+```
+
+The original conversation is untouched, so the copy can answer a side
+question or try an alternative without disturbing it. `session/fork` is still
+unstable in ACP: the ACP client refuses an agent that does not advertise
+`sessionCapabilities.fork`. A request cannot give both `provider_session_id`
+and `fork_session_id`.
+
 ## Send an idle turn
 
 ```elixir
@@ -100,8 +121,49 @@ Unsupported interactions return a normalized capability error before provider
 dispatch. Do not infer native support from the existence of a public function.
 The selected `ACPAgentSpec.capabilities` value is authoritative.
 
-`steer/3` is unavailable in the current ACP path. Use `follow_up/3` for queued
-input, or interrupt the active turn before sending a new idle message.
+### Steer an active turn
+
+`steer/3` adds input to the turn that is running instead of queueing a new
+turn behind it:
+
+```elixir
+input = "Use the staging database instead"
+
+case Jido.Harness.Session.steer(session_id, input) do
+  {:ok, turn_id} ->
+    {:joined, turn_id}
+
+  # nothing was sent: the turn had already ended, or the agent cannot steer
+  {:error, :no_active_turn} ->
+    Jido.Harness.Session.follow_up(session_id, input)
+
+  {:error, %Jido.Harness.Error{details: %{capability: :steer}}} ->
+    Jido.Harness.Session.follow_up(session_id, input)
+end
+```
+
+It works for an ACP agent that advertises steering in its `initialize`
+response (`_meta.steering.supported`), such as claude-agent-acp 0.70 and
+codex-acp 1.6.2. The harness sends the extension request `_session/steering`
+and returns the id of the turn the input joined. That turn still ends once,
+after the agent has read the input.
+
+The request never starts a turn of its own (`idleBehavior:
+"promptRequired"`): when the turn has just ended, `steer/3` returns
+`{:error, :no_active_turn}` and nothing was sent, so the caller can queue the
+input with `follow_up/3`. For an agent without steering, `steer/3` returns the
+normalized capability error; queue the input, or interrupt the active turn and
+send it as a new message.
+
+### Approvals between turns
+
+Some agents ask permission outside a turn: a tool started in the background
+can need approval after the turn that started it has ended. While the session
+is idle, such a request (one without a turn id) is emitted as
+`:approval_requested` and answered with `respond_approval/3` like any other.
+Once it is answered or times out, the session is idle again and starts any
+queued follow-up. A request naming a turn that has already ended is still
+denied.
 
 For application approval rules, see the tested
 [policy job recipe](recipes/policy_jobs.md). Set a finite approval timeout so
