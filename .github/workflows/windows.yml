@@ -34,8 +34,8 @@ jobs:
       - run: mix compile
 
       - name: The port driver and an ACP session through it
-        run: mix test test/jido_harness/port_process_driver_test.exs test/jido_harness/port_acp_session_test.exs
+        run: mix test --no-cover test/jido_harness/port_process_driver_test.exs test/jido_harness/port_acp_session_test.exs
 
       - name: The whole suite (for information)
         continue-on-error: true
-        run: mix test
+        run: mix test --no-cover
