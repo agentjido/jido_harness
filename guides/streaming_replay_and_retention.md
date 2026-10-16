@@ -119,6 +119,13 @@ It does not disable future writes. Later replay calls retry the disk journal.
 A cursor before the memory tail receives a replay-gap event. Healthy disk
 replay always reads the redacted records from disk.
 
+The internal ACP reader uses a separate demand-based memory stream. A read
+waits for the next process event without polling or reading a journal. This
+path preserves the original protocol bytes. Disk redaction must not change
+messages sent to the ACP client. A slow internal reader that falls behind the
+process memory buffer receives a gap, and the transport fails explicitly.
+Public process replay continues to use the redacted journal.
+
 ## Pruning
 
 Explicit `prune/1` removes a terminal resource and its journal. The retention

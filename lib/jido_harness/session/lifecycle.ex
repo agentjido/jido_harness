@@ -78,7 +78,7 @@ defmodule Jido.Harness.Session.Lifecycle do
       provider: state.provider,
       provider_session_id: state.provider_session_id,
       status: status,
-      text: text.data,
+      text: Jido.Harness.TextTail.text(text),
       text_truncated?: text.truncated?,
       usage: active.usage,
       events: Enum.filter(Buffer.events(state.buffer), &(&1.turn_id == active.id)),
@@ -94,12 +94,13 @@ defmodule Jido.Harness.Session.Lifecycle do
       state
       | active: nil,
         status: if(continue_session?, do: :idle, else: :closing),
-        results: Map.put(state.results, active.id, result),
         pending_approvals: %{},
         turn_runtime_timer: nil,
         turn_idle_timer: nil,
         waiters: waiters
     }
+
+    state = retain_result(state, result)
 
     if continue_session? do
       state =
@@ -203,8 +204,12 @@ defmodule Jido.Harness.Session.Lifecycle do
       event.turn_id != active_turn_id or stale_turn_event?(state, event) or
         (is_nil(active_turn_id) and state.status not in [:idle, :awaiting_approval])
 
-    if stale do
-      _ = deny_approval(state, request_id, "stale approval request")
+    full =
+      not Map.has_key?(state.pending_approvals, request_id) and
+        map_size(state.pending_approvals) >= state.request.max_pending_approvals
+
+    if stale or full do
+      _ = deny_approval(state, request_id, if(full, do: "approval limit reached", else: "stale approval request"))
 
       EventStore.append(
         state,
@@ -212,7 +217,10 @@ defmodule Jido.Harness.Session.Lifecycle do
           type: :provider_event,
           provider: state.provider,
           request_id: request_id,
-          payload: %{"kind" => "stale_approval_denied", "turn_id" => event.turn_id}
+          payload: %{
+            "kind" => if(full, do: "approval_limit_reached", else: "stale_approval_denied"),
+            "turn_id" => event.turn_id
+          }
         )
       )
     else
@@ -231,7 +239,15 @@ defmodule Jido.Harness.Session.Lifecycle do
     case :queue.out(state.queue) do
       {{:value, {turn_id, request}}, queue} ->
         active = ActiveTurn.new(turn_id, request, state.buffer.max_bytes)
-        state = %{state | queue: queue, active: active, status: :running}
+
+        state = %{
+          state
+          | queue: queue,
+            queued_bytes: max(0, state.queued_bytes - :erlang.external_size(request)),
+            active: active,
+            status: :running
+        }
+
         state = finish_turn(state, :turn_interrupted, %{"reason" => reason}, nil, nil, false)
         cancel_queued(%{state | status: :closing}, reason)
 
@@ -293,9 +309,36 @@ defmodule Jido.Harness.Session.Lifecycle do
     do: Error.execution("interactive session failed", provider: state.provider, cause: reason)
 
   defp stale_turn_event?(state, %Event{turn_id: turn_id}) when is_binary(turn_id),
-    do: Map.has_key?(state.results, turn_id)
+    do: is_nil(state.active) or state.active.id != turn_id
 
   defp stale_turn_event?(_state, _event), do: false
+
+  defp retain_result(state, result) do
+    bytes = :erlang.external_size(result)
+
+    trim_results(%{
+      state
+      | results: Map.put(state.results, result.turn_id, result),
+        result_order: :queue.in({result.turn_id, bytes}, state.result_order),
+        result_bytes: state.result_bytes + bytes
+    })
+  end
+
+  defp trim_results(state) do
+    if map_size(state.results) > state.request.max_retained_turns or state.result_bytes > state.request.max_result_bytes do
+      {{:value, {id, bytes}}, order} = :queue.out(state.result_order)
+
+      trim_results(%{
+        state
+        | results: Map.delete(state.results, id),
+          result_order: order,
+          result_bytes: state.result_bytes - bytes,
+          known_turns: MapSet.delete(state.known_turns, id)
+      })
+    else
+      state
+    end
+  end
 
   defp error_message(%Error{message: message}), do: message
   defp error_message(reason), do: inspect(reason)

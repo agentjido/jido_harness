@@ -10,12 +10,17 @@ defmodule Jido.Harness.Redaction do
   @bearer ~r/\b[Bb][Ee][Aa][Rr][Ee][Rr]\s+[^\s,;]+/
   @sensitive_key ~r/(^|_)(authorization|cookie|credential|password|secret|token|api_?key)($|_)/i
 
+  @type prepared :: {:harness_redaction, [String.t()]}
+
+  @doc false
+  @spec prepare([String.t()]) :: prepared()
+  def prepare(extra_secrets), do: {:harness_redaction, normalize_secrets(extra_secrets ++ system_secrets())}
+
   @doc "Removes sensitive fields and replaces known secret strings in nested values."
-  @spec redact(term(), [String.t()]) :: term()
-  def redact(value, extra_secrets \\ []) do
-    secrets = normalize_secrets(extra_secrets ++ system_secrets())
-    do_redact(value, secrets)
-  end
+  @spec redact(term(), [String.t()] | prepared()) :: term()
+  def redact(value, extra_secrets \\ [])
+  def redact(value, {:harness_redaction, secrets}), do: do_redact(value, secrets)
+  def redact(value, extra_secrets), do: redact(value, prepare(extra_secrets))
 
   @doc "Collects secret strings from environment keys that match sensitive names."
   @spec secrets_from_env(map()) :: [String.t()]

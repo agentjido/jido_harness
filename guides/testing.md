@@ -194,6 +194,34 @@ The suite uses temporary journal directories and removes them after each test.
 Use the replay telemetry event to measure work in a running application. See
 the [telemetry reference](reference/telemetry.md).
 
+## Harness load without CLI processes
+
+```console
+mix test --no-cover --include load test/jido_harness/harness_load_test.exs
+```
+
+This suite uses synthetic ACP frames, BEAM tasks, and temporary journals. It
+starts no CLI process and makes no network or model request. It checks:
+
+- one-byte frame fragments and text deltas at increasing sizes;
+- 5,000 frames with a slow reader, bounded queue bytes, and ordered delivery;
+- closing a paused reader;
+- 2,000 completed turns with fixed result and event budgets;
+- cleanup of 1,000 and 10,000 waiting callers;
+- event encoding and secret removal at 1 KiB and 16 KiB payload sizes;
+- 3,000 live process events through a BEAM driver with no journal replay.
+
+Set `HARNESS_LOAD_BYTES` to increase the largest fragmentation input. The
+default is 262,144 bytes. Reduction counts check work growth without a fixed
+time threshold. Each `harness_load` JSON line reports the scenario, elapsed
+microseconds, reductions, and relevant byte or count limits. These values
+describe the measured process and retained data, not total VM memory.
+CI runs this suite and the journal load suite on Linux and macOS.
+
+The default unit suite checks the direct ACP read path with a BEAM process
+driver. It checks original wire bytes, no journal replay, terminal delivery,
+gap reporting, and cleanup after a waiting caller exits.
+
 ## Release verification
 
 Run deterministic checks for every change. For an adapter change, also run

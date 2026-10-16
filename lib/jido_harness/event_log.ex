@@ -26,17 +26,18 @@ defmodule Jido.Harness.EventLog do
   def new_buffer(memory_bytes), do: Buffer.new(memory_bytes)
 
   @doc "Retains the original event in memory and writes a redacted copy without raw data."
-  @spec append(Buffer.t(), Journal.t() | nil, term(), [String.t()]) :: {Buffer.t(), Journal.t() | nil}
+  @spec append(Buffer.t(), Journal.t() | nil, term(), [String.t()] | Redaction.prepared()) ::
+          {Buffer.t(), Journal.t() | nil}
   def append(buffer, journal, event, secrets \\ []) do
-    persisted = event |> Map.from_struct() |> Map.put(:raw, nil) |> Redaction.redact(secrets)
-
     journal =
       case journal do
         nil ->
           nil
 
         journal ->
-          case Journal.append(journal, persisted) do
+          persisted = event |> Map.from_struct() |> Map.put(:raw, nil)
+
+          case Journal.append(journal, persisted, secrets) do
             {:ok, updated} -> updated
             {:error, _reason, updated} -> updated
           end

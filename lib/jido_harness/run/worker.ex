@@ -35,6 +35,7 @@ defmodule Jido.Harness.RunWorker do
       id: id,
       provider: provider,
       request: request,
+      secrets: Jido.Harness.Redaction.prepare(Jido.Harness.Redaction.secrets_from_env(request.env)),
       adapter: adapter,
       acp_agent: acp_agent,
       session_request: session_request,
@@ -243,8 +244,7 @@ defmodule Jido.Harness.RunWorker do
 
   defp append(state, %Event{} = event) do
     event = Event.attach(event, state.id, state.provider, state.sequence + 1)
-    secrets = Jido.Harness.Redaction.secrets_from_env(state.request.env)
-    {buffer, journal} = EventLog.append(state.buffer, state.journal, event, secrets)
+    {buffer, journal} = EventLog.append(state.buffer, state.journal, event, state.secrets)
 
     :telemetry.execute([:jido, :harness, :run, :event], %{count: 1}, %{
       run_id: state.id,
@@ -319,7 +319,7 @@ defmodule Jido.Harness.RunWorker do
       provider: state.provider,
       provider_session_id: state.provider_session_id,
       status: status,
-      text: text.data,
+      text: Jido.Harness.TextTail.text(text),
       text_truncated?: text.truncated?,
       structured_output: state.structured_output,
       usage: state.usage,

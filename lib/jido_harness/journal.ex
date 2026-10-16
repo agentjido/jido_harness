@@ -60,21 +60,22 @@ defmodule Jido.Harness.Journal do
   end
 
   @doc "Writes a redacted JSON record, rotates segments, and enforces retention limits."
-  @spec append(t(), map()) :: {:ok, t()} | {:error, term(), t()}
-  def append(%__MODULE__{failed?: true} = state, _record), do: {:error, :journal_unavailable, state}
+  @spec append(t(), map(), [String.t()] | Redaction.prepared()) :: {:ok, t()} | {:error, term(), t()}
+  def append(state, record, secrets \\ [])
+  def append(%__MODULE__{failed?: true} = state, _record, _secrets), do: {:error, :journal_unavailable, state}
 
-  def append(%__MODULE__{} = state, record) when is_map(record) do
+  def append(%__MODULE__{} = state, record, secrets) when is_map(record) do
     sequence = Map.get(record, :sequence, Map.get(record, "sequence"))
 
     if is_integer(sequence) and sequence > state.latest_sequence do
-      append_record(state, record, sequence)
+      append_record(state, record, sequence, secrets)
     else
       {:error, :invalid_sequence, state}
     end
   end
 
-  defp append_record(state, record, sequence) do
-    with {:ok, json} <- Jason.encode(record |> Redaction.redact() |> sanitize()),
+  defp append_record(state, record, sequence, secrets) do
+    with {:ok, json} <- Jason.encode(record |> Redaction.redact(secrets) |> sanitize()),
          line = json <> "\n",
          {:ok, state} <- maybe_rotate(state, byte_size(line)),
          :ok <- File.write(state.path, line, [:append, :binary]) do

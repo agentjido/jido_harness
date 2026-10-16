@@ -75,6 +75,45 @@ defmodule Jido.Harness.ProcessManager do
     end
   end
 
+  @doc false
+  def live_stream_process(id) do
+    with {:ok, _info} <- info_process(id) do
+      {:ok,
+       Stream.resource(
+         fn -> 0 end,
+         fn
+           :done -> {:halt, :done}
+           cursor -> live_batch(id, cursor)
+         end,
+         fn _ -> :ok end
+       )}
+    end
+  end
+
+  defp live_batch(id, cursor) do
+    case call(id, {:live_output, cursor, 100}) do
+      {:ok, events} ->
+        {events, List.last(events).sequence}
+
+      :eof ->
+        {:halt, :done}
+
+      {:gap, available_from} ->
+        gap = %Jido.Harness.ProcessEvent{
+          process_id: id,
+          sequence: max(1, available_from - 1),
+          timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
+          type: :replay_gap,
+          data: %{"available_from" => available_from}
+        }
+
+        {[gap], :done}
+
+      {:error, reason} ->
+        exit({:live_output, reason})
+    end
+  end
+
   @doc "Waits for termination without cancelling the process when the wait times out."
   def await_process(id, timeout \\ :infinity) do
     with :ok <- Jido.Harness.Validation.await_timeout(timeout) do
@@ -127,7 +166,7 @@ defmodule Jido.Harness.ProcessManager do
         try do
           GenServer.call(pid, message, :infinity)
         catch
-          :exit, {:noproc, _} -> {:error, :not_found}
+          :exit, {reason, _} when reason in [:noproc, :normal, :shutdown] -> {:error, :not_found}
         end
 
       [] ->

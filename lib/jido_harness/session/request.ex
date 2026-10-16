@@ -27,7 +27,12 @@ defmodule Jido.Harness.SessionRequest do
     :turn_idle_timeout_ms,
     :session_idle_timeout_ms,
     :approval_timeout_ms,
-    :retention
+    :retention,
+    :max_queued_turns,
+    :max_queued_bytes,
+    :max_retained_turns,
+    :max_result_bytes,
+    :max_pending_approvals
   ]
 
   @schema Zoi.struct(
@@ -55,7 +60,12 @@ defmodule Jido.Harness.SessionRequest do
               turn_idle_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity),
               session_idle_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity),
               approval_timeout_ms: Zoi.union([Zoi.integer(), Zoi.literal(:infinity)]) |> Zoi.default(:infinity),
-              retention: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{})
+              retention: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{}),
+              max_queued_turns: Zoi.integer() |> Zoi.default(128),
+              max_queued_bytes: Zoi.integer() |> Zoi.default(4_194_304),
+              max_retained_turns: Zoi.integer() |> Zoi.default(100),
+              max_result_bytes: Zoi.integer() |> Zoi.default(4_194_304),
+              max_pending_approvals: Zoi.integer() |> Zoi.default(128)
             },
             coerce: true
           )
@@ -122,6 +132,13 @@ defmodule Jido.Harness.SessionRequest do
     ]
 
     cond do
+      field =
+          Enum.find(
+            [:max_queued_turns, :max_queued_bytes, :max_retained_turns, :max_result_bytes, :max_pending_approvals],
+            fn field -> Map.has_key?(attrs, field) and not (is_integer(attrs[field]) and attrs[field] > 0) end
+          ) ->
+        {:error, Jido.Harness.Error.validation("#{field} must be a positive integer")}
+
       field = Enum.find(timeout_fields, &invalid_timeout?(Map.get(attrs, &1, :infinity))) ->
         {:error, Jido.Harness.Error.validation("#{field} must be :infinity or a positive integer")}
 

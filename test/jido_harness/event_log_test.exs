@@ -1,7 +1,7 @@
 defmodule Jido.Harness.EventLogTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.{Buffer, EventLog, Journal}
+  alias Jido.Harness.{Buffer, Event, EventLog, Journal, Redaction}
 
   setup do
     base = Path.join(System.tmp_dir!(), "jido-harness-event-log-#{System.unique_integer([:positive])}")
@@ -46,5 +46,22 @@ defmodule Jido.Harness.EventLogTest do
     %{journal: journal} = context
     buffer = Buffer.append(Buffer.new(1_000), %{sequence: 6, raw: "memory only"})
     assert {[%{"raw" => nil, "sequence" => 6}], _journal, 1} = EventLog.replay(buffer, journal, 5, 1)
+  end
+
+  test "prepared secrets redact nested persistence once and preserve memory originals", %{journal: journal} do
+    event =
+      Event.new!(
+        type: :output_text_delta,
+        provider: :test,
+        sequence: 7,
+        payload: %{"text" => "request-secret-value", "nested" => [%{"password" => "private"}]},
+        raw: %{"wire" => "raw secret"}
+      )
+
+    secrets = Redaction.prepare(["request-secret-value", "request-secret-value"])
+    {buffer, journal} = EventLog.append(Buffer.new(10_000), journal, event, secrets)
+    assert Buffer.events(buffer) == [event]
+    assert {[%{"raw" => nil, "payload" => payload}], _journal} = Journal.replay(journal, 6, 1)
+    assert payload == %{"text" => "[REDACTED]", "nested" => [%{"password" => "[REDACTED]"}]}
   end
 end

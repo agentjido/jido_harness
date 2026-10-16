@@ -93,6 +93,25 @@ place so that an agent that never ends its line cannot make the harness hold
 unbounded output. It also applies to steering requests. An oversized steering
 request is refused before dispatch, and the current turn remains usable.
 
+## `:acp_max_buffer_bytes`
+
+The complete ACP frame queue has a byte limit. The default is the larger of
+4 MiB and four times `:acp_max_frame_bytes`. The count includes each frame's
+bytes plus a 64-byte allowance for queue entries. A configured value must be
+at least four times the frame limit; a smaller or invalid value uses the
+default. Partial frames have the separate frame limit.
+
+The reader pauses when the complete frame queue reaches half the limit. It
+resumes when the queue falls to one quarter. Send, close, and cancellation
+requests remain available while the reader is paused. Output that exceeds
+the process memory buffer produces an explicit `output_gap` transport failure.
+Set process `retention.memory_bytes` for the largest expected output burst.
+This bounds retained output; it does not limit the operating system producer's
+mailbox traffic.
+
+Session requests also have queue, result, and approval limits. See
+[interactive sessions](../interactive_sessions.md#queue-follow-up-turns).
+
 ## `:process_manager`
 
 ```elixir

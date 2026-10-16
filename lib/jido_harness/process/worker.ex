@@ -25,6 +25,7 @@ defmodule Jido.Harness.ProcessWorker do
     state = %{
       id: id,
       spec: spec,
+      secrets: Redaction.prepare(Redaction.secrets_from_env(spec.env)),
       driver: Application.get_env(:jido_harness, :process_driver) || Jido.Harness.ProcessDriver.default(),
       exec_pid: nil,
       os_pid: nil,
@@ -48,6 +49,7 @@ defmodule Jido.Harness.ProcessWorker do
       exit_drain_deadline_token: nil,
       exit_reason: nil,
       waiters: %{},
+      output_waiter: nil,
       cancel_grace_ms: Map.get(manager_config, :cancel_grace_ms, @default_grace_ms),
       term_grace_ms: Map.get(manager_config, :term_grace_ms, @default_grace_ms),
       output_drain_ms: bounded_output_drain_ms(Map.get(manager_config, :output_drain_ms, @default_output_drain_ms))
@@ -87,6 +89,30 @@ defmodule Jido.Harness.ProcessWorker do
     {records, state} = replay_records(state, cursor, limit)
     events = Enum.map(records, &record_to_event(state.id, &1))
     {:reply, {:ok, events}, state}
+  end
+
+  def handle_call({:live_output, _cursor, _limit}, _from, %{output_waiter: waiter} = state)
+      when not is_nil(waiter),
+      do: {:reply, {:error, :reader_busy}, state}
+
+  def handle_call({:live_output, cursor, limit}, from, state) do
+    cond do
+      cursor < state.sequence ->
+        events = state.buffer |> Buffer.events() |> Enum.filter(&(&1.sequence > cursor)) |> Enum.take(limit)
+
+        case events do
+          [first | _] when first.sequence == cursor + 1 -> {:reply, {:ok, events}, state}
+          [first | _] -> {:reply, {:gap, first.sequence}, state}
+          [] -> {:reply, {:gap, state.sequence + 1}, state}
+        end
+
+      state.status in @terminal_statuses ->
+        {:reply, :eof, state}
+
+      true ->
+        monitor = Process.monitor(elem(from, 0))
+        {:noreply, %{state | output_waiter: {from, monitor}}}
+    end
   end
 
   def handle_call({:input, data}, _from, %{status: :running, exit_drain_token: nil} = state) do
@@ -175,7 +201,13 @@ defmodule Jido.Harness.ProcessWorker do
   end
 
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, state) do
-    {:noreply, %{state | waiters: Waiters.drop_monitor(state.waiters, monitor)}}
+    state =
+      case state.output_waiter do
+        {_from, ^monitor} -> %{state | output_waiter: nil}
+        _ -> %{state | waiters: Waiters.drop_monitor(state.waiters, monitor)}
+      end
+
+    {:noreply, state}
   end
 
   def handle_info({:escalate, :sigterm}, %{status: :stopping, exit_drain_token: nil} = state) do
@@ -210,15 +242,25 @@ defmodule Jido.Harness.ProcessWorker do
       metadata: %{}
     }
 
-    journal = append_journal(state.journal, event, Redaction.secrets_from_env(state.spec.env))
+    journal = append_journal(state.journal, event, state.secrets)
     :telemetry.execute([:jido, :harness, :process, type], %{count: 1}, %{process_id: state.id})
+
     %{state | sequence: sequence, buffer: Buffer.append(state.buffer, event), journal: journal}
+    |> deliver_output(event)
+  end
+
+  defp deliver_output(%{output_waiter: nil} = state, _event), do: state
+
+  defp deliver_output(%{output_waiter: {from, monitor}} = state, event) do
+    Process.demonitor(monitor, [:flush])
+    GenServer.reply(from, {:ok, [event]})
+    %{state | output_waiter: nil}
   end
 
   defp append_journal(nil, _event, _secrets), do: nil
 
   defp append_journal(journal, event, secrets) do
-    case Journal.append(journal, event |> Map.from_struct() |> Redaction.redact(secrets)) do
+    case Journal.append(journal, Map.from_struct(event), secrets) do
       {:ok, updated} -> updated
       {:error, _reason, updated} -> updated
     end
