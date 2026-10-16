@@ -59,7 +59,9 @@ for changes from the old direct-Codex contract.
 ## Redaction
 
 Jido.Harness redacts structured sensitive fields, bearer credentials, and
-configured credential environment values before journal persistence.
+configured credential environment values before any replay storage or fallback.
+The separate internal ACP stream preserves original protocol bytes. Result
+objects keep their existing policy.
 Environment values and complete process specifications are not journaled.
 
 Redaction is defense in depth, not authorization. Arbitrary secrets embedded in

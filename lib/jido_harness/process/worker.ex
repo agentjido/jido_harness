@@ -2,7 +2,7 @@ defmodule Jido.Harness.ProcessWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, EventLog, Journal, ProcessEvent, ProcessInfo, Redaction, Waiters}
+  alias Jido.Harness.{Buffer, EventLog, ProcessEvent, ProcessInfo, Redaction, Waiters}
 
   @default_grace_ms 5_000
   @default_output_drain_ms 50
@@ -20,7 +20,7 @@ defmodule Jido.Harness.ProcessWorker do
     now = timestamp()
     manager_config = Application.get_env(:jido_harness, :process_manager, %{}) |> Map.new()
     memory_bytes = Map.get(spec.retention, :memory_bytes, Map.get(manager_config, :memory_bytes, 1_048_576))
-    journal = open_journal(id, spec.retention)
+    event_log = EventLog.open(:process, id, Map.put_new(spec.retention, :memory_bytes, memory_bytes))
 
     state = %{
       id: id,
@@ -36,7 +36,7 @@ defmodule Jido.Harness.ProcessWorker do
       error: nil,
       sequence: 0,
       buffer: Buffer.new(memory_bytes),
-      journal: journal,
+      event_log: event_log,
       runtime_timer: nil,
       runtime_token: nil,
       idle_timer: nil,
@@ -86,9 +86,14 @@ defmodule Jido.Harness.ProcessWorker do
     do: {:noreply, %{state | waiters: Waiters.add(state.waiters, request_ref, from)}}
 
   def handle_call({:replay, cursor, limit}, _from, state) do
-    {records, state} = replay_records(state, cursor, limit)
-    events = Enum.map(records, &record_to_event(state.id, &1))
+    {events, state} = replay_records(state, cursor, limit)
     {:reply, {:ok, events}, state}
+  end
+
+  def handle_call({:replay_page, cursor, limits}, _from, state) do
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes)
+    page = %{page | records: Enum.map(page.records, &record_to_event(state.id, &1))}
+    {:reply, {:ok, page}, %{state | event_log: event_log}}
   end
 
   def handle_call({:live_output, _cursor, _limit}, _from, %{output_waiter: waiter} = state)
@@ -142,8 +147,10 @@ defmodule Jido.Harness.ProcessWorker do
   def handle_call(:kill, _from, state), do: {:reply, :ok, state}
 
   def handle_call(:prune, _from, state) when state.status in [:exited, :failed, :cancelled, :timed_out] do
-    if state.journal, do: Journal.remove(state.journal)
-    {:stop, :normal, :ok, state}
+    case EventLog.remove(state.event_log) do
+      :ok -> {:stop, :normal, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
@@ -226,7 +233,7 @@ defmodule Jido.Harness.ProcessWorker do
   @impl true
   def terminate(_reason, state) do
     if state.status in [:starting, :running, :stopping], do: signal(state, :sigkill)
-    :ok
+    EventLog.close(state.event_log)
   end
 
   defp append(state, type, stream, data) do
@@ -242,10 +249,10 @@ defmodule Jido.Harness.ProcessWorker do
       metadata: %{}
     }
 
-    journal = append_journal(state.journal, event, state.secrets)
+    {buffer, event_log} = EventLog.append(state.buffer, state.event_log, event, state.secrets)
     :telemetry.execute([:jido, :harness, :process, type], %{count: 1}, %{process_id: state.id})
 
-    %{state | sequence: sequence, buffer: Buffer.append(state.buffer, event), journal: journal}
+    %{state | sequence: sequence, buffer: buffer, event_log: event_log}
     |> deliver_output(event)
   end
 
@@ -257,34 +264,25 @@ defmodule Jido.Harness.ProcessWorker do
     %{state | output_waiter: nil}
   end
 
-  defp append_journal(nil, _event, _secrets), do: nil
-
-  defp append_journal(journal, event, secrets) do
-    case Journal.append(journal, Map.from_struct(event), secrets) do
-      {:ok, updated} -> updated
-      {:error, _reason, updated} -> updated
-    end
-  end
-
   defp replay_records(state, cursor, limit) do
-    {records, journal, available_from} = EventLog.replay(state.buffer, state.journal, cursor, limit)
-    {prepend_gap(records, state.id, cursor, available_from), %{state | journal: journal}}
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limit)
+    events = EventLog.events(page, &record_to_event(state.id, &1), &gap_event(state.id, &1))
+    {events, %{state | event_log: event_log}}
   end
 
-  defp prepend_gap(records, _id, cursor, available_from) when cursor >= available_from - 1, do: records
-
-  defp prepend_gap(records, id, _cursor, available_from) do
-    gap = %{
-      "process_id" => id,
-      "sequence" => max(1, available_from - 1),
-      "timestamp" => timestamp(),
-      "type" => "replay_gap",
-      "stream" => nil,
-      "data" => %{"available_from" => available_from},
-      "metadata" => %{}
+  defp gap_event(id, gap) do
+    %ProcessEvent{
+      process_id: id,
+      sequence: gap.to,
+      timestamp: timestamp(),
+      type: :replay_gap,
+      data: %{
+        "available_from" => gap.to + 1,
+        "from_sequence" => gap.from,
+        "to_sequence" => gap.to,
+        "reason" => Atom.to_string(gap.reason)
+      }
     }
-
-    [gap | records]
   end
 
   defp record_to_event(_id, %ProcessEvent{} = event), do: event
@@ -431,7 +429,8 @@ defmodule Jido.Harness.ProcessWorker do
       os_pid: state.os_pid,
       exit_status: state.exit_status,
       error: state.error,
-      journal_dir: if(state.journal, do: state.journal.dir),
+      journal_dir: EventLog.dir(state.event_log),
+      replay_store: EventLog.info(state.event_log),
       output_cursor: state.sequence,
       metadata: state.spec.metadata
     }
@@ -456,17 +455,6 @@ defmodule Jido.Harness.ProcessWorker do
     end
   rescue
     _error -> status
-  end
-
-  defp open_journal(id, retention) do
-    case Journal.open(id, retention) do
-      {:ok, journal} ->
-        journal
-
-      {:error, reason} ->
-        :telemetry.execute([:jido, :harness, :journal, :error], %{count: 1}, %{owner_id: id, reason: reason})
-        nil
-    end
   end
 
   defp monitor_owner(owner) when is_pid(owner), do: Process.monitor(owner)

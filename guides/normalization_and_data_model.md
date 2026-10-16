@@ -86,7 +86,8 @@ original JSON bytes. For a native ACP provider, the message comes from that
 provider. For a separate ACP adapter, it comes from the adapter after
 translation. Native fields the adapter omits are unavailable.
 
-Raw messages are not persisted. Journal-backed replay returns `raw: nil`.
+Raw messages are excluded from every replay store and fallback. Public replay
+returns `raw: nil`, with the same redaction policy across stores.
 Code that depends on raw fields or provider extensions needs its own
 provider-specific compatibility checks.
 

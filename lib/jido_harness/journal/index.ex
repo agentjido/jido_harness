@@ -10,6 +10,7 @@ defmodule Jido.Harness.Journal.Index do
     %{
       path: path,
       bytes: 0,
+      count: 0,
       first: nil,
       last: 0,
       checkpoints: :gb_trees.empty(),
@@ -42,6 +43,7 @@ defmodule Jido.Harness.Journal.Index do
     %{
       segment
       | bytes: segment.bytes + bytes,
+        count: segment.count + 1,
         first: segment.first || sequence,
         last: sequence,
         checkpoint_records: segment.checkpoint_records + 1

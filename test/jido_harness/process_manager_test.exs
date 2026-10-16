@@ -373,7 +373,7 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     :telemetry.attach(
       handler,
-      [:jido, :harness, :journal, :error],
+      [:jido, :harness, :replay_store, :error],
       fn name, measurements, metadata, _config ->
         send(owner, {:telemetry, name, measurements, metadata})
       end,
@@ -388,7 +388,7 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, id} =
              Jido.Harness.Process.start(%{executable: "/bin/echo", argv: ["memory-only"], stdin: false})
 
-    assert_receive {:telemetry, [:jido, :harness, :journal, :error], %{count: 1}, _metadata}, 1_000
+    assert_receive {:telemetry, [:jido, :harness, :replay_store, :error], %{count: 1}, _metadata}, 1_000
     assert {:ok, %{state: :exited, journal_dir: nil}} = Jido.Harness.Process.await(id, 5_000)
     assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
     assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "memory-only")))
@@ -398,22 +398,22 @@ defmodule Jido.Harness.ProcessManagerTest do
     {id, worker, _exec_pid, os_pid} = start_controlled_process(%{})
     send(worker, {:stdout, os_pid, "before read error"})
     state = :sys.get_state(worker)
-    contents = File.read!(state.journal.path)
-    File.rm!(state.journal.path)
+    contents = File.read!(state.event_log.handle.journal.path)
+    File.rm!(state.event_log.handle.journal.path)
 
     assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
     assert Enum.any?(events, &(&1.type == :stdout and &1.data == "before read error"))
     state = :sys.get_state(worker)
-    assert state.journal.read_failed?
-    refute state.journal.failed?
+    assert state.event_log.handle.journal.read_failed?
+    refute state.event_log.handle.journal.failed?
 
-    File.write!(state.journal.path, contents)
+    File.write!(state.event_log.handle.journal.path, contents)
     send(worker, {:stdout, os_pid, "after read error"})
     _state = :sys.get_state(worker)
     assert {:ok, [event]} = Jido.Harness.Process.replay(id, cursor: state.sequence, limit: 1)
     assert event.type == :stdout
     assert event.data == "after read error"
-    refute :sys.get_state(worker).journal.read_failed?
+    refute :sys.get_state(worker).event_log.handle.journal.read_failed?
   end
 
   test "redacts request environment credentials from persisted process output" do

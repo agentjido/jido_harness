@@ -54,7 +54,7 @@ defmodule Jido.Harness.SessionWorker do
       started_at: timestamp(),
       provider_session_id: request.provider_session_id,
       buffer: EventLog.new_buffer(memory_bytes),
-      journal: EventLog.open(id, retention)
+      event_log: EventLog.open(:session, id, retention)
     }
 
     {:ok, state, {:continue, :open}}
@@ -100,6 +100,12 @@ defmodule Jido.Harness.SessionWorker do
   def handle_call({:replay, cursor, limit}, _from, state) do
     {events, state} = EventStore.replay(state, cursor, limit)
     {:reply, {:ok, events}, state}
+  end
+
+  def handle_call({:replay_page, cursor, limits}, _from, state) do
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes)
+    page = %{page | records: Enum.map(page.records, &EventStore.record_to_event(state, &1))}
+    {:reply, {:ok, page}, %{state | event_log: event_log}}
   end
 
   def handle_call({:turn_result, turn_id}, _from, state) do
@@ -256,8 +262,10 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_call(:prune, _from, state) when state.status in [:closed, :failed, :cancelled] do
-    EventLog.remove(state.journal)
-    {:stop, :normal, :ok, state}
+    case EventLog.remove(state.event_log) do
+      :ok -> {:stop, :normal, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
@@ -420,7 +428,7 @@ defmodule Jido.Harness.SessionWorker do
       _ = ACP.close(state.handle)
     end
 
-    :ok
+    EventLog.close(state.event_log)
   rescue
     _ -> :ok
   end

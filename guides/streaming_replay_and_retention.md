@@ -16,7 +16,10 @@ The returned page begins after sequence 20. Save the last returned sequence to
 continue later. Cursors are resource-local and cannot be transferred between a
 run, session, or process.
 
-Replay defaults to a page size of 100 and caps a page at 10,000 events.
+Replay defaults to a page size of 100, caps a page at 10,000 inspected events,
+and bounds returned record bytes to 1 MiB. Use `replay_page/2` for explicit
+missing ranges, `next_cursor`, and a custom byte limit. See
+[Replay stores](replay_stores.md) for the full page contract and adapter selection.
 
 ## Pull-based streams
 
@@ -74,8 +77,8 @@ the same redacted JSONL format.
 ## Replay gaps
 
 When old journal segments have rotated away, replay cannot recreate every
-sequence. The first returned record is then a replay-gap event identifying the
-first still-available cursor.
+sequence. Replay inserts gap events for missing prefixes and internal missing ranges.
+Their sequence is the end of the missing range.
 
 Application consumers should treat a replay gap as a continuity boundary. Run
 and session gaps use a `:provider_event` with `payload["kind"] ==
@@ -111,20 +114,20 @@ Use replay continuously when complete output is a hard requirement.
 ## Journal failure
 
 If a journal cannot be created or written, the resource continues with bounded
-memory and emits journal-error telemetry. Disk retention is operational support,
+sanitized memory and emits replay-store error telemetry. Disk retention is operational support,
 not a durable message broker.
 
 A disk read error returns the available memory tail on the same replay call.
 It does not disable future writes. Later replay calls retry the disk journal.
-A cursor before the memory tail receives a replay-gap event. Healthy disk
-replay always reads the redacted records from disk.
+A cursor before the memory tail receives a replay-gap event. All public replay and fallback return prepared records with raw payloads removed
+and the same redaction policy.
 
 The internal ACP reader uses a separate demand-based memory stream. A read
 waits for the next process event without polling or reading a journal. This
 path preserves the original protocol bytes. Disk redaction must not change
 messages sent to the ACP client. A slow internal reader that falls behind the
 process memory buffer receives a gap, and the transport fails explicitly.
-Public process replay continues to use the redacted journal.
+Public process replay uses the selected replay store and sanitized fallback.
 
 ## Pruning
 
@@ -138,3 +141,6 @@ Journal directories use restrictive permissions and structured secrets are
 redacted before persistence. Journals still contain provider activity and
 should be treated as sensitive operational data. Raw provider values are kept
 out of disk records.
+
+The file journal remains the default store. See [Replay stores](replay_stores.md)
+for the memory alternatives, cleanup rules, and storage-neutral status metadata.

@@ -78,6 +78,13 @@ defmodule Jido.Harness.RunManager do
     end
   end
 
+  @doc "Returns an explicit replay page with bounded bytes and missing ranges."
+  def replay_page(id, options \\ []) do
+    with {:ok, cursor, limits} <- Jido.Harness.ReplayStore.page_options(options) do
+      call(id, {:replay_page, cursor, limits})
+    end
+  end
+
   @doc "Builds a cursor stream for an existing run."
   def stream(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),

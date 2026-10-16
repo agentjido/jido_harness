@@ -112,6 +112,17 @@ mailbox traffic.
 Session requests also have queue, result, and approval limits. See
 [interactive sessions](../interactive_sessions.md#queue-follow-up-turns).
 
+## `:replay_store`
+
+The default is `{Jido.Harness.ReplayStore.File, %{}}`. Set a module and options
+map to select another adapter. File options are `journal_dir`, `segment_bytes`,
+`disk_limit_bytes`, and `max_events` (default 1,000,000). Memory and ETS options
+are `max_bytes` (default 1 MiB) and `max_events` (default 10,000).
+
+Adapters are validated before execution. Legacy process-manager file options
+remain supported. See [Replay stores](../replay_stores.md) for precedence,
+fallback budgets, page limits, and the adapter contract.
+
 ## `:process_manager`
 
 ```elixir

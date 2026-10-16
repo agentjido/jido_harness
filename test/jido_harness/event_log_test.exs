@@ -1,67 +1,108 @@
 defmodule Jido.Harness.EventLogTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.{Buffer, Event, EventLog, Journal, Redaction}
+  alias Jido.Harness.{Buffer, Event, EventLog, Redaction}
+  alias Jido.Harness.ReplayStore.{ETS, File, Memory}
 
   setup do
-    base = Path.join(System.tmp_dir!(), "jido-harness-event-log-#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf!(base) end)
-    {:ok, journal} = Journal.open("fallback", %{journal_dir: base})
-
-    {buffer, journal} =
-      Enum.reduce(1..6, {Buffer.new(1_000_000), journal}, fn sequence, {buffer, journal} ->
-        record = %{sequence: sequence, raw: nil, payload: %{"text" => "event #{sequence}"}}
-        {:ok, journal} = Journal.append(journal, record)
-        {Buffer.append(buffer, record), journal}
-      end)
-
-    %{buffer: buffer, journal: journal}
+    base = Path.join(System.tmp_dir!(), "harness-event-log-#{System.unique_integer([:positive])}")
+    on_exit(fn -> Elixir.File.rm_rf!(base) end)
+    %{base: base}
   end
 
-  test "a failed disk read returns the memory tail on the same call and retries later", context do
-    %{buffer: buffer, journal: journal} = context
-    contents = File.read!(journal.path)
-    File.rm!(journal.path)
-
-    assert {[event], journal, 6} = EventLog.replay(buffer, journal, 5, 1)
-    assert event.sequence == 6
-    assert journal.read_failed?
-    refute journal.failed?
-
-    File.write!(journal.path, contents)
-    assert {:ok, journal} = Journal.append(journal, %{sequence: 7, raw: nil})
-    assert {[%{"sequence" => 7}], journal, 1} = EventLog.replay(buffer, journal, 6, 1)
-    refute journal.read_failed?
+  defp event(sequence) do
+    Event.new!(
+      type: :output_text_delta,
+      provider: :test,
+      timestamp: "2026-10-16T00:00:00Z",
+      sequence: sequence,
+      payload: %{"text" => "fixture-secret-value", "nested" => [%{"password" => "private"}]},
+      raw: %{"wire" => "original protocol bytes"}
+    )
   end
 
-  test "memory fallback reports a gap when earlier events are no longer retained", context do
-    %{journal: journal} = context
-    buffer = Buffer.append(Buffer.new(1_000), %{sequence: 6})
-    File.rm!(journal.path)
-    assert {[%{sequence: 6}], journal, 6} = EventLog.replay(buffer, journal, 0, 100)
-    refute journal.failed?
+  defp fill(log, sequences \\ 1..6) do
+    Enum.reduce(sequences, {Buffer.new(10_000), log}, fn n, {buffer, log} ->
+      EventLog.append(buffer, log, event(n), Redaction.prepare(["fixture-secret-value"]))
+    end)
   end
 
-  test "healthy disk replay retains the redacted persistence boundary", context do
-    %{journal: journal} = context
-    buffer = Buffer.append(Buffer.new(1_000), %{sequence: 6, raw: "memory only"})
-    assert {[%{"raw" => nil, "sequence" => 6}], _journal, 1} = EventLog.replay(buffer, journal, 5, 1)
+  test "every adapter and fallback use the same prepared record policy", context do
+    pages =
+      for adapter <- [File, Memory, ETS] do
+        options = if adapter == File, do: %{journal_dir: context.base}, else: %{}
+        log = EventLog.open(:run, "same-policy", %{}, {adapter, options})
+        {buffer, log} = fill(log)
+        assert List.last(Buffer.events(buffer)).raw == %{"wire" => "original protocol bytes"}
+        {page, log} = EventLog.replay(log, 5, 1)
+        assert [%{"raw" => nil, "payload" => payload}] = page.records
+        assert payload == %{"text" => "[REDACTED]", "nested" => [%{"password" => "[REDACTED]"}]}
+
+        if adapter == File do
+          contents = Elixir.File.read!(log.handle.journal.path)
+          Elixir.File.rm!(log.handle.journal.path)
+          {fallback, failed} = EventLog.replay(log, 5, 1)
+          assert fallback.records == page.records
+          assert failed.status == :degraded
+          refute failed.handle.journal.failed?
+          Elixir.File.write!(log.handle.journal.path, contents)
+          {_buffer, recovered} = fill(failed, [7])
+          {next, recovered} = EventLog.replay(recovered, 6, 1)
+          assert [%{"sequence" => 7}] = next.records
+          assert recovered.status == :healthy
+        end
+
+        assert :ok = EventLog.remove(log)
+        page.records
+      end
+
+    assert Enum.uniq(pages) |> length() == 1
   end
 
-  test "prepared secrets redact nested persistence once and preserve memory originals", %{journal: journal} do
-    event =
-      Event.new!(
-        type: :output_text_delta,
-        provider: :test,
-        sequence: 7,
-        payload: %{"text" => "request-secret-value", "nested" => [%{"password" => "private"}]},
-        raw: %{"wire" => "raw secret"}
-      )
+  test "failed open uses a bounded sanitized fallback and reports missing ranges", context do
+    Elixir.File.write!(context.base, "not a directory")
+    log = EventLog.open(:run, "fallback", %{memory_bytes: 200}, {File, %{journal_dir: context.base}})
+    assert log.status == :degraded
+    {_, log} = fill(log)
+    assert log.fallback.bytes <= 200
+    {page, _} = EventLog.replay(log, 0, 100)
+    assert page.gaps != []
+    assert page.next_cursor == 6
+    assert page.records |> Jason.encode!() |> String.contains?("fixture-secret-value") == false
+  end
 
-    secrets = Redaction.prepare(["request-secret-value", "request-secret-value"])
-    {buffer, journal} = EventLog.append(Buffer.new(10_000), journal, event, secrets)
-    assert Buffer.events(buffer) == [event]
-    assert {[%{"raw" => nil, "payload" => payload}], _journal} = Journal.replay(journal, 6, 1)
-    assert payload == %{"text" => "[REDACTED]", "nested" => [%{"password" => "[REDACTED]"}]}
+  test "resource kinds have separate file directories", context do
+    run = EventLog.open(:run, "same-id", %{}, {File, %{journal_dir: context.base}})
+    session = EventLog.open(:session, "same-id", %{}, {File, %{journal_dir: context.base}})
+    refute EventLog.dir(run) == EventLog.dir(session)
+    {_, run} = fill(run, [1])
+    assert :ok = EventLog.close(run)
+    reopened = EventLog.open(:run, "same-id", %{}, {File, %{journal_dir: context.base}})
+    {page, _} = EventLog.replay(reopened, 0, 1)
+    assert [%{"sequence" => 1}] = page.records
+    assert :ok = EventLog.remove(run)
+    assert Elixir.File.dir?(EventLog.dir(session))
+  end
+
+  test "invalid configuration fails before opening storage" do
+    for config <- [{String, %{}}, {Memory, %{max_bytes: 0}}, {ETS, %{unknown: 1}}, :bad] do
+      assert_raise ArgumentError, fn -> EventLog.open(:run, "bad", %{}, config) end
+    end
+  end
+
+  test "write failure and raised reads use sanitized fallback" do
+    for operation <- [:append, :raise] do
+      log = EventLog.open(:run, "fault", %{}, {Jido.Harness.ReplayStore.FaultStore, %{operation: operation}})
+      {_, log} = fill(log)
+      {page, log} = EventLog.replay(log, 5, 1)
+      assert log.status == :degraded
+      assert [%{"raw" => nil, "payload" => %{"text" => "[REDACTED]"}}] = page.records
+      assert page.next_cursor == 6
+    end
+  end
+
+  test "cleanup errors are returned for retry" do
+    log = EventLog.open(:run, "cleanup", %{}, {Jido.Harness.ReplayStore.FaultStore, %{operation: :delete}})
+    assert {:error, :eacces} = EventLog.remove(log)
   end
 end

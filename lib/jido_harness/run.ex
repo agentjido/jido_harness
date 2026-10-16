@@ -55,6 +55,10 @@ defmodule Jido.Harness.Run do
   @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.Event.t()])
   def replay(run_id, options \\ []), do: RunManager.replay(run_id, options)
 
+  @doc "Returns a replay page with records, gap ranges, and the next cursor."
+  @spec replay_page(String.t(), keyword()) :: Jido.Harness.result(Jido.Harness.ReplayStore.Page.t())
+  def replay_page(id, options \\ []), do: RunManager.replay_page(id, options)
+
   @doc "Waits for a run result without cancelling the run when the wait times out."
   @spec await(String.t(), timeout()) :: Jido.Harness.result(Jido.Harness.RunResult.t())
   def await(run_id, timeout \\ :infinity), do: RunManager.await(run_id, timeout)
