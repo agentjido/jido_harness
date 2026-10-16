@@ -25,7 +25,7 @@ defmodule Jido.Harness.ProcessWorker do
     state = %{
       id: id,
       spec: spec,
-      driver: Application.get_env(:jido_harness, :process_driver, Jido.Harness.ProcessDriver.Erlexec),
+      driver: Application.get_env(:jido_harness, :process_driver) || Jido.Harness.ProcessDriver.default(),
       exec_pid: nil,
       os_pid: nil,
       status: :starting,
@@ -418,6 +418,7 @@ defmodule Jido.Harness.ProcessWorker do
 
   defp exit_status(:normal), do: 0
   defp exit_status({:exit_status, status}) when is_integer(status), do: decode_wait_status(status)
+  defp exit_status({:exit_code, code}) when is_integer(code), do: code
   defp exit_status(status) when is_integer(status), do: decode_wait_status(status)
   defp exit_status(_reason), do: nil
   defp error_reason(:failed, exit_status, _reason), do: {:exit_status, exit_status}
