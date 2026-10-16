@@ -94,6 +94,8 @@ defmodule Jido.Harness.ACPTransportTest do
   test "redaction does not expand diagnostics beyond the stderr limit", %{bridge: bridge, reader: reader} do
     send(reader, {:process_events, [event(:stderr, String.duplicate("abcd", 1_024)), event(:failed, %{})]})
     await(fn -> not Bridge.connected?(bridge) end)
+    assert_receive {:acp_process_stderr, log}
+    refute log =~ "abcd"
     assert {:error, {:process_stopped, :failed, diagnostics}} = Bridge.receive_message(bridge)
     assert byte_size(diagnostics["stderr"]) <= 4_096
     assert diagnostics["stderr_truncated"]
@@ -114,6 +116,12 @@ defmodule Jido.Harness.ACPTransportTest do
     assert :ok = Bridge.close(bridge)
     assert_received :process_cancelled
     assert_received {:process_awaited, 2_000}
+  end
+
+  test "an output gap fails the protocol explicitly", %{bridge: bridge, reader: reader} do
+    send(reader, {:process_events, [event(:replay_gap, %{"available_from" => 10})]})
+    assert {:error, {:process_stopped, :failed, :output_gap}} = Bridge.receive_message(bridge)
+    refute Bridge.connected?(bridge)
   end
 
   defp event(type, data) do

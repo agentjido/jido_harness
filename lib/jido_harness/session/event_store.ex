@@ -8,7 +8,7 @@ defmodule Jido.Harness.Session.EventStore do
   @spec append(State.t(), Event.t()) :: State.t()
   def append(state, %Event{} = event) do
     event = Event.attach_session(event, state.id, state.provider, state.sequence + 1)
-    secrets = Redaction.secrets_from_env(state.request.env)
+    secrets = state.secrets || Redaction.prepare(Redaction.secrets_from_env(state.request.env))
     {buffer, journal} = EventLog.append(state.buffer, state.journal, event, secrets)
 
     :telemetry.execute([:jido, :harness, :session, :event], %{count: 1}, %{
@@ -21,6 +21,7 @@ defmodule Jido.Harness.Session.EventStore do
     |> Map.put(:sequence, event.sequence)
     |> Map.put(:buffer, buffer)
     |> Map.put(:journal, journal)
+    |> Map.put(:secrets, secrets)
     |> accumulate_active(event)
   end
 

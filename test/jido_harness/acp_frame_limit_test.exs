@@ -35,7 +35,11 @@ defmodule Jido.Harness.ACPFrameLimitTest do
   end
 
   setup do
-    on_exit(fn -> Application.delete_env(:jido_harness, :acp_max_frame_bytes) end)
+    on_exit(fn ->
+      Application.delete_env(:jido_harness, :acp_max_frame_bytes)
+      Application.delete_env(:jido_harness, :acp_max_buffer_bytes)
+    end)
+
     :ok
   end
 
@@ -47,6 +51,16 @@ defmodule Jido.Harness.ACPFrameLimitTest do
 
     Application.put_env(:jido_harness, :acp_max_frame_bytes, 0)
     assert ExMCPTransport.max_frame_bytes() == 1_048_576
+  end
+
+  test "the queue limit leaves space for complete frames and validates configured values" do
+    assert ExMCPTransport.max_buffer_bytes() == 4_194_304
+    Application.put_env(:jido_harness, :acp_max_buffer_bytes, 8_388_608)
+    assert ExMCPTransport.max_buffer_bytes() == 8_388_608
+    Application.put_env(:jido_harness, :acp_max_buffer_bytes, 1)
+    assert ExMCPTransport.max_buffer_bytes() == 4_194_304
+    Application.put_env(:jido_harness, :acp_max_frame_bytes, 2_097_152)
+    assert ExMCPTransport.max_buffer_bytes() == 8_388_608
   end
 
   test "a frame over the default limit stops the transport" do

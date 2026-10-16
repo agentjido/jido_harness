@@ -80,7 +80,26 @@ stable across event streaming and later lookup.
   )
 ```
 
-Follow-ups are processed FIFO through the same ACP session.
+Follow-ups are processed FIFO through the same ACP session. A full queue returns
+`{:error, :queue_full}` before it accepts a turn. Session requests can set these
+harness limits. Each value must be a positive integer.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `max_queued_turns` | 128 | Maximum waiting turns, excluding the active turn |
+| `max_queued_bytes` | 4 MiB | Maximum external-term bytes of queued turn requests |
+| `max_retained_turns` | 100 | Maximum completed turn results held in memory |
+| `max_result_bytes` | 4 MiB | Maximum external-term bytes of completed results |
+| `max_pending_approvals` | 128 | Maximum pending approval requests |
+
+The oldest completed results expire when either result limit is reached.
+Later `turn_result/2` and `await/3` calls return `{:error, :not_found}` for an
+expired turn. Callers already waiting for that turn receive its result. A
+single result larger than `max_result_bytes` is delivered to current waiters
+and is then discarded. Journal event retention is separate from result
+retention. Store results in the host application if you need a longer history.
+Approval requests above the limit are denied, and the session records an
+`approval_limit_reached` provider event.
 
 ## Inspect, stream, and replay
 

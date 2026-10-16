@@ -26,17 +26,18 @@ defmodule Jido.Harness.EventLog do
   def new_buffer(memory_bytes), do: Buffer.new(memory_bytes)
 
   @doc "Retains the original event in memory and writes a redacted copy without raw data."
-  @spec append(Buffer.t(), Journal.t() | nil, term(), [String.t()]) :: {Buffer.t(), Journal.t() | nil}
+  @spec append(Buffer.t(), Journal.t() | nil, term(), [String.t()] | Redaction.prepared()) ::
+          {Buffer.t(), Journal.t() | nil}
   def append(buffer, journal, event, secrets \\ []) do
-    persisted = event |> Map.from_struct() |> Map.put(:raw, nil) |> Redaction.redact(secrets)
-
     journal =
       case journal do
         nil ->
           nil
 
         journal ->
-          case Journal.append(journal, persisted) do
+          persisted = event |> Map.from_struct() |> Map.put(:raw, nil)
+
+          case Journal.append(journal, persisted, secrets) do
             {:ok, updated} -> updated
             {:error, _reason, updated} -> updated
           end
@@ -48,12 +49,19 @@ defmodule Jido.Harness.EventLog do
   @doc "Reads after a cursor from the journal, with memory fallback if the journal is unavailable."
   @spec replay(Buffer.t(), Journal.t() | nil, non_neg_integer(), pos_integer()) ::
           {[term()], Journal.t() | nil, pos_integer()}
-  def replay(_buffer, %Journal{failed?: false} = journal, cursor, limit) do
+  def replay(buffer, %Journal{failed?: false} = journal, cursor, limit) do
     {records, journal} = Journal.replay(journal, cursor, limit)
-    {records, journal, journal.available_from}
+
+    if journal.read_failed? do
+      replay_memory(buffer, journal, cursor, limit)
+    else
+      {records, journal, journal.available_from}
+    end
   end
 
-  def replay(buffer, journal, cursor, limit) do
+  def replay(buffer, journal, cursor, limit), do: replay_memory(buffer, journal, cursor, limit)
+
+  defp replay_memory(buffer, journal, cursor, limit) do
     records = buffer |> Buffer.events() |> Enum.filter(&(&1.sequence > cursor)) |> Enum.take(limit)
     available_from = if records == [], do: cursor + 1, else: hd(records).sequence
     {records, journal, available_from}

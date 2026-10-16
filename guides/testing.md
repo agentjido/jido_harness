@@ -16,7 +16,7 @@ mix hex.build
 The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
 mapping, terminal events, caller exits, timeouts, stdin, output, PTY behavior,
 journal rotation, replay gaps, and process cleanup. It excludes live provider
-and long process-soak tests.
+and long process-soak and replay-load tests.
 
 The escript fixture verifies native-helper extraction in a separate VM. The
 [approval-policy recipe](recipes/policy_jobs.md) has fake-provider tests that
@@ -151,6 +151,76 @@ mix test --no-cover --include soak test/integration/soak_test.exs --timeout 7200
 
 This separate test runs for 65 minutes without contacting a provider. It checks
 long-lived process, journal, and cleanup behavior.
+
+## Journal replay load
+
+Run the replay load suite without a provider or credentials:
+
+```console
+mix test --no-cover --include load test/jido_harness/journal_load_test.exs
+```
+
+The suite checks single-record pages at three journal sizes, concurrent readers
+with different page sizes, and a growing journal with tail and empty polls. CI
+runs it on macOS and Linux for each pull request and main push.
+
+The checks use decode counts and file work. They do not use machine-specific
+time limits to judge performance. Each single-record page must decode at most
+64 records. A poll at the latest sequence must open no files and decode no
+records. These checks detect a return to full-history scans. The default unit
+suite also checks these bounds on a smaller journal.
+
+Each `journal_load` JSON line reports elapsed microseconds, maximum replay
+microseconds, decoded records, bytes passed to the decoder, files opened, and
+the serialized index size. Use the same runtime, host, record count, and payload
+size when you compare results. File caching and other work on the host affect
+elapsed time. These values do not measure physical disk reads or total VM
+memory.
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `HARNESS_REPLAY_RECORDS` | `16000` | Largest journal and growing-tail record count |
+| `HARNESS_REPLAY_READERS` | `4` | Concurrent readers; page sizes cycle through 1, 17, 100, and 257 |
+| `HARNESS_REPLAY_PAYLOAD_BYTES` | `1024` | Payload bytes per record |
+
+For a larger local check:
+
+```console
+HARNESS_REPLAY_RECORDS=64000 HARNESS_REPLAY_READERS=8 \
+mix test --no-cover --include load test/jido_harness/journal_load_test.exs
+```
+
+The suite uses temporary journal directories and removes them after each test.
+Use the replay telemetry event to measure work in a running application. See
+the [telemetry reference](reference/telemetry.md).
+
+## Harness load without CLI processes
+
+```console
+mix test --no-cover --include load test/jido_harness/harness_load_test.exs
+```
+
+This suite uses synthetic ACP frames, BEAM tasks, and temporary journals. It
+starts no CLI process and makes no network or model request. It checks:
+
+- one-byte frame fragments and text deltas at increasing sizes;
+- 5,000 frames with a slow reader, bounded queue bytes, and ordered delivery;
+- closing a paused reader;
+- 2,000 completed turns with fixed result and event budgets;
+- cleanup of 1,000 and 10,000 waiting callers;
+- event encoding and secret removal at 1 KiB and 16 KiB payload sizes;
+- 3,000 live process events through a BEAM driver with no journal replay.
+
+Set `HARNESS_LOAD_BYTES` to increase the largest fragmentation input. The
+default is 262,144 bytes. Reduction counts check work growth without a fixed
+time threshold. Each `harness_load` JSON line reports the scenario, elapsed
+microseconds, reductions, and relevant byte or count limits. These values
+describe the measured process and retained data, not total VM memory.
+CI runs this suite and the journal load suite on Linux and macOS.
+
+The default unit suite checks the direct ACP read path with a BEAM process
+driver. It checks original wire bytes, no journal replay, terminal delivery,
+gap reporting, and cleanup after a waiting caller exits.
 
 ## Release verification
 

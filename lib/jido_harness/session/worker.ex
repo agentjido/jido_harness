@@ -47,6 +47,7 @@ defmodule Jido.Harness.SessionWorker do
       id: id,
       provider: provider,
       request: request,
+      secrets: Jido.Harness.Redaction.prepare(Jido.Harness.Redaction.secrets_from_env(request.env)),
       adapter: adapter,
       acp_agent: acp_agent,
       context: context,
@@ -145,12 +146,18 @@ defmodule Jido.Harness.SessionWorker do
 
   def handle_call({:follow_up, input}, _from, state) when state.status in [:idle, :running, :awaiting_approval] do
     with {:ok, request} <- TurnRequest.new(input),
-         :ok <- RequestValidator.validate_turn_request(state, request) do
+         :ok <- RequestValidator.validate_turn_request(state, request),
+         :ok <- validate_queue_capacity(state, request) do
       turn_id = ID.generate("turn")
       queue = :queue.in({turn_id, request}, state.queue)
 
       state =
-        %{state | queue: queue, known_turns: MapSet.put(state.known_turns, turn_id)}
+        %{
+          state
+          | queue: queue,
+            queued_bytes: state.queued_bytes + :erlang.external_size(request),
+            known_turns: MapSet.put(state.known_turns, turn_id)
+        }
         |> append(Event.new!(type: :turn_queued, provider: state.provider, turn_id: turn_id, payload: %{}))
         |> append_queue_changed()
 
@@ -286,7 +293,9 @@ defmodule Jido.Harness.SessionWorker do
   def handle_info(:start_next, %{status: :idle, active: nil} = state) do
     case :queue.out(state.queue) do
       {{:value, {turn_id, request}}, queue} ->
-        state = %{state | queue: queue} |> append_queue_changed()
+        state =
+          %{state | queue: queue, queued_bytes: max(0, state.queued_bytes - :erlang.external_size(request))}
+          |> append_queue_changed()
 
         case Lifecycle.start_turn(state, request, turn_id) do
           {:ok, _turn_id, state} -> {:noreply, state}
@@ -416,7 +425,15 @@ defmodule Jido.Harness.SessionWorker do
     _ -> :ok
   end
 
-  defp stale_turn_event?(state, %Event{turn_id: turn_id}), do: Map.has_key?(state.results, turn_id)
+  defp stale_turn_event?(_state, %Event{turn_id: nil}), do: false
+  defp stale_turn_event?(state, %Event{turn_id: turn_id}), do: is_nil(state.active) or state.active.id != turn_id
+
+  defp validate_queue_capacity(state, request) do
+    if :queue.len(state.queue) >= state.request.max_queued_turns or
+         state.queued_bytes + :erlang.external_size(request) > state.request.max_queued_bytes,
+       do: {:error, :queue_full},
+       else: :ok
+  end
 
   defp transport_payload(state) do
     %{

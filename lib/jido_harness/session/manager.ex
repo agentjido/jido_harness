@@ -138,6 +138,11 @@ defmodule Jido.Harness.SessionManager do
     :turn_idle_timeout_ms,
     :session_idle_timeout_ms,
     :approval_timeout_ms,
+    :max_queued_turns,
+    :max_queued_bytes,
+    :max_retained_turns,
+    :max_result_bytes,
+    :max_pending_approvals,
     :retention
   ]
   @empty_values [nil, [], %{}, :default]

@@ -394,6 +394,28 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "memory-only")))
   end
 
+  test "a disk read failure returns memory events immediately and permits later writes" do
+    {id, worker, _exec_pid, os_pid} = start_controlled_process(%{})
+    send(worker, {:stdout, os_pid, "before read error"})
+    state = :sys.get_state(worker)
+    contents = File.read!(state.journal.path)
+    File.rm!(state.journal.path)
+
+    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
+    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "before read error"))
+    state = :sys.get_state(worker)
+    assert state.journal.read_failed?
+    refute state.journal.failed?
+
+    File.write!(state.journal.path, contents)
+    send(worker, {:stdout, os_pid, "after read error"})
+    _state = :sys.get_state(worker)
+    assert {:ok, [event]} = Jido.Harness.Process.replay(id, cursor: state.sequence, limit: 1)
+    assert event.type == :stdout
+    assert event.data == "after read error"
+    refute :sys.get_state(worker).journal.read_failed?
+  end
+
   test "redacts request environment credentials from persisted process output" do
     secret = "fixture-secret-#{System.unique_integer([:positive])}"
 

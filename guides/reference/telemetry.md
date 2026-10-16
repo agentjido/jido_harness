@@ -18,9 +18,18 @@ not wrap telemetry in Jido Actions or Signals.
 | `[:jido, :harness, :adapter, :stop]` | native `duration` | `run_id`, `provider`, `adapter`, `status` |
 | `[:jido, :harness, :journal, :error]` | `count` | failure `reason` and sometimes `owner_id` |
 | `[:jido, :harness, :journal, :overflow]` | removed `bytes` | journal directory and next cursor |
+| `[:jido, :harness, :journal, :replay]` | native `duration`, `decoded_records`, `read_bytes`, `segments_opened`, `returned_records` | `journal_dir`, `cursor`, `limit`, `read_failed?` |
 
 Process event names end in `:started`, `:stdout`, `:stderr`, `:exited`,
 `:failed`, `:cancelled`, or `:timed_out`.
+
+Journal replay measurements describe one disk replay attempt. `read_bytes`
+counts bytes passed to the JSON decoder, not physical disk reads. File read
+buffers and the OS cache can change the physical work. `decoded_records`
+includes skipped and malformed lines. A successful caught-up poll reports zero
+decodes, zero bytes, and zero opened segments. `read_failed?` marks an attempt
+that used the memory fallback. Resources without a working disk journal use
+memory directly and do not emit this event.
 
 ## Attach a handler
 

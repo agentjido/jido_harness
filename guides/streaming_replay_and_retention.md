@@ -60,6 +60,17 @@ Retention maps accept:
 
 Unknown keys and invalid byte relationships are rejected.
 
+Each retained segment has a sparse sequence-to-byte index. Replay seeks to a
+checkpoint near the requested cursor, then reads the requested page. Index
+checkpoints are at most 64 records or about 64 KiB apart. One record can exceed
+that byte interval. A poll at or past the latest sequence returns without file
+access. Each request uses its own file handle, so readers can use independent
+cursors and can seek backward.
+
+Index entries are removed with their segments. If an existing journal is opened
+again, its index is built once from the retained files. The journal still uses
+the same redacted JSONL format.
+
 ## Replay gaps
 
 When old journal segments have rotated away, replay cannot recreate every
@@ -102,6 +113,18 @@ Use replay continuously when complete output is a hard requirement.
 If a journal cannot be created or written, the resource continues with bounded
 memory and emits journal-error telemetry. Disk retention is operational support,
 not a durable message broker.
+
+A disk read error returns the available memory tail on the same replay call.
+It does not disable future writes. Later replay calls retry the disk journal.
+A cursor before the memory tail receives a replay-gap event. Healthy disk
+replay always reads the redacted records from disk.
+
+The internal ACP reader uses a separate demand-based memory stream. A read
+waits for the next process event without polling or reading a journal. This
+path preserves the original protocol bytes. Disk redaction must not change
+messages sent to the ACP client. A slow internal reader that falls behind the
+process memory buffer receives a gap, and the transport fails explicitly.
+Public process replay continues to use the redacted journal.
 
 ## Pruning
 

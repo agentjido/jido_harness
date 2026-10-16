@@ -28,7 +28,7 @@ defmodule Jido.Harness.Buffer do
 
   @doc "Adds an event and drops the oldest events until the byte limit is met."
   def append(%__MODULE__{} = buffer, event) do
-    size = event |> :erlang.term_to_binary() |> byte_size()
+    size = :erlang.external_size(event)
     buffer = %{buffer | events: :queue.in({event, size}, buffer.events), bytes: buffer.bytes + size}
     trim(buffer)
   end
