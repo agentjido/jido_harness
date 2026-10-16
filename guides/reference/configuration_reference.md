@@ -105,7 +105,7 @@ The reader pauses when the complete frame queue reaches half the limit. It
 resumes when the queue falls to one quarter. Send, close, and cancellation
 requests remain available while the reader is paused. Output that exceeds
 the process memory buffer produces an explicit `output_gap` transport failure.
-Set process `retention.memory_bytes` for the largest expected output burst.
+Set `:process_manager` `memory_bytes` for the largest expected ACP output burst.
 This bounds retained output; it does not limit the operating system producer's
 mailbox traffic.
 
@@ -131,6 +131,7 @@ config :jido_harness,
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `journal_dir` | user cache directory | Base directory for resource journals |
+| `memory_bytes` | 1 MiB | Default process output buffer, including the internal ACP process; per-process retention overrides it |
 | `segment_bytes` | 8 MiB | Journal rotation segment size |
 | `disk_limit_bytes` | 256 MiB | Maximum journal bytes per resource |
 | `terminal_ttl_ms` | 24 hours | Age at which terminal resources are pruned |

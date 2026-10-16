@@ -88,13 +88,31 @@ defmodule Jido.Harness.ProcessLiveTest do
     assert {:error, :not_found} = ProcessManager.info_process(id)
   end
 
+  test "process memory defaults can size ACP output and per-process retention takes priority", %{dir: dir} do
+    original = Application.get_env(:jido_harness, :process_manager)
+    Application.put_env(:jido_harness, :process_manager, Map.put(Map.new(original || %{}), :memory_bytes, 1_024))
+
+    on_exit(fn ->
+      if original,
+        do: Application.put_env(:jido_harness, :process_manager, original),
+        else: Application.delete_env(:jido_harness, :process_manager)
+    end)
+
+    {_id, worker, _exec, _os_pid} = start_memory_process(dir, nil)
+    assert :sys.get_state(worker).buffer.max_bytes == 1_024
+    {_id, worker, _exec, _os_pid} = start_memory_process(dir, 2_048)
+    assert :sys.get_state(worker).buffer.max_bytes == 2_048
+  end
+
   defp start_memory_process(dir, memory_bytes \\ 65_536) do
+    retention = if memory_bytes, do: %{journal_dir: dir, memory_bytes: memory_bytes}, else: %{journal_dir: dir}
+
     assert {:ok, id} =
              ProcessManager.start_process(%{
                executable: System.find_executable("elixir"),
                env: %{"TEST_SECRET" => "test-secret-1234"},
                metadata: %{test_pid: self()},
-               retention: %{journal_dir: dir, memory_bytes: memory_bytes}
+               retention: retention
              })
 
     assert_receive {:memory_driver, worker, exec, os_pid}

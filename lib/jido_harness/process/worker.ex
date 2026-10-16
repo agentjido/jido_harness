@@ -18,8 +18,8 @@ defmodule Jido.Harness.ProcessWorker do
   def init({id, spec}) do
     Process.flag(:trap_exit, true)
     now = timestamp()
-    memory_bytes = Map.get(spec.retention, :memory_bytes, 1_048_576)
     manager_config = Application.get_env(:jido_harness, :process_manager, %{}) |> Map.new()
+    memory_bytes = Map.get(spec.retention, :memory_bytes, Map.get(manager_config, :memory_bytes, 1_048_576))
     journal = open_journal(id, spec.retention)
 
     state = %{
