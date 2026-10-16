@@ -136,6 +136,31 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{state: :idle}} = Jido.Harness.Session.info(session_id)
   end
 
+  @tag :capture_log
+  test "steering that starts an untracked turn fails the session and stops the provider" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:claude, %{
+               env: %{"HARNESS_FIXTURE_STEERING" => "1", "HARNESS_FIXTURE_STEERING_NEW_TURN" => "1"}
+             })
+
+    assert {:ok, _info} = await_state(session_id, :idle)
+
+    process = Enum.find(Jido.Harness.Process.list(), &(&1.metadata[:session_id] == session_id))
+    assert %{state: :running} = process
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    steering = Task.async(fn -> Jido.Harness.Session.steer(session_id, "continue") end)
+
+    assert {:ok, %{status: :completed, text: "original turn finished"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+
+    assert :ok = Jido.Harness.Session.configure(session_id, %{model: "start-untracked-turn"})
+    assert {:error, {:steering_failed, :unexpected_new_turn}} = Task.await(steering, 2_000)
+    assert {:ok, %{state: :failed, active_turn_id: nil}} = await_state(session_id, :failed)
+    assert {:ok, %{state: state}} = Jido.Harness.Process.await(process.process_id, 2_000)
+    assert state in [:cancelled, :exited]
+    assert {:error, :closed} = Jido.Harness.Session.send_message(session_id, "next")
+  end
+
   test "steering input that cannot be sent is refused and the session goes on" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:kimi, %{env: %{"HARNESS_FIXTURE_STEERING" => "1"}})

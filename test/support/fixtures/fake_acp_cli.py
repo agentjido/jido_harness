@@ -11,6 +11,7 @@ if os.environ.get("HARNESS_FIXTURE_EXIT_BEFORE_INIT") == "1":
 
 session_id = "acp-fixture-session"
 pending_prompt = None
+pending_steer = None
 authenticated = False
 configured_mode = None
 
@@ -256,6 +257,9 @@ for line in sys.stdin:
         model = params.get("modelId") or (params.get("value") if params.get("configId") == "model" else None)
         if os.environ.get("HARNESS_FIXTURE_IDLE_PERMISSION") == "1" and model == "background-approval":
             request_permission()
+        if pending_steer is not None and model == "start-untracked-turn":
+            send({"jsonrpc": "2.0", "id": pending_steer, "result": {"outcome": "startedNewTurn"}})
+            pending_steer = None
     elif method == "session/cancel" and pending_prompt is not None:
         complete_prompt(pending_prompt, text="", stop_reason="cancelled")
         pending_prompt = None
@@ -267,7 +271,11 @@ for line in sys.stdin:
             for block in message.get("params", {}).get("prompt", [])
             if isinstance(block, dict)
         )
-        if pending_prompt is None:
+        if pending_prompt is not None and os.environ.get("HARNESS_FIXTURE_STEERING_NEW_TURN") == "1":
+            complete_prompt(pending_prompt, text="original turn finished")
+            pending_prompt = None
+            pending_steer = request_id
+        elif pending_prompt is None:
             send({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "promptRequired", "reason": "noRunningTurn"}})
         else:
             send({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "injected"}})

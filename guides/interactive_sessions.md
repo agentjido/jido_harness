@@ -155,6 +155,11 @@ input with `follow_up/3`. For an agent without steering, `steer/3` returns the
 normalized capability error; queue the input, or interrupt the active turn and
 send it as a new message.
 
+If an agent ignores `promptRequired` and reports `startedNewTurn`, the
+harness returns `{:error, {:steering_failed, :unexpected_new_turn}}`, fails
+the session, and stops the provider process. The new turn has no harness
+turn ID. Do not retry the input automatically: the agent may have acted on it.
+
 ### Approvals between turns
 
 Some agents ask permission outside a turn: a tool started in the background

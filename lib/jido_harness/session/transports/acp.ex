@@ -88,13 +88,14 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     }
 
     bridge = state.steering
+    transport = self()
 
     # The agent answers once the input is in the turn; meanwhile this process
     # keeps relaying the turn's updates.
     {:ok, _pid} =
       Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
         result = Bridge.extension_request(bridge, "_session/steering", params, @steer_timeout)
-        GenServer.reply(from, steer_outcome(result))
+        send(transport, {:acp_steer_result, from, result})
       end)
 
     {:noreply, state}
@@ -213,6 +214,19 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
        state
        | approvals: Map.put(state.approvals, request_id, approval)
      }}
+  end
+
+  def handle_info({:acp_steer_result, from, {:ok, %{"outcome" => "startedNewTurn"}}}, state) do
+    # The agent ignored promptRequired. Its new turn has no Harness identity
+    # or prompt task, so stop the transport and fail the session.
+    reason = {:steering_failed, :unexpected_new_turn}
+    GenServer.reply(from, {:error, reason})
+    {:stop, reason, state}
+  end
+
+  def handle_info({:acp_steer_result, from, result}, state) do
+    GenServer.reply(from, steer_outcome(result))
+    {:noreply, state}
   end
 
   def handle_info({:acp_agent_meta, bridge, meta}, state) do
@@ -539,9 +553,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     %{state | pending_updates: pending_updates, pending_prompt_result: nil, handler_flush_timer: nil}
   end
 
-  # "startedNewTurn" is the agent's answer when the turn ended as the input
-  # arrived and it ignores `idleBehavior`: the input is read all the same.
-  defp steer_outcome({:ok, %{"outcome" => outcome}}) when outcome in ["injected", "startedNewTurn"], do: :ok
+  defp steer_outcome({:ok, %{"outcome" => "injected"}}), do: :ok
   defp steer_outcome({:ok, %{"outcome" => "promptRequired"}}), do: {:error, :no_active_turn}
   defp steer_outcome({:ok, result}), do: {:error, {:steering_failed, result}}
   defp steer_outcome({:error, reason}), do: {:error, {:steering_failed, reason}}
