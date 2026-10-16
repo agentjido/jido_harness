@@ -115,6 +115,10 @@ for line in sys.stdin:
         if "HARNESS_FIXTURE_CODEX_META" in os.environ:
             codex_meta = json.loads(os.environ["HARNESS_FIXTURE_CODEX_META"])
 
+        steering_meta = {"supported": os.environ.get("HARNESS_FIXTURE_STEERING") == "1"}
+        if "HARNESS_FIXTURE_STEERING_META" in os.environ:
+            steering_meta = json.loads(os.environ["HARNESS_FIXTURE_STEERING_META"])
+
         send(
             {
                 "jsonrpc": "2.0",
@@ -129,7 +133,7 @@ for line in sys.stdin:
                     },
                     "agentInfo": {"name": "fixture-acp", "version": "1.0.0"},
                     "authMethods": auth_methods,
-                    "_meta": {"steering": {"supported": os.environ.get("HARNESS_FIXTURE_STEERING") == "1"}},
+                    "_meta": {"steering": steering_meta},
                 },
             }
         )

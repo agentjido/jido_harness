@@ -315,7 +315,10 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   # Input that is not valid UTF-8 cannot be sent; it is refused, and the
   # session goes on.
   defp encode_request(id, method, params) do
+    limit = ExMCPTransport.max_frame_bytes()
+
     case Jason.encode(%{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}) do
+      {:ok, message} when byte_size(message) > limit -> {:error, :frame_too_large}
       {:ok, message} -> {:ok, message}
       {:error, error} -> {:error, {:invalid_request, Exception.message(error)}}
     end

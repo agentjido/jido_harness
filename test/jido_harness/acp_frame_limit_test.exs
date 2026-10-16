@@ -10,6 +10,11 @@ defmodule Jido.Harness.ACPFrameLimitTest do
     def start_owned_process(_spec, owner), do: {:ok, owner}
     def cancel_process(_owner), do: :ok
 
+    def send_input(owner, data) do
+      send(owner, {:process_input, data})
+      :ok
+    end
+
     def stream_process(owner) do
       stream =
         Stream.resource(
@@ -59,6 +64,30 @@ defmodule Jido.Harness.ACPFrameLimitTest do
     send(reader, {:process_events, [event(frame <> "\n")]})
 
     assert {:ok, ^frame} = Bridge.receive_message(bridge)
+  end
+
+  test "an oversized extension request is not written to the process" do
+    Application.put_env(:jido_harness, :acp_max_frame_bytes, 256)
+    {bridge, _reader} = start_bridge()
+
+    assert {:error, :frame_too_large} =
+             Bridge.extension_request(bridge, "_session/steering", %{"text" => String.duplicate("x", 256)}, 1_000)
+
+    refute_receive {:process_input, _data}
+    assert Bridge.connected?(bridge)
+  end
+
+  test "a raised limit permits an extension request larger than the default" do
+    Application.put_env(:jido_harness, :acp_max_frame_bytes, 4_000_000)
+    {bridge, reader} = start_bridge()
+    text = String.duplicate("x", 1_048_577)
+    request = Task.async(fn -> Bridge.extension_request(bridge, "_session/steering", %{"text" => text}, 2_000) end)
+
+    assert_receive {:process_input, data}, 1_000
+    assert %{"id" => id, "params" => %{"text" => ^text}} = Jason.decode!(data)
+    response = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => %{"outcome" => "injected"}})
+    send(reader, {:process_events, [event(response <> "\n")]})
+    assert {:ok, %{"outcome" => "injected"}} = Task.await(request)
   end
 
   defp start_bridge do

@@ -127,6 +127,25 @@ defmodule Jido.Harness.ProcessDriver.Port do
   end
 
   defp run(executable, spec, owner, caller, ref) do
+    case open_port(executable, spec) do
+      {:ok, port} ->
+        os_pid =
+          case Port.info(port, :os_pid) do
+            {:os_pid, os_pid} -> os_pid
+            # A closed port forgets its process id, but its output and exit
+            # status are still in the mailbox.
+            nil -> @ended
+          end
+
+        send(caller, {ref, {:ok, os_pid}})
+        loop(port, os_pid, owner)
+
+      {:error, reason} ->
+        send(caller, {ref, {:error, reason}})
+    end
+  end
+
+  defp open_port(executable, spec) do
     options = [
       :binary,
       :exit_status,
@@ -144,19 +163,9 @@ defmodule Jido.Harness.ProcessDriver.Port do
         {:error, reason} -> raise ArgumentError, reason
       end
 
-    case Port.info(port, :os_pid) do
-      {:os_pid, os_pid} ->
-        send(caller, {ref, {:ok, os_pid}})
-        loop(port, os_pid, owner)
-
-      # Already over: a port forgets the process id once the process has
-      # ended. Its output and exit code are still to be read from the port.
-      nil ->
-        send(caller, {ref, {:ok, @ended}})
-        loop(port, @ended, owner)
-    end
+    {:ok, port}
   rescue
-    error -> send(caller, {ref, {:error, error}})
+    error -> {:error, error}
   end
 
   defp loop(port, os_pid, owner) do
@@ -174,12 +183,24 @@ defmodule Jido.Harness.ProcessDriver.Port do
         exit({:exit_code, code})
 
       {:input, data} ->
-        Port.command(port, data)
+        write_input(port, data)
         loop(port, os_pid, owner)
 
       _other ->
         loop(port, os_pid, owner)
     end
+  end
+
+  defp write_input(port, data) do
+    Port.command(port, data)
+  rescue
+    error in ArgumentError ->
+      # The child can exit while input is queued. Keep reading its output
+      # and actual exit status instead of treating the failed write as exit 0.
+      case Port.info(port) do
+        nil -> :ok
+        _info -> reraise error, __STACKTRACE__
+      end
   end
 
   # A port adds to the environment of this system process and takes away the

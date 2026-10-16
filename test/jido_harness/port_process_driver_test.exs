@@ -58,6 +58,32 @@ defmodule Jido.Harness.PortProcessDriverTest do
     assert output(id) =~ ~r/echo:one.*echo:two/s
   end
 
+  test "input queued before a closed port's exit status preserves the failure code" do
+    {:ok, id} = start_interpreter()
+    assert :ok = Jido.Harness.Process.send_input(id, "echo echo:ready\n")
+    await_output(id, "echo:ready")
+
+    [{worker, _value}] = Registry.lookup(Jido.Harness.ProcessRegistry, id)
+    driver = :sys.get_state(worker).exec_pid
+    {:links, links} = Process.info(driver, :links)
+    port = Enum.find(links, &is_port/1)
+    assert is_port(port)
+
+    # Control the scheduling so input reaches the driver before the exit
+    # message, but the OS process ends before the driver writes that input.
+    :erlang.suspend_process(driver)
+
+    try do
+      assert :ok = Jido.Harness.Process.send_input(id, "queued input\n")
+      assert Port.command(port, "exit 7\n")
+      assert await_port_exit(driver, port, 7)
+    after
+      :erlang.resume_process(driver)
+    end
+
+    assert {:ok, %{state: :failed, exit_status: 7}} = Jido.Harness.Process.await(id, 15_000)
+  end
+
   test "the working directory and the environment reach the process" do
     cwd = Path.join(System.tmp_dir!(), "harness port #{System.unique_integer([:positive])}")
     File.mkdir_p!(cwd)
@@ -166,6 +192,20 @@ defmodule Jido.Harness.PortProcessDriverTest do
     else
       Process.sleep(50)
       await_output(id, text, attempts - 1)
+    end
+  end
+
+  defp await_port_exit(driver, port, code, attempts \\ 200)
+  defp await_port_exit(_driver, _port, _code, 0), do: false
+
+  defp await_port_exit(driver, port, code, attempts) do
+    {:messages, messages} = Process.info(driver, :messages)
+
+    if {port, {:exit_status, code}} in messages do
+      true
+    else
+      Process.sleep(10)
+      await_port_exit(driver, port, code, attempts - 1)
     end
   end
 

@@ -224,13 +224,21 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     {:stop, reason, state}
   end
 
+  def handle_info({:acp_steer_result, from, {:error, :timeout}}, state) do
+    # The agent may still act on the input. Stop it before a late reply can
+    # start work that has no Harness turn identity.
+    reason = {:steering_failed, :timeout}
+    GenServer.reply(from, {:error, reason})
+    {:stop, reason, state}
+  end
+
   def handle_info({:acp_steer_result, from, result}, state) do
     GenServer.reply(from, steer_outcome(result))
     {:noreply, state}
   end
 
   def handle_info({:acp_agent_meta, bridge, meta}, state) do
-    steering = if get_in(meta, ["steering", "supported"]) == true, do: bridge
+    steering = if match?(%{"steering" => %{"supported" => true}}, meta), do: bridge
     {:noreply, %{state | steering: steering}}
   end
 

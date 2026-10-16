@@ -160,6 +160,17 @@ harness returns `{:error, {:steering_failed, :unexpected_new_turn}}`, fails
 the session, and stops the provider process. The new turn has no harness
 turn ID. Do not retry the input automatically: the agent may have acted on it.
 
+If the agent does not answer within 10 seconds, `steer/3` returns
+`{:error, {:steering_failed, :timeout}}`. The harness also fails the session
+and stops the provider because the input's outcome is unknown. Do not retry
+the input automatically after this error.
+
+Steering uses the same `:acp_max_frame_bytes` limit as normal prompts. An
+encoded request over the limit returns
+`{:error, {:steering_failed, :frame_too_large}}` before anything is sent.
+The current turn remains usable. Unsupported optional steering metadata is
+ignored; only `_meta.steering.supported: true` enables steering.
+
 ### Approvals between turns
 
 Some agents ask permission outside a turn: a tool started in the background

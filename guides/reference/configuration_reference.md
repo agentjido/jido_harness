@@ -84,13 +84,14 @@ executable that performs model work.
 config :jido_harness, :acp_max_frame_bytes, 128 * 1_024 * 1_024
 ```
 
-The largest ACP message, in bytes, that the harness reads from an agent;
+The largest ACP message, in bytes, that the harness sends or reads;
 the default is 1 MiB. An ACP message is one line of JSON, and an image
 travels inside one as base64: a prompt with a screenshot attached, or a tool
 result that read one, can exceed the default, which ends the session.
 Applications that send or read images should raise it. The limit stays in
 place so that an agent that never ends its line cannot make the harness hold
-unbounded output.
+unbounded output. It also applies to steering requests. An oversized steering
+request is refused before dispatch, and the current turn remains usable.
 
 ## `:process_manager`
 

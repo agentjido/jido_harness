@@ -186,6 +186,65 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, next, 2_000)
   end
 
+  @tag :capture_log
+  test "a steering timeout fails the session before a late reply can start an untracked turn" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:claude, %{
+               env: %{"HARNESS_FIXTURE_STEERING" => "1", "HARNESS_FIXTURE_STEERING_NEW_TURN" => "1"}
+             })
+
+    assert {:ok, _info} = await_state(session_id, :idle)
+    process = Enum.find(Jido.Harness.Process.list(), &(&1.metadata[:session_id] == session_id))
+    assert %{state: :running} = process
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    steering = Task.async(fn -> Jido.Harness.Session.steer(session_id, "continue") end)
+
+    # The fixture holds the reply until another configuration request. Once
+    # it times out, the provider must stop before it can send startedNewTurn.
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+    assert {:error, {:steering_failed, :timeout}} = Task.await(steering, 12_000)
+    assert {:ok, %{state: :failed, active_turn_id: nil}} = await_state(session_id, :failed)
+    assert {:ok, %{state: state}} = Jido.Harness.Process.await(process.process_id, 2_000)
+    assert state in [:cancelled, :exited]
+    assert {:error, :closed} = Jido.Harness.Session.send_message(session_id, "next")
+  end
+
+  test "steering over the frame limit is refused before dispatch and the turn remains usable" do
+    assert {:ok, session_id} =
+             Jido.Harness.Session.start(:kimi, %{env: %{"HARNESS_FIXTURE_STEERING" => "1"}})
+
+    assert {:ok, _info} = await_state(session_id, :idle)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+    limit = Jido.Harness.SessionAdapters.ACP.ExMCPTransport.max_frame_bytes()
+
+    assert {:error, {:steering_failed, :frame_too_large}} =
+             Jido.Harness.Session.steer(session_id, String.duplicate("x", limit))
+
+    assert {:ok, ^turn_id} = Jido.Harness.Session.steer(session_id, "small input")
+
+    assert {:ok, %{status: :completed, text: "steered: small input"}} =
+             Jido.Harness.Session.await(session_id, turn_id, 2_000)
+  end
+
+  test "invalid optional steering metadata leaves the agent usable without steering" do
+    for metadata <- [true, "unsupported", [], nil, %{"supported" => "true"}] do
+      assert {:ok, session_id} =
+               Jido.Harness.Session.start(:kimi, %{
+                 env: %{"HARNESS_FIXTURE_STEERING_META" => Jason.encode!(metadata)}
+               })
+
+      assert {:ok, _info} = await_ready(session_id)
+      assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+
+      assert {:error, %Jido.Harness.Error{details: %{capability: :steer}}} =
+               Jido.Harness.Session.steer(session_id, "unsupported")
+
+      assert :ok = Jido.Harness.Session.interrupt(session_id)
+      assert {:ok, %{status: :interrupted}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
+      assert :ok = Jido.Harness.Session.close(session_id)
+    end
+  end
+
   test "an agent that does not advertise steering refuses it" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, _info} = await_state(session_id, :idle)
