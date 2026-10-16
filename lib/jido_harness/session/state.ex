@@ -10,7 +10,7 @@ defmodule Jido.Harness.Session.State do
     :context,
     :started_at,
     :buffer,
-    :journal
+    :event_log
   ]
 
   defstruct [
@@ -22,7 +22,7 @@ defmodule Jido.Harness.Session.State do
     :context,
     :started_at,
     :buffer,
-    :journal,
+    :event_log,
     :handle,
     :handle_monitor,
     :finished_at,

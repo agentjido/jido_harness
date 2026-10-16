@@ -17,6 +17,8 @@ defmodule Jido.Harness.Journal do
               segment_bytes: Zoi.integer() |> Zoi.default(8 * 1_024 * 1_024),
               current_bytes: Zoi.integer() |> Zoi.default(0),
               total_bytes: Zoi.integer() |> Zoi.default(0),
+              retained_events: Zoi.integer() |> Zoi.default(0),
+              max_events: Zoi.integer() |> Zoi.default(1_000_000),
               disk_limit_bytes: Zoi.integer() |> Zoi.default(256 * 1_024 * 1_024),
               failed?: Zoi.boolean() |> Zoi.default(false),
               read_failed?: Zoi.boolean() |> Zoi.default(false),
@@ -52,7 +54,8 @@ defmodule Jido.Harness.Journal do
          state <- %__MODULE__{
            dir: dir,
            segment_bytes: Map.get(config, :segment_bytes, 8 * 1_024 * 1_024),
-           disk_limit_bytes: Map.get(config, :disk_limit_bytes, 256 * 1_024 * 1_024)
+           disk_limit_bytes: Map.get(config, :disk_limit_bytes, 256 * 1_024 * 1_024),
+           max_events: Map.get(config, :max_events, 1_000_000)
          },
          {:ok, state} <- load_or_create(state) do
       {:ok, state}
@@ -75,7 +78,21 @@ defmodule Jido.Harness.Journal do
   end
 
   defp append_record(state, record, sequence, secrets) do
-    with {:ok, json} <- Jason.encode(record |> Redaction.redact(secrets) |> sanitize()),
+    write_record(state, record |> Redaction.redact(secrets) |> sanitize(), sequence)
+  end
+
+  @doc false
+  @spec append_prepared(t(), map()) :: {:ok, t()} | {:error, term(), t()}
+  def append_prepared(%{failed?: true} = state, _record), do: {:error, :journal_unavailable, state}
+
+  def append_prepared(state, %{"sequence" => sequence} = record)
+      when is_integer(sequence) and sequence > state.latest_sequence,
+      do: write_record(state, record, sequence)
+
+  def append_prepared(state, _record), do: {:error, :invalid_sequence, state}
+
+  defp write_record(state, record, sequence) do
+    with {:ok, json} <- Jason.encode(record),
          line = json <> "\n",
          {:ok, state} <- maybe_rotate(state, byte_size(line)),
          :ok <- File.write(state.path, line, [:append, :binary]) do
@@ -83,6 +100,8 @@ defmodule Jido.Harness.Journal do
         state
         | current_bytes: state.current_bytes + byte_size(line),
           total_bytes: state.total_bytes + byte_size(line),
+          retained_events: state.retained_events + 1,
+          available_from: if(state.retained_events == 0, do: sequence, else: state.available_from),
           latest_sequence: sequence,
           segments: Map.update!(state.segments, state.segment, &Index.append(&1, sequence, byte_size(line)))
       }
@@ -98,11 +117,25 @@ defmodule Jido.Harness.Journal do
 
   @doc "Seeks near a sequence cursor; read errors leave future writes enabled."
   @spec replay(t(), non_neg_integer(), pos_integer()) :: {[map()], t()}
-  def replay(%__MODULE__{failed?: true} = state, _cursor, _limit), do: {[], state}
+  def replay(state, cursor, limit), do: replay(state, cursor, limit, nil)
 
-  def replay(%__MODULE__{} = state, cursor, limit) do
+  @doc false
+  @spec replay(t(), non_neg_integer(), pos_integer(), pos_integer() | nil) :: {list(), t()}
+  def replay(%__MODULE__{failed?: true} = state, _cursor, _limit, _bytes), do: {[], state}
+
+  def replay(%__MODULE__{} = state, cursor, limit, bytes) do
     started = System.monotonic_time()
-    initial = %{records: [], remaining: limit, decoded_records: 0, read_bytes: 0, segments_opened: 0}
+
+    initial = %{
+      records: [],
+      remaining: limit,
+      decoded_records: 0,
+      read_bytes: 0,
+      segments_opened: 0,
+      max_bytes: bytes,
+      page_bytes: 0,
+      last_sequence: cursor
+    }
 
     result =
       if cursor >= state.latest_sequence do
@@ -168,8 +201,9 @@ defmodule Jido.Harness.Journal do
 
         acc =
           case Jason.decode(line) do
-            {:ok, %{"sequence" => sequence} = record} when is_integer(sequence) and sequence > cursor ->
-              %{acc | records: [record | acc.records], remaining: acc.remaining - 1}
+            {:ok, %{"sequence" => sequence} = record} when is_integer(sequence) and sequence > acc.last_sequence ->
+              separator = if :binary.last(line) == ?\n, do: 1, else: 0
+              retain_record(acc, record, byte_size(line) - separator)
 
             _other ->
               acc
@@ -185,6 +219,38 @@ defmodule Jido.Harness.Journal do
     end
   end
 
+  defp retain_record(%{max_bytes: nil} = acc, record, _size) do
+    %{acc | records: [record | acc.records], remaining: acc.remaining - 1, last_sequence: record["sequence"]}
+  end
+
+  # Oversized records and the first record beyond the remaining byte budget
+  # need only a sequence and size for Page.build/4. Do not retain their payloads.
+  defp retain_record(acc, record, size) do
+    sequence = record["sequence"]
+
+    cond do
+      size > acc.max_bytes ->
+        %{
+          acc
+          | records: [{%{"sequence" => sequence}, size} | acc.records],
+            remaining: acc.remaining - 1,
+            last_sequence: sequence
+        }
+
+      acc.page_bytes + size > acc.max_bytes ->
+        %{acc | records: [{%{"sequence" => sequence}, size} | acc.records], remaining: 0, last_sequence: sequence}
+
+      true ->
+        %{
+          acc
+          | records: [{record, size} | acc.records],
+            remaining: acc.remaining - 1,
+            page_bytes: acc.page_bytes + size,
+            last_sequence: sequence
+        }
+    end
+  end
+
   @doc "Removes the journal directory and reports filesystem errors."
   @spec remove(t()) :: :ok | {:error, term()}
   def remove(%__MODULE__{dir: dir}), do: File.rm_rf(dir) |> normalize_rm()
@@ -194,8 +260,13 @@ defmodule Jido.Harness.Journal do
     :filename.basedir(:user_cache, "jido_harness") |> to_string()
   end
 
-  defp maybe_rotate(%__MODULE__{} = state, incoming) when state.current_bytes + incoming <= state.segment_bytes,
-    do: {:ok, state}
+  defp maybe_rotate(%__MODULE__{} = state, incoming)
+       when state.current_bytes + incoming <= state.segment_bytes and
+              state.current_bytes + incoming <= state.disk_limit_bytes do
+    if Map.fetch!(state.segments, state.segment).count < state.max_events,
+      do: {:ok, state},
+      else: create_segment(%{state | segment: state.segment + 1})
+  end
 
   defp maybe_rotate(%__MODULE__{} = state, _incoming), do: create_segment(%{state | segment: state.segment + 1})
 
@@ -223,8 +294,12 @@ defmodule Jido.Harness.Journal do
               Enum.reduce(File.stream!(path, :line, []), Index.new(path), fn line, segment ->
                 sequence =
                   case Jason.decode(line) do
-                    {:ok, %{"sequence" => sequence}} when is_integer(sequence) and sequence > segment.last -> sequence
-                    _other -> nil
+                    {:ok, %{"sequence" => sequence}}
+                    when is_integer(sequence) and sequence > segment.last and sequence > state.latest_sequence ->
+                      sequence
+
+                    _other ->
+                      nil
                   end
 
                 Index.append(segment, sequence, byte_size(line))
@@ -236,26 +311,37 @@ defmodule Jido.Harness.Journal do
                 path: path,
                 current_bytes: segment.bytes,
                 total_bytes: state.total_bytes + segment.bytes,
+                retained_events: state.retained_events + segment.count,
                 latest_sequence: max(state.latest_sequence, segment.last),
                 segments: Map.put(state.segments, number, segment)
             }
           end)
 
-        first = state.segments |> Enum.min_by(&elem(&1, 0)) |> elem(1)
-        {:ok, prune(%{state | available_from: first.first || 1})}
+        first =
+          state.segments |> Map.values() |> Enum.map(& &1.first) |> Enum.reject(&is_nil/1) |> Enum.min(fn -> nil end)
+
+        state = prune(%{state | available_from: first || state.latest_sequence + 1})
+
+        # A crash can leave a partial line at the end of the last file. Append
+        # to a new segment so that the next valid record stays readable.
+        if state.current_bytes > 0,
+          do: create_segment(%{state | segment: state.segment + 1}),
+          else: {:ok, state}
     end
   rescue
     error -> {:error, error}
   end
 
-  defp prune(%__MODULE__{total_bytes: total, disk_limit_bytes: limit} = state) when total <= limit, do: state
+  defp prune(state)
+       when state.total_bytes <= state.disk_limit_bytes and state.retained_events <= state.max_events,
+       do: state
 
   defp prune(%__MODULE__{} = state) do
     case Enum.sort_by(state.segments, &elem(&1, 0)) do
       [{number, oldest}, {_next_number, next} | _rest] when number != state.segment ->
         case File.rm(oldest.path) do
           :ok ->
-            available_from = next.first || state.available_from
+            available_from = next.first || state.latest_sequence + 1
 
             :telemetry.execute([:jido, :harness, :journal, :overflow], %{bytes: oldest.bytes}, %{
               journal_dir: state.dir,
@@ -265,6 +351,7 @@ defmodule Jido.Harness.Journal do
             prune(%{
               state
               | total_bytes: max(0, state.total_bytes - oldest.bytes),
+                retained_events: max(0, state.retained_events - oldest.count),
                 available_from: available_from,
                 segments: Map.delete(state.segments, number)
             })
@@ -272,6 +359,12 @@ defmodule Jido.Harness.Journal do
           {:error, reason} ->
             :telemetry.execute([:jido, :harness, :journal, :error], %{count: 1}, %{reason: reason})
             %{state | failed?: true}
+        end
+
+      [{_number, %{bytes: bytes}}] when bytes > 0 ->
+        case create_segment(%{state | segment: state.segment + 1}) do
+          {:ok, updated} -> prune(updated)
+          {:error, _reason} -> %{state | failed?: true}
         end
 
       _ ->

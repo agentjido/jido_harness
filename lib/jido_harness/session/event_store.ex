@@ -9,7 +9,7 @@ defmodule Jido.Harness.Session.EventStore do
   def append(state, %Event{} = event) do
     event = Event.attach_session(event, state.id, state.provider, state.sequence + 1)
     secrets = state.secrets || Redaction.prepare(Redaction.secrets_from_env(state.request.env))
-    {buffer, journal} = EventLog.append(state.buffer, state.journal, event, secrets)
+    {buffer, event_log} = EventLog.append(state.buffer, state.event_log, event, secrets)
 
     :telemetry.execute([:jido, :harness, :session, :event], %{count: 1}, %{
       session_id: state.id,
@@ -20,7 +20,7 @@ defmodule Jido.Harness.Session.EventStore do
     state
     |> Map.put(:sequence, event.sequence)
     |> Map.put(:buffer, buffer)
-    |> Map.put(:journal, journal)
+    |> Map.put(:event_log, event_log)
     |> Map.put(:secrets, secrets)
     |> accumulate_active(event)
   end
@@ -48,9 +48,9 @@ defmodule Jido.Harness.Session.EventStore do
   @doc false
   @spec replay(State.t(), non_neg_integer(), pos_integer()) :: {[Event.t()], State.t()}
   def replay(state, cursor, limit) do
-    {records, journal, available_from} = EventLog.replay(state.buffer, state.journal, cursor, limit)
-    events = Enum.map(records, &record_to_event(state, &1))
-    {prepend_gap(events, state, cursor, available_from), %{state | journal: journal}}
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limit, 1_048_576, &record_to_event(state, &1))
+    events = EventLog.events(page, &Function.identity/1, &gap_event(state, &1))
+    {events, %{state | event_log: event_log}}
   end
 
   @doc false
@@ -65,7 +65,8 @@ defmodule Jido.Harness.Session.EventStore do
       started_at: state.started_at,
       finished_at: state.finished_at,
       error: state.error,
-      journal_dir: EventLog.dir(state.journal),
+      journal_dir: EventLog.dir(state.event_log),
+      replay_store: EventLog.info(state.event_log),
       output_cursor: state.sequence,
       queued_turns: :queue.len(state.queue),
       pending_approvals: map_size(state.pending_approvals),
@@ -98,25 +99,28 @@ defmodule Jido.Harness.Session.EventStore do
 
   defp accumulate_active(state, _event), do: state
 
-  defp prepend_gap(events, _state, cursor, available_from) when cursor >= available_from - 1, do: events
-
-  defp prepend_gap(events, state, _cursor, available_from) do
-    gap =
-      Event.new!(
-        type: :provider_event,
-        session_id: state.id,
-        provider: state.provider,
-        provider_session_id: state.provider_session_id,
-        sequence: max(1, available_from - 1),
-        payload: %{"kind" => "replay_gap", "available_from" => available_from}
-      )
-
-    [gap | events]
+  defp gap_event(state, gap) do
+    Event.new!(
+      type: :provider_event,
+      session_id: state.id,
+      provider: state.provider,
+      provider_session_id: state.provider_session_id,
+      sequence: gap.to,
+      payload: %{
+        "kind" => "replay_gap",
+        "available_from" => gap.to + 1,
+        "from_sequence" => gap.from,
+        "to_sequence" => gap.to,
+        "reason" => Atom.to_string(gap.reason)
+      }
+    )
   end
 
-  defp record_to_event(_state, %Event{} = event), do: event
+  @doc false
+  @spec record_to_event(State.t(), map()) :: Event.t()
+  def record_to_event(_state, %Event{} = event), do: event
 
-  defp record_to_event(state, record) do
+  def record_to_event(state, record) do
     Event.new!(
       type: existing_atom(record["type"]),
       run_id: nil,

@@ -47,6 +47,10 @@ defmodule Jido.Harness.Session do
   @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.Event.t()])
   def replay(session_id, options \\ []), do: SessionManager.replay(session_id, options)
 
+  @doc "Returns a replay page with records, gap ranges, and the next cursor."
+  @spec replay_page(String.t(), keyword()) :: Jido.Harness.result(Jido.Harness.ReplayStore.Page.t())
+  def replay_page(id, options \\ []), do: SessionManager.replay_page(id, options)
+
   @doc "Starts a turn when the session is idle and returns its stable turn ID."
   @spec send_message(String.t(), turn_input(), keyword()) :: Jido.Harness.result(String.t())
   def send_message(session_id, input, options \\ []) do

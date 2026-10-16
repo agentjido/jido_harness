@@ -1,7 +1,7 @@
 defmodule Jido.Harness.MemoryHarness do
   @moduledoc false
 
-  alias Jido.Harness.{Buffer, SessionRequest, TurnRequest}
+  alias Jido.Harness.{Buffer, EventLog, SessionRequest, TurnRequest}
   alias Jido.Harness.Session.{ActiveTurn, Lifecycle, State}
 
   def state(options \\ %{}) do
@@ -19,7 +19,7 @@ defmodule Jido.Harness.MemoryHarness do
       started_at: "2026-10-16T00:00:00Z",
       status: :idle,
       buffer: Buffer.new(65_536),
-      journal: nil
+      event_log: EventLog.open(:session, "memory-session", %{}, {Jido.Harness.ReplayStore.Memory, %{max_bytes: 65_536}})
     }
   end
 

@@ -14,6 +14,7 @@ defmodule Jido.Harness.SessionInfo do
               finished_at: Zoi.string() |> Zoi.nullish(),
               error: Zoi.any() |> Zoi.nullish(),
               journal_dir: Zoi.string() |> Zoi.nullish(),
+              replay_store: Zoi.map() |> Zoi.default(%{}),
               output_cursor: Zoi.integer() |> Zoi.default(0),
               queued_turns: Zoi.integer() |> Zoi.default(0),
               pending_approvals: Zoi.integer() |> Zoi.default(0),

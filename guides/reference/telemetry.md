@@ -16,6 +16,9 @@ not wrap telemetry in Jido Actions or Signals.
 | `[:jido, :harness, :session, :stop]` | `count` | `session_id`, `provider`, `protocol`, `status` |
 | `[:jido, :harness, :adapter, :start]` | `system_time` | `run_id`, `provider`, `adapter` |
 | `[:jido, :harness, :adapter, :stop]` | native `duration` | `run_id`, `provider`, `adapter`, `status` |
+| `[:jido, :harness, :replay_store, :append]` | native `duration`, `retained_bytes`, `retained_events` | `adapter`, resource `kind`, storage `status` |
+| `[:jido, :harness, :replay_store, :read]` | native `duration`, `returned_records`, `gaps`, `bytes` | `adapter`, resource `kind`, storage `status` |
+| `[:jido, :harness, :replay_store, :error]` | `count` | `adapter`, `operation` |
 | `[:jido, :harness, :journal, :error]` | `count` | failure `reason` and sometimes `owner_id` |
 | `[:jido, :harness, :journal, :overflow]` | removed `bytes` | journal directory and next cursor |
 | `[:jido, :harness, :journal, :replay]` | native `duration`, `decoded_records`, `read_bytes`, `segments_opened`, `returned_records` | `journal_dir`, `cursor`, `limit`, `read_failed?` |
@@ -90,3 +93,9 @@ classified and redacted it.
 - Alert on journal errors.
 - Track journal overflow when complete replay matters.
 - Track long-running or idle resources from lifecycle lists and timestamps.
+
+Replay-store telemetry covers all adapters and fallback. Read gap counts refer
+to ranges, not individual missing sequences. Journal telemetry remains specific
+to file I/O. Monitor replay-store errors to include open failures and custom
+adapters. Retained measurements use the adapter budget measure, not actual VM
+memory. See [Replay stores](../replay_stores.md).

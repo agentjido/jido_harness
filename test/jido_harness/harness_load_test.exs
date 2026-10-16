@@ -1,7 +1,7 @@
 defmodule Jido.Harness.HarnessLoadTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.{Buffer, Event, EventLog, Journal, MemoryHarness, ProcessEvent, Redaction, TextTail, Waiters}
+  alias Jido.Harness.{Buffer, Event, EventLog, MemoryHarness, ProcessEvent, Redaction, TextTail, Waiters}
   alias Jido.Harness.SessionAdapters.ACP.{ExMCPTransport, FrameBuffer}
   alias ExMCPTransport.Bridge
 
@@ -189,8 +189,12 @@ defmodule Jido.Harness.HarnessLoadTest do
     secrets = Redaction.prepare(["load-secret-value"])
 
     for bytes <- [1_024, 16_384] do
-      {:ok, journal} =
-        Journal.open("pipeline-#{bytes}", %{journal_dir: dir, disk_limit_bytes: 64_000_000, segment_bytes: 262_144})
+      journal =
+        EventLog.open(:run, "pipeline-#{bytes}", %{
+          journal_dir: dir,
+          disk_limit_bytes: 64_000_000,
+          segment_bytes: 262_144
+        })
 
       text = String.duplicate("x", bytes) <> " load-secret-value"
 
@@ -212,11 +216,12 @@ defmodule Jido.Harness.HarnessLoadTest do
 
       assert buffer.bytes <= buffer.max_bytes
       assert List.last(Buffer.events(buffer)).raw == text
-      {records, journal} = Journal.replay(journal, 999, 1)
+      {page, journal} = EventLog.replay(journal, 999, 1)
+      records = page.records
       assert [%{"sequence" => 1_000, "raw" => nil, "payload" => payload}] = records
       refute payload["text"] =~ "load-secret-value"
       assert payload["nested"] == [%{"authorization" => "[REDACTED]"}]
-      refute journal.failed?
+      assert journal.status == :healthy
       report(:event_pipeline, Map.merge(stats, %{events: 1_000, payload_bytes: bytes, retained_bytes: buffer.bytes}))
     end
   end

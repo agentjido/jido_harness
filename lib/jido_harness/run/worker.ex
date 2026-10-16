@@ -18,7 +18,7 @@ defmodule Jido.Harness.RunWorker do
     Process.flag(:trap_exit, true)
     retention = Map.get(config, :retention, %{}) |> Map.new()
     memory_bytes = Map.get(retention, :memory_bytes, 1_048_576)
-    journal = EventLog.open(id, retention)
+    event_log = EventLog.open(:run, id, retention)
 
     context = %{
       run_id: id,
@@ -47,7 +47,7 @@ defmodule Jido.Harness.RunWorker do
       provider_session_id: request.provider_session_id,
       sequence: 0,
       buffer: EventLog.new_buffer(memory_bytes),
-      journal: journal,
+      event_log: event_log,
       task: nil,
       adapter_started_at: nil,
       runtime_timer: nil,
@@ -108,7 +108,14 @@ defmodule Jido.Harness.RunWorker do
 
   def handle_call({:replay, cursor, limit}, _from, state) do
     {records, state} = replay_records(state, cursor, limit)
-    {:reply, {:ok, Enum.map(records, &record_to_event(state, &1))}, state}
+    {:reply, {:ok, records}, state}
+  end
+
+  def handle_call({:replay_page, cursor, limits}, _from, state) do
+    {page, event_log} =
+      EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes, &record_to_event(state, &1))
+
+    {:reply, {:ok, page}, %{state | event_log: event_log}}
   end
 
   def handle_call(:cancel, _from, %{result: %RunResult{}} = state), do: {:reply, :ok, state}
@@ -131,8 +138,10 @@ defmodule Jido.Harness.RunWorker do
   def handle_call(:cancel, _from, state), do: {:reply, :ok, state}
 
   def handle_call(:prune, _from, state) when state.status in [:completed, :failed, :cancelled] do
-    EventLog.remove(state.journal)
-    {:stop, :normal, :ok, state}
+    case EventLog.remove(state.event_log) do
+      :ok -> {:stop, :normal, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:prune, _from, state), do: {:reply, {:error, :running}, state}
@@ -200,7 +209,7 @@ defmodule Jido.Harness.RunWorker do
   @impl true
   def terminate(_reason, state) do
     if state.task, do: Task.shutdown(state.task, :brutal_kill)
-    :ok
+    EventLog.close(state.event_log)
   end
 
   defp invoke_acp(session_request, turn_request, context, owner) do
@@ -244,7 +253,7 @@ defmodule Jido.Harness.RunWorker do
 
   defp append(state, %Event{} = event) do
     event = Event.attach(event, state.id, state.provider, state.sequence + 1)
-    {buffer, journal} = EventLog.append(state.buffer, state.journal, event, state.secrets)
+    {buffer, event_log} = EventLog.append(state.buffer, state.event_log, event, state.secrets)
 
     :telemetry.execute([:jido, :harness, :run, :event], %{count: 1}, %{
       run_id: state.id,
@@ -255,7 +264,7 @@ defmodule Jido.Harness.RunWorker do
     state
     |> Map.put(:sequence, event.sequence)
     |> Map.put(:buffer, buffer)
-    |> Map.put(:journal, journal)
+    |> Map.put(:event_log, event_log)
     |> accumulate(event)
   end
 
@@ -434,24 +443,26 @@ defmodule Jido.Harness.RunWorker do
   end
 
   defp replay_records(state, cursor, limit) do
-    {records, journal, available_from} = EventLog.replay(state.buffer, state.journal, cursor, limit)
-    {prepend_gap(records, state, cursor, available_from), %{state | journal: journal}}
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limit, 1_048_576, &record_to_event(state, &1))
+    events = EventLog.events(page, &Function.identity/1, &gap_event(state, &1))
+    {events, %{state | event_log: event_log}}
   end
 
-  defp prepend_gap(records, _state, cursor, available_from) when cursor >= available_from - 1, do: records
-
-  defp prepend_gap(records, state, _cursor, available_from) do
-    gap =
-      Event.new!(%{
-        type: :provider_event,
-        run_id: state.id,
-        provider: state.provider,
-        provider_session_id: state.provider_session_id,
-        sequence: max(1, available_from - 1),
-        payload: %{"kind" => "replay_gap", "available_from" => available_from}
-      })
-
-    [gap | records]
+  defp gap_event(state, gap) do
+    Event.new!(
+      type: :provider_event,
+      run_id: state.id,
+      provider: state.provider,
+      provider_session_id: state.provider_session_id,
+      sequence: gap.to,
+      payload: %{
+        "kind" => "replay_gap",
+        "available_from" => gap.to + 1,
+        "from_sequence" => gap.from,
+        "to_sequence" => gap.to,
+        "reason" => Atom.to_string(gap.reason)
+      }
+    )
   end
 
   defp record_to_event(_state, %Event{} = event), do: event
@@ -483,7 +494,8 @@ defmodule Jido.Harness.RunWorker do
       finished_at: state.finished_at,
       provider_session_id: state.provider_session_id,
       error: state.error,
-      journal_dir: EventLog.dir(state.journal),
+      journal_dir: EventLog.dir(state.event_log),
+      replay_store: EventLog.info(state.event_log),
       output_cursor: state.sequence,
       metadata: state.request.metadata
     }

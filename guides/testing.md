@@ -233,3 +233,37 @@ Record which live profiles ran and which were skipped. A passing unit suite
 does not establish live compatibility. Review the
 [dependency audit exceptions](reference/dependencies.md#audit-exceptions)
 before publication.
+
+## Replay store measurements
+
+Shared contract tests run in `mix test`. CI also runs the store load suite on
+Linux and macOS. Run the load check without provider tools:
+
+```bash
+mix test --no-cover --include load test/jido_harness/replay_store_load_test.exs
+```
+
+The check compares 2,000 and 16,000 retained records and uses reductions to
+bound read work. It does not apply a machine-dependent latency threshold.
+
+Run the memory comparison separately:
+
+```bash
+mix run bench/replay_store.exs
+HARNESS_STORE_RECORDS=64000 HARNESS_STORE_READS=2000 mix run bench/replay_store.exs
+```
+
+The benchmark compares the original queue buffer, indexed worker memory, and
+ETS with 1 and 32 resources and 256-byte and 4-KiB payloads. Each resource has
+its own owner process. Output reports append, tail-read, and empty-read time
+and reductions, retained counts, logical bytes, process and ETS memory, VM
+memory snapshots, queue length, and memory after cleanup. Byte limits default
+to 4 MiB per resource (`HARNESS_STORE_BYTES`). Record counts default to 16,000
+across resources, and each owner performs 1,000 reads of each kind. Many-owner
+times are summed worker times, not aggregate wall-clock throughput.
+
+Repeated payload binaries are shared. Logical budgets and VM memory differ;
+allocator behavior and other VM processes affect total memory snapshots. The
+queue baseline uses external-term-size retention; adapters use JSON bytes.
+Compare retained counts as well as memory. These are synthetic measurements,
+not estimates of provider latency or guarantees for production workloads.

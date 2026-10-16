@@ -61,6 +61,13 @@ defmodule Jido.Harness.ProcessManager do
     end
   end
 
+  @doc "Returns an explicit replay page with bounded bytes and missing ranges."
+  def replay_page_process(id, options \\ []) do
+    with {:ok, cursor, limits} <- Jido.Harness.ReplayStore.page_options(options) do
+      call(id, {:replay_page, cursor, limits})
+    end
+  end
+
   @doc "Returns a pull-based process event stream starting at an optional cursor."
   def stream_process(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),

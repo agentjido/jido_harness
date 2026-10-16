@@ -26,6 +26,8 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/normalization_and_data_model.md",
        "guides/streaming_replay_and_retention.md",
+       "guides/replay_stores.md",
+       "guides/replay_store_benchmarks.md",
        "guides/ownership_timeouts_and_cancellation.md",
        "guides/security.md"
      ]},
@@ -120,7 +122,9 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.Adapter,
             Jido.Harness.AdapterSpec,
             Jido.Harness.SessionAdapter,
-            Jido.Harness.Registry
+            Jido.Harness.Registry,
+            Jido.Harness.ReplayStore,
+            Jido.Harness.ReplayStore.Page
           ],
           "Built-in adapters": [
             Jido.Harness.Adapters.Amp,

@@ -13,6 +13,7 @@ defmodule Jido.Harness.RunInfo do
               provider_session_id: Zoi.string() |> Zoi.nullish(),
               error: Zoi.any() |> Zoi.nullish(),
               journal_dir: Zoi.string() |> Zoi.nullish(),
+              replay_store: Zoi.map() |> Zoi.default(%{}),
               output_cursor: Zoi.integer() |> Zoi.default(0),
               metadata: Zoi.map() |> Zoi.default(%{})
             },

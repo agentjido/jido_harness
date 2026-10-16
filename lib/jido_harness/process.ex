@@ -35,6 +35,10 @@ defmodule Jido.Harness.Process do
   @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.ProcessEvent.t()])
   def replay(process_id, options \\ []), do: ProcessManager.replay_process(process_id, options)
 
+  @doc "Returns a replay page with records, gap ranges, and the next cursor."
+  @spec replay_page(String.t(), keyword()) :: Jido.Harness.result(Jido.Harness.ReplayStore.Page.t())
+  def replay_page(id, options \\ []), do: ProcessManager.replay_page_process(id, options)
+
   @doc "Waits for termination without cancelling the process when the wait times out."
   @spec await(String.t(), timeout()) :: Jido.Harness.result(Jido.Harness.ProcessInfo.t())
   def await(process_id, timeout \\ :infinity), do: ProcessManager.await_process(process_id, timeout)
