@@ -1,8 +1,24 @@
 defmodule Jido.Harness.SessionAdapters.ACP.FrameBuffer do
   @moduledoc false
 
-  defstruct chunks: [], pending: [], pending_bytes: 0, bytes: 0
-  @type t :: %__MODULE__{}
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              chunks: Zoi.any() |> Zoi.default([]),
+              pending: Zoi.any() |> Zoi.default([]),
+              pending_bytes: Zoi.integer() |> Zoi.default(0),
+              bytes: Zoi.integer() |> Zoi.default(0)
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  @doc "Returns the validation schema for the internal frame buffer."
+  @spec schema() :: Zoi.schema()
+  def schema, do: @schema
 
   @doc false
   @spec feed(t(), binary(), pos_integer()) :: {:ok, [binary()], t()} | {:error, :frame_too_large}

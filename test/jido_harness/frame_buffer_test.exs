@@ -2,6 +2,11 @@ defmodule Jido.Harness.FrameBufferTest do
   use ExUnit.Case, async: true
   alias Jido.Harness.SessionAdapters.ACP.FrameBuffer
 
+  test "schema defaults create an empty frame buffer" do
+    assert {:ok, %FrameBuffer{bytes: 0, pending_bytes: 0, chunks: [], pending: []}} =
+             Zoi.parse(FrameBuffer.schema(), %{})
+  end
+
   test "preserves frame order across arbitrary byte boundaries and CRLF" do
     input = "  first\r\n\n" <> String.duplicate("🙂", 3_000) <> "\nlast"
 
