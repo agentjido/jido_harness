@@ -82,6 +82,25 @@ defmodule Jido.Harness.ReplayPageTest do
     end
   end
 
+  test "invalid stored event fields use fallback in page and list APIs" do
+    event = Event.new!(type: :output_text_delta, provider: :test, sequence: 1, payload: %{"text" => "safe"})
+    record = Jido.Harness.ReplayStore.Record.prepare(event, [])
+    invalid = Map.put(record, "type", "unknown_stored_event_type")
+    limits = %{max_events: 100, max_bytes: 10_000}
+    page = Jido.Harness.ReplayStore.Page.build([invalid], 0, %{latest_sequence: 1, oldest_sequence: 1}, limits)
+
+    for kind <- [:run, :session] do
+      log = EventLog.open(kind, "corrupt-event", %{}, {Jido.Harness.ReplayStore.FaultStore, %{page: page}})
+      {_, log} = EventLog.append(Buffer.new(10_000), log, event)
+      state = %{MemoryHarness.state() | event_log: log}
+      worker = if kind == :run, do: Jido.Harness.RunWorker, else: Jido.Harness.SessionWorker
+      assert {:reply, {:ok, page}, state} = worker.handle_call({:replay_page, 0, limits}, nil, state)
+      assert [%Event{type: :output_text_delta}] = page.records
+      assert state.event_log.status == :degraded
+      assert {:reply, {:ok, [%Event{type: :output_text_delta}]}, _} = worker.handle_call({:replay, 0, 100}, nil, state)
+    end
+  end
+
   test "storage errors do not prevent process cancellation and prune reports cleanup failure" do
     previous = Application.get_env(:jido_harness, :replay_store)
     driver = Application.get_env(:jido_harness, :process_driver)

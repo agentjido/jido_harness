@@ -103,8 +103,15 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_call({:replay_page, cursor, limits}, _from, state) do
-    {page, event_log} = EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes)
-    page = %{page | records: Enum.map(page.records, &EventStore.record_to_event(state, &1))}
+    {page, event_log} =
+      EventLog.replay(
+        state.event_log,
+        cursor,
+        limits.max_events,
+        limits.max_bytes,
+        &EventStore.record_to_event(state, &1)
+      )
+
     {:reply, {:ok, page}, %{state | event_log: event_log}}
   end
 

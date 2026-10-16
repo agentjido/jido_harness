@@ -573,6 +573,13 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, id} = result
     assert_receive {:driver_ready, exec_pid, worker, os_pid}, 1_000
     assert [{^worker, _value}] = Registry.lookup(Jido.Harness.ProcessRegistry, id)
+
+    # This driver records signals but does not implement OS termination.
+    # Always remove its worker so later tests cannot inherit a running fixture.
+    on_exit(fn ->
+      if Process.alive?(worker), do: DynamicSupervisor.terminate_child(Jido.Harness.ProcessSupervisor, worker)
+    end)
+
     {id, worker, exec_pid, os_pid}
   end
 

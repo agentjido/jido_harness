@@ -3,6 +3,7 @@ defmodule Jido.Harness.EventLogTest do
 
   alias Jido.Harness.{Buffer, Event, EventLog, Redaction}
   alias Jido.Harness.ReplayStore.{ETS, File, Memory}
+  alias Jido.Harness.ReplayStore.{FaultStore, Page}
 
   setup do
     base = Path.join(System.tmp_dir!(), "harness-event-log-#{System.unique_integer([:positive])}")
@@ -104,5 +105,84 @@ defmodule Jido.Harness.EventLogTest do
   test "cleanup errors are returned for retry" do
     log = EventLog.open(:run, "cleanup", %{}, {Jido.Harness.ReplayStore.FaultStore, %{operation: :delete}})
     assert {:error, :eacces} = EventLog.remove(log)
+  end
+
+  test "a read failure after reopen reports the known sequence range", context do
+    config = {File, %{journal_dir: context.base}}
+    log = EventLog.open(:run, "reopened-failure", %{}, config)
+    {_, log} = fill(log)
+    assert :ok = EventLog.close(log)
+    reopened = EventLog.open(:run, "reopened-failure", %{}, config)
+    Elixir.File.rm!(reopened.handle.journal.segments[0].path)
+    {page, failed} = EventLog.replay(reopened, 0, 100)
+    assert failed.status == :degraded
+    assert page.records == []
+    assert page.latest_sequence == 6
+    assert page.next_cursor == 6
+    assert page.gaps == [%{from: 1, to: 6, reason: :unavailable}]
+    assert EventLog.info(failed).latest_sequence == 6
+  end
+
+  test "invalid callback results use the fallback and do not stop the caller" do
+    for operation <- [:invalid_open, :invalid_append, :invalid_read, :invalid_info] do
+      log = EventLog.open(:run, "invalid", %{}, {FaultStore, %{operation: operation}})
+      {_, log} = fill(log)
+      {page, log} = EventLog.replay(log, 5, 1)
+      assert log.status == :degraded
+      assert [%{"sequence" => 6}] = page.records
+      assert EventLog.info(log).latest_sequence == 6
+    end
+
+    for operation <- [:invalid_close, :invalid_delete] do
+      log = EventLog.open(:run, "invalid", %{}, {FaultStore, %{operation: operation}})
+      result = if operation == :invalid_close, do: EventLog.close(log), else: EventLog.remove(log)
+      assert result == {:error, :invalid_callback_result}
+    end
+  end
+
+  test "invalid pages cannot regress, stall, overlap gaps, or exceed limits" do
+    record = Jido.Harness.ReplayStore.Record.prepare(event(6), [])
+
+    for page <- [
+          :bad_page,
+          %Page{next_cursor: 4, latest_sequence: 6},
+          %Page{next_cursor: 5, latest_sequence: 6},
+          %Page{records: [record, record], next_cursor: 6, latest_sequence: 6},
+          %Page{records: [record], gaps: [%{from: 6, to: 6, reason: :unavailable}], next_cursor: 6, latest_sequence: 6},
+          %Page{records: [record], next_cursor: 6, latest_sequence: 6, bytes: 100_001}
+        ] do
+      log = EventLog.open(:run, "invalid-page", %{}, {FaultStore, %{page: page}})
+      {_, log} = fill(log)
+      {page, failed} = EventLog.replay(log, 5, 1, 100_000)
+      assert failed.status == :degraded
+      assert [%{"sequence" => 6}] = page.records
+      assert page.next_cursor == 6
+    end
+  end
+
+  test "nil is a valid opaque store handle" do
+    log = EventLog.open(:run, "opaque", %{}, {FaultStore, %{operation: :nil_handle}})
+    {_, log} = fill(log, [1])
+    assert_receive :opaque_append
+    assert :ok = EventLog.remove(log)
+    assert_receive :opaque_delete
+  end
+
+  test "term conversion cannot expose secrets that redaction could not traverse" do
+    record =
+      Jido.Harness.ReplayStore.Record.prepare(
+        %{sequence: 1, payload: %{tuple: {:value, "fixture-secret-value"}, atom: :"fixture-secret-value"}},
+        ["fixture-secret-value"]
+      )
+
+    refute Jason.encode!(record) =~ "fixture-secret-value"
+    assert record["payload"]["tuple"] =~ "[REDACTED]"
+    assert record["payload"]["atom"] == "[REDACTED]"
+  end
+
+  test "a secret equal to a provider name cannot change the event envelope" do
+    record = Jido.Harness.ReplayStore.Record.prepare(event(1), ["test"])
+    assert record["provider"] == "test"
+    assert record["type"] == "output_text_delta"
   end
 end

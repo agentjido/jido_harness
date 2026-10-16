@@ -112,8 +112,9 @@ defmodule Jido.Harness.RunWorker do
   end
 
   def handle_call({:replay_page, cursor, limits}, _from, state) do
-    {page, event_log} = EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes)
-    page = %{page | records: Enum.map(page.records, &record_to_event(state, &1))}
+    {page, event_log} =
+      EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes, &record_to_event(state, &1))
+
     {:reply, {:ok, page}, %{state | event_log: event_log}}
   end
 
@@ -442,8 +443,8 @@ defmodule Jido.Harness.RunWorker do
   end
 
   defp replay_records(state, cursor, limit) do
-    {page, event_log} = EventLog.replay(state.event_log, cursor, limit)
-    events = EventLog.events(page, &record_to_event(state, &1), &gap_event(state, &1))
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limit, 1_048_576, &record_to_event(state, &1))
+    events = EventLog.events(page, &Function.identity/1, &gap_event(state, &1))
     {events, %{state | event_log: event_log}}
   end
 

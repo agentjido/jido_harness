@@ -48,8 +48,8 @@ defmodule Jido.Harness.Session.EventStore do
   @doc false
   @spec replay(State.t(), non_neg_integer(), pos_integer()) :: {[Event.t()], State.t()}
   def replay(state, cursor, limit) do
-    {page, event_log} = EventLog.replay(state.event_log, cursor, limit)
-    events = EventLog.events(page, &record_to_event(state, &1), &gap_event(state, &1))
+    {page, event_log} = EventLog.replay(state.event_log, cursor, limit, 1_048_576, &record_to_event(state, &1))
+    events = EventLog.events(page, &Function.identity/1, &gap_event(state, &1))
     {events, %{state | event_log: event_log}}
   end
 

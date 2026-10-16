@@ -165,7 +165,7 @@ defmodule Jido.Harness.ReplayStore.File do
   @impl true
   def read(state, cursor, limits) do
     with :ok <- Jido.Harness.ReplayStore.validate_read(cursor, limits.max_events, limits.max_bytes) do
-      {records, journal} = Journal.replay(state.journal, cursor, limits.max_events + 1)
+      {records, journal} = Journal.replay(state.journal, cursor, limits.max_events + 1, limits.max_bytes)
       state = %{state | journal: journal}
 
       if journal.failed? or journal.read_failed?,

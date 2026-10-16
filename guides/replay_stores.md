@@ -103,16 +103,19 @@ a memory adapter does not remove the fallback budget.
 A failed open or append keeps execution active and uses fallback for the rest
 of that resource's lifetime. Later appends still attempt the selected store.
 A read failure uses fallback on the same call and retries the selected store on
-the next read. Missing fallback history is reported as gaps. Callback exceptions
-become storage failures. Synchronous callbacks must finish promptly: the core
+the next read. Missing fallback history is reported as gaps, including the known
+sequence range after a persistent store is reopened. Callback exceptions,
+invalid responses, and invalid page ranges become storage failures.
+Synchronous callbacks must finish promptly: the core
 cannot interrupt a blocking callback. A remote adapter must isolate I/O and use
 bounded queues and deadlines.
 
 Resource info includes storage-neutral `replay_store` metadata with adapter,
 status, sequence boundaries, retained bytes, and retained count. `journal_dir`
-remains available for file storage and is `nil` for memory stores. When status
-is degraded, retained counts describe the selected store; replay can use the
-smaller fallback. Store telemetry never includes record content or secrets.
+remains available for file storage and is `nil` for memory stores. After an open
+or append failure, retained counts describe the fallback. A read failure can
+also use this smaller fallback. Store telemetry never includes record content
+or secrets.
 
 ## Retention and cleanup
 
@@ -121,7 +124,10 @@ including line separators, and remove complete segments. A record larger than
 the store budget is rejected from retention; sequence progress remains valid.
 The file adapter keeps a small cursor file when no record can preserve that
 progress. Metadata files are outside the JSONL budget. No fsync guarantee is
-made. Retrying an identical retained record succeeds; different data at that
+made. File page reads stop at the byte budget with one record of lookahead;
+oversized payloads are discarded after their sequence and size are read.
+Reopen starts a new segment after a nonempty file, so a truncated tail cannot
+absorb the next write. Retrying an identical retained record succeeds; different data at that
 sequence returns `:sequence_conflict`. An expired sequence returns
 `:expired_sequence`, because its original data is no longer available to compare.
 

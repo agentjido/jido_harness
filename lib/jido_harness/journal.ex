@@ -85,8 +85,9 @@ defmodule Jido.Harness.Journal do
   @spec append_prepared(t(), map()) :: {:ok, t()} | {:error, term(), t()}
   def append_prepared(%{failed?: true} = state, _record), do: {:error, :journal_unavailable, state}
 
-  def append_prepared(state, %{"sequence" => sequence} = record) when sequence > state.latest_sequence,
-    do: write_record(state, record, sequence)
+  def append_prepared(state, %{"sequence" => sequence} = record)
+      when is_integer(sequence) and sequence > state.latest_sequence,
+      do: write_record(state, record, sequence)
 
   def append_prepared(state, _record), do: {:error, :invalid_sequence, state}
 
@@ -116,11 +117,25 @@ defmodule Jido.Harness.Journal do
 
   @doc "Seeks near a sequence cursor; read errors leave future writes enabled."
   @spec replay(t(), non_neg_integer(), pos_integer()) :: {[map()], t()}
-  def replay(%__MODULE__{failed?: true} = state, _cursor, _limit), do: {[], state}
+  def replay(state, cursor, limit), do: replay(state, cursor, limit, nil)
 
-  def replay(%__MODULE__{} = state, cursor, limit) do
+  @doc false
+  @spec replay(t(), non_neg_integer(), pos_integer(), pos_integer() | nil) :: {list(), t()}
+  def replay(%__MODULE__{failed?: true} = state, _cursor, _limit, _bytes), do: {[], state}
+
+  def replay(%__MODULE__{} = state, cursor, limit, bytes) do
     started = System.monotonic_time()
-    initial = %{records: [], remaining: limit, decoded_records: 0, read_bytes: 0, segments_opened: 0}
+
+    initial = %{
+      records: [],
+      remaining: limit,
+      decoded_records: 0,
+      read_bytes: 0,
+      segments_opened: 0,
+      max_bytes: bytes,
+      page_bytes: 0,
+      last_sequence: cursor
+    }
 
     result =
       if cursor >= state.latest_sequence do
@@ -186,8 +201,9 @@ defmodule Jido.Harness.Journal do
 
         acc =
           case Jason.decode(line) do
-            {:ok, %{"sequence" => sequence} = record} when is_integer(sequence) and sequence > cursor ->
-              %{acc | records: [record | acc.records], remaining: acc.remaining - 1}
+            {:ok, %{"sequence" => sequence} = record} when is_integer(sequence) and sequence > acc.last_sequence ->
+              separator = if :binary.last(line) == ?\n, do: 1, else: 0
+              retain_record(acc, record, byte_size(line) - separator)
 
             _other ->
               acc
@@ -200,6 +216,38 @@ defmodule Jido.Harness.Journal do
 
       {:error, reason} ->
         {:error, reason, acc}
+    end
+  end
+
+  defp retain_record(%{max_bytes: nil} = acc, record, _size) do
+    %{acc | records: [record | acc.records], remaining: acc.remaining - 1, last_sequence: record["sequence"]}
+  end
+
+  # Oversized records and the first record beyond the remaining byte budget
+  # need only a sequence and size for Page.build/4. Do not retain their payloads.
+  defp retain_record(acc, record, size) do
+    sequence = record["sequence"]
+
+    cond do
+      size > acc.max_bytes ->
+        %{
+          acc
+          | records: [{%{"sequence" => sequence}, size} | acc.records],
+            remaining: acc.remaining - 1,
+            last_sequence: sequence
+        }
+
+      acc.page_bytes + size > acc.max_bytes ->
+        %{acc | records: [{%{"sequence" => sequence}, size} | acc.records], remaining: 0, last_sequence: sequence}
+
+      true ->
+        %{
+          acc
+          | records: [{record, size} | acc.records],
+            remaining: acc.remaining - 1,
+            page_bytes: acc.page_bytes + size,
+            last_sequence: sequence
+        }
     end
   end
 
@@ -246,8 +294,12 @@ defmodule Jido.Harness.Journal do
               Enum.reduce(File.stream!(path, :line, []), Index.new(path), fn line, segment ->
                 sequence =
                   case Jason.decode(line) do
-                    {:ok, %{"sequence" => sequence}} when is_integer(sequence) and sequence > segment.last -> sequence
-                    _other -> nil
+                    {:ok, %{"sequence" => sequence}}
+                    when is_integer(sequence) and sequence > segment.last and sequence > state.latest_sequence ->
+                      sequence
+
+                    _other ->
+                      nil
                   end
 
                 Index.append(segment, sequence, byte_size(line))
@@ -268,7 +320,13 @@ defmodule Jido.Harness.Journal do
         first =
           state.segments |> Map.values() |> Enum.map(& &1.first) |> Enum.reject(&is_nil/1) |> Enum.min(fn -> nil end)
 
-        {:ok, prune(%{state | available_from: first || state.latest_sequence + 1})}
+        state = prune(%{state | available_from: first || state.latest_sequence + 1})
+
+        # A crash can leave a partial line at the end of the last file. Append
+        # to a new segment so that the next valid record stays readable.
+        if state.current_bytes > 0,
+          do: create_segment(%{state | segment: state.segment + 1}),
+          else: {:ok, state}
     end
   rescue
     error -> {:error, error}

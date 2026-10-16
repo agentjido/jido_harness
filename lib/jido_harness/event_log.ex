@@ -8,8 +8,10 @@ defmodule Jido.Harness.EventLog do
   @schema Zoi.struct(__MODULE__, %{
             module: Zoi.atom(),
             handle: Zoi.any() |> Zoi.nullish(),
+            opened?: Zoi.boolean() |> Zoi.default(false),
             fallback: Zoi.any(),
             resource: Zoi.map(),
+            latest_sequence: Zoi.integer() |> Zoi.default(0),
             write_failed?: Zoi.boolean() |> Zoi.default(false),
             status: Zoi.atom() |> Zoi.default(:healthy)
           })
@@ -43,7 +45,8 @@ defmodule Jido.Harness.EventLog do
 
     case safe_open(module, resource, options) do
       {:ok, handle} ->
-        %{log | handle: handle}
+        log = %{log | handle: handle, opened?: true}
+        %{log | latest_sequence: info(log).latest_sequence}
 
       {:error, _reason} ->
         error(log, :open)
@@ -87,11 +90,11 @@ defmodule Jido.Harness.EventLog do
   def append(buffer, log, event, secrets \\ []) do
     record = Record.prepare(event, secrets)
     {_, fallback} = append_result(Memory.append(log.fallback, record))
-    log = %{log | fallback: fallback}
+    log = %{log | fallback: fallback, latest_sequence: max(log.latest_sequence, record["sequence"])}
     started = System.monotonic_time()
 
     log =
-      if log.handle do
+      if log.opened? do
         case safe(log.module, :append, [log.handle, record], log.handle) do
           {:ok, handle} ->
             %{log | handle: handle}
@@ -116,23 +119,28 @@ defmodule Jido.Harness.EventLog do
   defp append_result({:error, reason, handle}), do: {reason, handle}
 
   @doc "Reads a bounded replay page, with the same data policy during storage failure."
-  @spec replay(t(), non_neg_integer(), pos_integer(), pos_integer()) :: {Page.t(), t()}
-  def replay(log, cursor, count, bytes \\ 1_048_576) do
+  @spec replay(t(), non_neg_integer(), pos_integer(), pos_integer(), function()) :: {Page.t(), t()}
+  def replay(log, cursor, count, bytes \\ 1_048_576, normalize \\ &Function.identity/1) do
     limits = %{max_events: count, max_bytes: bytes}
     started = System.monotonic_time()
 
     {page, log} =
-      if log.handle && not log.write_failed? do
-        case safe(log.module, :read, [log.handle, cursor, limits], log.handle) do
-          {:ok, page, handle} ->
-            {page, %{log | handle: handle, status: :healthy}}
+      if log.opened? and not log.write_failed? do
+        case read(log, cursor, limits, normalize) do
+          {:ok, page, handle} when page.latest_sequence >= log.latest_sequence ->
+            {page,
+             %{log | handle: handle, status: :healthy, latest_sequence: max(log.latest_sequence, page.latest_sequence)}}
+
+          {:ok, _page, _handle} ->
+            error(log, :read)
+            fallback(%{log | status: :degraded}, cursor, limits, normalize)
 
           {:error, _reason, handle} ->
             error(log, :read)
-            fallback(%{log | handle: handle, status: :degraded}, cursor, limits)
+            fallback(%{log | handle: handle, status: :degraded}, cursor, limits, normalize)
         end
       else
-        fallback(log, cursor, limits)
+        fallback(log, cursor, limits, normalize)
       end
 
     telemetry(log, :read, started, %{returned_records: length(page.records), gaps: length(page.gaps), bytes: page.bytes})
@@ -140,9 +148,21 @@ defmodule Jido.Harness.EventLog do
     {page, log}
   end
 
-  defp fallback(log, cursor, limits) do
-    {:ok, page, fallback} = Memory.read(log.fallback, cursor, limits)
-    {page, %{log | fallback: fallback}}
+  defp read(log, cursor, limits, normalize) do
+    case safe(log.module, :read, [log.handle, cursor, limits], log.handle) do
+      {:ok, page, handle} -> {:ok, %{page | records: Enum.map(page.records, normalize)}, handle}
+      error -> error
+    end
+  rescue
+    _ -> {:error, :invalid_record, log.handle}
+  catch
+    _, _ -> {:error, :invalid_record, log.handle}
+  end
+
+  defp fallback(log, cursor, limits, normalize) do
+    fallback = %{log.fallback | latest: max(log.latest_sequence, log.fallback.latest)}
+    {:ok, page, fallback} = Memory.read(fallback, cursor, limits)
+    {%{page | records: Enum.map(page.records, normalize)}, %{log | fallback: fallback}}
   end
 
   @doc "Maps a page to the compatible ordered event list, including each missing range."
@@ -156,18 +176,34 @@ defmodule Jido.Harness.EventLog do
   @doc "Returns storage-neutral status and retention metadata."
   @spec info(t()) :: map()
   def info(log) do
-    info = if log.handle, do: log.module.info(log.handle), else: Memory.info(log.fallback)
+    info = if log.opened?, do: log.module.info(log.handle), else: Memory.info(log.fallback)
+    true = valid_info?(info)
+    info = if log.write_failed?, do: Map.merge(info, Map.delete(Memory.info(log.fallback), :directory)), else: info
 
     Map.merge(info, %{
       adapter: log.module,
       status: log.status,
-      latest_sequence: max(info.latest_sequence, log.fallback.latest)
+      latest_sequence: max(info.latest_sequence, log.latest_sequence)
     })
   rescue
-    _ -> Map.merge(Memory.info(log.fallback), %{adapter: log.module, status: :degraded})
+    _ -> fallback_info(log)
   catch
-    _, _ -> Map.merge(Memory.info(log.fallback), %{adapter: log.module, status: :degraded})
+    _, _ -> fallback_info(log)
   end
+
+  defp fallback_info(log) do
+    Map.merge(Memory.info(log.fallback), %{
+      adapter: log.module,
+      status: :degraded,
+      latest_sequence: max(log.latest_sequence, log.fallback.latest)
+    })
+  end
+
+  defp valid_info?(%{oldest_sequence: oldest, latest_sequence: latest, retained_events: count, retained_bytes: bytes})
+       when is_integer(latest) and latest >= 0 and is_integer(count) and count >= 0 and is_integer(bytes) and bytes >= 0,
+       do: (is_nil(oldest) and count == 0) or (is_integer(oldest) and oldest > 0 and oldest <= latest and count > 0)
+
+  defp valid_info?(_info), do: false
 
   @doc "Returns the optional file directory for compatibility."
   @spec dir(t()) :: String.t() | nil
@@ -175,16 +211,20 @@ defmodule Jido.Harness.EventLog do
 
   @doc "Closes storage without deleting retained records."
   @spec close(t()) :: :ok | {:error, term()}
-  def close(%{handle: nil}), do: :ok
+  def close(%{opened?: false}), do: :ok
   def close(log), do: cleanup(log, :close)
 
   @doc "Deletes retained storage and reports cleanup failures."
   @spec remove(t()) :: :ok | {:error, term()}
-  def remove(%{handle: nil}), do: :ok
+  def remove(%{opened?: false}), do: :ok
   def remove(log), do: cleanup(log, :delete)
 
   defp cleanup(log, operation) do
-    apply(log.module, operation, [log.handle])
+    case apply(log.module, operation, [log.handle]) do
+      :ok -> :ok
+      {:error, _reason} = error -> error
+      _ -> {:error, :invalid_callback_result}
+    end
   rescue
     _ -> {:error, :callback_failed}
   catch
@@ -192,7 +232,11 @@ defmodule Jido.Harness.EventLog do
   end
 
   defp safe_open(module, resource, options) do
-    module.open(resource, options)
+    case module.open(resource, options) do
+      {:ok, _handle} = result -> result
+      {:error, _reason} = result -> result
+      _ -> {:error, :invalid_callback_result}
+    end
   rescue
     _ -> {:error, :callback_failed}
   catch
@@ -200,12 +244,21 @@ defmodule Jido.Harness.EventLog do
   end
 
   defp safe(module, operation, arguments, handle) do
-    apply(module, operation, arguments)
+    result = apply(module, operation, arguments)
+
+    if valid_result?(operation, result, arguments),
+      do: result,
+      else: {:error, :invalid_callback_result, handle}
   rescue
     _ -> {:error, :callback_failed, handle}
   catch
     _, _ -> {:error, :callback_failed, handle}
   end
+
+  defp valid_result?(:append, {:ok, _handle}, _arguments), do: true
+  defp valid_result?(_operation, {:error, _reason, _handle}, _arguments), do: true
+  defp valid_result?(:read, {:ok, page, _handle}, [_previous, cursor, limits]), do: Page.valid?(page, cursor, limits)
+  defp valid_result?(_operation, _result, _arguments), do: false
 
   defp error(log, operation) do
     :telemetry.execute([:jido, :harness, :replay_store, :error], %{count: 1}, %{

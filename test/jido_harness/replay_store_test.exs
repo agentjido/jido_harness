@@ -15,6 +15,48 @@ defmodule Jido.Harness.FileReplayStoreTest do
     assert page.next_cursor == 8
     assert page.gaps == [%{from: 1, to: 8, reason: :unavailable}]
   end
+
+  test "small byte pages stop decoding after one fitting record and lookahead", context do
+    adapter = Jido.Harness.ReplayStore.File
+    {:ok, handle} = adapter.open(context.resource, %{journal_dir: context.base})
+    handle = append(handle, 1..100)
+    bytes = Record.bytes(record(1))
+
+    {{:ok, page, _handle}, stats} =
+      Jido.Harness.ReplayProbe.measure(fn -> adapter.read(handle, 0, limits(100, bytes)) end)
+
+    assert page.records == [record(1)]
+    assert page.next_cursor == 1
+    assert stats.decoded_records == 2
+  end
+
+  test "reopen and append preserve valid records after a truncated tail", context do
+    adapter = Jido.Harness.ReplayStore.File
+    options = %{journal_dir: context.base}
+    {:ok, handle} = adapter.open(context.resource, options)
+    handle = append(handle, [1])
+    File.write!(handle.journal.path, ~s({"sequence":2,"payload":"partial), [:append])
+    assert :ok = adapter.close(handle)
+    assert {:ok, handle} = adapter.open(context.resource, options)
+    handle = append(handle, [3])
+    assert {:ok, page, _} = adapter.read(handle, 0, limits())
+    assert page.records == [record(1), record(3)]
+    assert page.gaps == [%{from: 2, to: 2, reason: :unavailable}]
+  end
+
+  test "duplicate and out of order disk records cannot move the cursor back", context do
+    adapter = Jido.Harness.ReplayStore.File
+    options = %{journal_dir: context.base}
+    {:ok, handle} = adapter.open(context.resource, options)
+    handle = append(handle, [1, 3])
+    File.write!(handle.journal.path, Jason.encode!(record(2)) <> "\n", [:append])
+    assert {:ok, handle} = adapter.open(context.resource, options)
+    handle = append(handle, [4])
+    assert {:ok, page, _} = adapter.read(handle, 0, limits())
+    assert page.records == [record(1), record(3), record(4)]
+    assert page.next_cursor == 4
+    assert page.gaps == [%{from: 2, to: 2, reason: :unavailable}]
+  end
 end
 
 defmodule Jido.Harness.MemoryReplayStoreTest do

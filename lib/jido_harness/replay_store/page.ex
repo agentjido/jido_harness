@@ -51,6 +51,38 @@ defmodule Jido.Harness.ReplayStore.Page do
   end
 
   @doc false
+  @spec valid?(term(), non_neg_integer(), map()) :: boolean()
+  def valid?(%__MODULE__{} = page, cursor, limits) do
+    is_list(page.records) and is_list(page.gaps) and
+      is_integer(page.bytes) and page.bytes >= 0 and page.bytes <= limits.max_bytes and
+      is_integer(page.latest_sequence) and page.latest_sequence >= 0 and
+      is_integer(page.next_cursor) and page.next_cursor >= cursor and
+      page.next_cursor <= max(cursor, page.latest_sequence) and
+      (page.latest_sequence <= cursor or page.next_cursor > cursor) and
+      (is_nil(page.oldest_sequence) or
+         (is_integer(page.oldest_sequence) and page.oldest_sequence > 0 and
+            page.oldest_sequence <= page.latest_sequence)) and
+      length(page.records) <= limits.max_events and length(page.gaps) <= limits.max_events + 1 and
+      valid_ranges?(page.records, page.gaps, cursor, page.next_cursor, limits.max_events)
+  end
+
+  def valid?(_page, _cursor, _limits), do: false
+
+  defp valid_ranges?([], [], cursor, last, remaining), do: cursor == last and remaining >= 0
+
+  defp valid_ranges?([%{"sequence" => sequence, "format_version" => 1} | records], gaps, cursor, last, remaining)
+       when sequence == cursor + 1 and remaining > 0,
+       do: valid_ranges?(records, gaps, sequence, last, remaining - 1)
+
+  defp valid_ranges?(records, [%{from: first, to: last, reason: reason} | gaps], cursor, final, remaining)
+       when first == cursor + 1 and is_integer(last) and last >= first and reason in [:unavailable, :page_limit] do
+    remaining = if reason == :page_limit, do: remaining - (last - first + 1), else: remaining
+    remaining >= 0 and valid_ranges?(records, gaps, last, final, remaining)
+  end
+
+  defp valid_ranges?(_records, _gaps, _cursor, _last, _remaining), do: false
+
+  @doc false
   @spec build(Enumerable.t(), non_neg_integer(), map(), map()) :: t()
   def build(records, cursor, info, limits) do
     initial = %{records: [], gaps: [], cursor: cursor, bytes: 0, count: 0, complete?: true}
