@@ -1,7 +1,7 @@
 # Providers and capabilities
 
 Harness includes eleven provider profiles. Every run and session uses ACP through
-ExMCP. ACP can be part of the base CLI or a separate adapter program.
+Arbor ACP. ACP can be part of the base CLI or a separate adapter program.
 
 Use `Jido.Harness.providers/0` to inspect the bundled declarations. These
 describe the selected Harness profile, not every feature of the base CLI.

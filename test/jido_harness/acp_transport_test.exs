@@ -2,7 +2,7 @@ defmodule Jido.Harness.ACPTransportTest do
   use ExUnit.Case, async: true
 
   alias Jido.Harness.ProcessEvent
-  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge
+  alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
   defmodule ControlledProcessManager do
     def start_owned_process(_spec, owner), do: {:ok, owner}

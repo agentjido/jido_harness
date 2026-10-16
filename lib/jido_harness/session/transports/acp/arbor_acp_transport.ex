@@ -1,8 +1,8 @@
-defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport do
+defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport do
   @moduledoc false
-  @behaviour ExMCP.Transport
+  @behaviour Arbor.ACP.Transport
 
-  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge
+  alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
   @type t :: %__MODULE__{bridge: pid()}
   defstruct [:bridge]
@@ -66,18 +66,18 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport do
   def connected?(%__MODULE__{bridge: bridge}), do: Bridge.connected?(bridge)
 end
 
-defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
+defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   @moduledoc false
   use GenServer
 
   alias Jido.Harness.{ProcessEvent, Redaction, TextTail}
-  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport
+  alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport
   alias Jido.Harness.SessionAdapters.ACP.FrameBuffer
 
   @stderr_bytes 4_096
   @lifecycle_limit 8
 
-  # ExMCP's ACP client sends only the requests it knows and keeps only the
+  # Arbor ACP's ACP client sends only the requests it knows and keeps only the
   # parts of the initialize response it knows. An extension request (ACP
   # `_session/steering`) goes out here instead, with ids of its own whose
   # responses are taken out of the stream before the client sees them; the
@@ -136,7 +136,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
          buffer: %FrameBuffer{},
          frames: :queue.new(),
          frame_bytes: 0,
-         buffer_limit: ExMCPTransport.max_buffer_bytes(),
+         buffer_limit: ArborACPTransport.max_buffer_bytes(),
          reader_ack: nil,
          waiter: nil,
          status: :open,
@@ -160,7 +160,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
 
     reader =
       Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
-        chunk_bytes = min(16_384, ExMCPTransport.max_frame_bytes())
+        chunk_bytes = min(16_384, ArborACPTransport.max_frame_bytes())
         Enum.each(state.stream, &deliver_event(parent, &1, chunk_bytes))
       end)
 
@@ -229,7 +229,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
     do: {:noreply, state}
 
   def handle_info({:acp_transport_process_event, %ProcessEvent{type: :stdout, data: data}}, state) do
-    case FrameBuffer.feed(state.buffer, data, ExMCPTransport.max_frame_bytes()) do
+    case FrameBuffer.feed(state.buffer, data, ArborACPTransport.max_frame_bytes()) do
       {:ok, frames, buffer} ->
         {frames, state} = Enum.flat_map_reduce(frames, %{state | buffer: buffer}, &inspect_frame/2)
         {:noreply, enqueue_frames(state, frames)}
@@ -368,7 +368,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge do
   # Input that is not valid UTF-8 cannot be sent; it is refused, and the
   # session goes on.
   defp encode_request(id, method, params) do
-    limit = ExMCPTransport.max_frame_bytes()
+    limit = ArborACPTransport.max_frame_bytes()
 
     case Jason.encode(%{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}) do
       {:ok, message} when byte_size(message) > limit -> {:error, :frame_too_large}

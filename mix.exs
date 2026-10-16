@@ -63,12 +63,6 @@ defmodule Jido.Harness.MixProject do
       app: :jido_harness,
       version: @version,
       elixir: "~> 1.19",
-      hex: [
-        ignore_advisories: [
-          "EEF-CVE-2026-43966",
-          "EEF-CVE-2026-43969"
-        ]
-      ],
       elixirc_paths: elixirc_paths(Mix.env()),
       erlc_paths: ["vendor/erlexec/src"],
       erlc_include_path: "vendor/erlexec/include",
@@ -207,7 +201,7 @@ defmodule Jido.Harness.MixProject do
       {:zoi, "~> 0.18.11"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
-      {:ex_mcp, "~> 1.3"},
+      {:arbor_acp, "~> 1.0.0-rc.1"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

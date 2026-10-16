@@ -231,7 +231,7 @@ session and process lifetimes.
 
 Record which live profiles ran and which were skipped. A passing unit suite
 does not establish live compatibility. Review the
-[dependency audit exceptions](reference/dependencies.md#audit-exceptions)
+[dependency audit](reference/dependencies.md#dependency-audit)
 before publication.
 
 ## Replay store measurements

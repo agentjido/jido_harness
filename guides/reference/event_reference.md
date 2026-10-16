@@ -95,7 +95,7 @@ Run and turn results can contain raw data while their events remain in the
 memory buffer. Journal-backed replay and streams return `raw: nil`.
 
 For ACP updates and permission requests, `raw` contains the complete decoded
-JSON-RPC message received by the ExMCP client. It retains unknown top-level,
+JSON-RPC message received by the Arbor ACP client. It retains unknown top-level,
 parameter, and update fields from that message. This is the decoded map, not
 the original JSON bytes. For an adapter-backed provider, the adapter constructs
 the ACP message. Provider-native fields that the adapter does not map are not

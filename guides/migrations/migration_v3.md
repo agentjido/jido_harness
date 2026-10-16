@@ -82,9 +82,9 @@ Follow [Getting started](../getting_started.md) for the release-candidate
 dependency and CLI setup. Some providers need both a base CLI and a separate
 ACP adapter. Preview both with `Jido.Harness.install(provider, dry_run: true)`.
 
-Harness uses ExMCP `~> 1.3` from Hex. If another application dependency also
-uses ExMCP, check compatible requirements before adding an override.
-Review [dependency audit exceptions](../reference/dependencies.md#audit-exceptions).
+Harness uses Arbor ACP `~> 1.0.0-rc.1` from Hex. If another application dependency also
+uses Arbor ACP, check compatible requirements before adding an override.
+Review [dependency audit](../reference/dependencies.md#dependency-audit).
 
 For a custom adapter, follow [Custom adapters](../custom_adapters.md).
 Run the deterministic and affected live checks in [Testing](../testing.md).
