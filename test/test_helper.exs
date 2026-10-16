@@ -1,1 +1,1 @@
-ExUnit.start(exclude: [:integration, :soak, :antigravity_wrapper])
+ExUnit.start(exclude: [:integration, :soak, :load, :antigravity_wrapper])

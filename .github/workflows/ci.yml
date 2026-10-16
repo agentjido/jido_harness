@@ -93,6 +93,8 @@ jobs:
           test/jido_harness/process_manager_test.exs
           test/jido_harness/environment_mode_test.exs
           test/jido_harness/escript_test.exs
+      - name: Test journal replay under load
+        run: mix test --no-cover --include load test/jido_harness/journal_load_test.exs
       - name: Build the source package
         run: mix hex.build
       - name: Test a clean package consumer, escript, and erlexec coexistence

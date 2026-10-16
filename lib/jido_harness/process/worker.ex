@@ -2,7 +2,7 @@ defmodule Jido.Harness.ProcessWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, Journal, ProcessEvent, ProcessInfo, Redaction, Waiters}
+  alias Jido.Harness.{Buffer, EventLog, Journal, ProcessEvent, ProcessInfo, Redaction, Waiters}
 
   @default_grace_ms 5_000
   @default_output_drain_ms 50
@@ -224,26 +224,9 @@ defmodule Jido.Harness.ProcessWorker do
     end
   end
 
-  defp replay_records(%{journal: %Journal{failed?: false} = journal} = state, cursor, limit) do
-    {records, journal} = Journal.replay(journal, cursor, limit)
-    {prepend_gap(records, state.id, cursor, journal.available_from), %{state | journal: journal}}
-  end
-
   defp replay_records(state, cursor, limit) do
-    records =
-      state.buffer
-      |> Buffer.events()
-      |> Enum.filter(&(&1.sequence > cursor))
-      |> Enum.take(limit)
-      |> Enum.map(&Map.from_struct/1)
-
-    available_from =
-      case records do
-        [%{sequence: sequence} | _] -> sequence
-        _ -> cursor + 1
-      end
-
-    {prepend_gap(records, state.id, cursor, available_from), state}
+    {records, journal, available_from} = EventLog.replay(state.buffer, state.journal, cursor, limit)
+    {prepend_gap(records, state.id, cursor, available_from), %{state | journal: journal}}
   end
 
   defp prepend_gap(records, _id, cursor, available_from) when cursor >= available_from - 1, do: records

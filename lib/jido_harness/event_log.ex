@@ -48,12 +48,19 @@ defmodule Jido.Harness.EventLog do
   @doc "Reads after a cursor from the journal, with memory fallback if the journal is unavailable."
   @spec replay(Buffer.t(), Journal.t() | nil, non_neg_integer(), pos_integer()) ::
           {[term()], Journal.t() | nil, pos_integer()}
-  def replay(_buffer, %Journal{failed?: false} = journal, cursor, limit) do
+  def replay(buffer, %Journal{failed?: false} = journal, cursor, limit) do
     {records, journal} = Journal.replay(journal, cursor, limit)
-    {records, journal, journal.available_from}
+
+    if journal.read_failed? do
+      replay_memory(buffer, journal, cursor, limit)
+    else
+      {records, journal, journal.available_from}
+    end
   end
 
-  def replay(buffer, journal, cursor, limit) do
+  def replay(buffer, journal, cursor, limit), do: replay_memory(buffer, journal, cursor, limit)
+
+  defp replay_memory(buffer, journal, cursor, limit) do
     records = buffer |> Buffer.events() |> Enum.filter(&(&1.sequence > cursor)) |> Enum.take(limit)
     available_from = if records == [], do: cursor + 1, else: hd(records).sequence
     {records, journal, available_from}
