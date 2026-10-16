@@ -1,6 +1,6 @@
-defmodule Jido.Harness.SessionAdapters.ACP.ExMCPHandler do
+defmodule Jido.Harness.SessionAdapters.ACP.ArborACPHandler do
   @moduledoc false
-  @behaviour ExMCP.ACP.Client.Handler
+  @behaviour Arbor.ACP.Client.Handler
 
   @impl true
   def init(opts), do: {:ok, %{transport: Keyword.fetch!(opts, :transport)}}

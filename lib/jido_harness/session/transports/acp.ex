@@ -2,10 +2,10 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias ExMCP.ACP.Client
+  alias Arbor.ACP.Client
   alias Jido.Harness.{ApprovalResponse, Error, Event, ID, TurnRequest}
-  alias Jido.Harness.SessionAdapters.ACP.{ExMCPHandler, ExMCPTransport}
-  alias Jido.Harness.SessionAdapters.ACP.ExMCPTransport.Bridge
+  alias Jido.Harness.SessionAdapters.ACP.{ArborACPHandler, ArborACPTransport}
+  alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
   @startup_timeout 30_000
   @handler_flush_timeout 1_000
@@ -280,7 +280,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   def handle_info({:EXIT, client, reason}, %{client: client, closing?: false} = state) when is_pid(client),
-    do: {:stop, {:ex_mcp_client_exit, reason}, %{state | client: nil}}
+    do: {:stop, {:arbor_acp_client_exit, reason}, %{state | client: nil}}
 
   def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
   def handle_info(_message, state), do: {:noreply, state}
@@ -304,14 +304,14 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   defp start_client(state, process_spec) do
     options = [
-      transport_mod: ExMCPTransport,
+      transport_mod: ArborACPTransport,
       harness_transport: [
         process_manager: state.context.process_manager,
         process_owner: state.context.owner,
         process_spec: process_spec,
         listener: self()
       ],
-      handler: ExMCPHandler,
+      handler: ArborACPHandler,
       handler_opts: [transport: self()],
       client_info: %{
         "name" => "jido_harness",
@@ -324,7 +324,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       },
       event_listener: self(),
       protocol_version: 1,
-      max_frame_bytes: ExMCPTransport.max_frame_bytes(),
+      max_frame_bytes: ArborACPTransport.max_frame_bytes(),
       initialize_timeout: @startup_timeout,
       pending_request_timeout: protocol_timeout(state.request.turn_runtime_timeout_ms),
       handler_request_timeout: protocol_timeout(state.request.approval_timeout_ms)

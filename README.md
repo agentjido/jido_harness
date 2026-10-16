@@ -5,7 +5,7 @@
 
 Jido.Harness runs coding-agent CLIs from Elixir. It manages their processes and
 returns common request, event, result, and error types. Runs and sessions use
-Agent Client Protocol (ACP) through ExMCP.
+Agent Client Protocol (ACP) through Arbor ACP.
 
 Use it to run one task, keep a conversation open, or start work and collect its
 result later. Work belongs to the application supervision tree and can
@@ -14,7 +14,7 @@ do not survive a BEAM or host restart.
 
 > This checkout is the `3.0.0-rc.1` release candidate. Test it with a Git
 > dependency. Review the [version 3 migration guide](guides/migrations/migration_v3.md)
-> and [dependency audit exceptions](guides/reference/dependencies.md#audit-exceptions) before release use.
+> and [dependency audit](guides/reference/dependencies.md#dependency-audit) before release use.
 
 ## Install
 
@@ -96,7 +96,7 @@ version 3 ACP profile advertises structured output.
 ## Place in the Jido ecosystem
 
 Harness owns coding-agent execution, process lifetime, and common results.
-ExMCP owns the ACP protocol. Jido Connect owns service API integrations.
+Arbor ACP owns the ACP protocol. Jido Connect owns service API integrations.
 Application code owns provider selection, workspace setup, approval policy,
 and decisions about the result.
 

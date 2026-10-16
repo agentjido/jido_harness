@@ -130,4 +130,4 @@ alone does not identify the cause. Use the stderr and lifecycle data to check
 process startup and output drain. Harness does not retry a failed process.
 
 For a release, follow [Testing](testing.md#release-verification) and review the
-[dependency audit exceptions](reference/dependencies.md#audit-exceptions).
+[dependency audit](reference/dependencies.md#dependency-audit).

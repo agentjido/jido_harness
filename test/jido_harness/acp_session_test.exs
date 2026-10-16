@@ -28,7 +28,7 @@ defmodule Jido.Harness.ACPSessionTest do
     {:ok, journal_dir: journal_dir}
   end
 
-  test "ExMCP correlates fragmented responses while Harness owns process and event identity", %{
+  test "Arbor ACP correlates fragmented responses while Harness owns process and event identity", %{
     journal_dir: journal_dir
   } do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
@@ -86,7 +86,7 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, _info} = Jido.Harness.Session.info(fast)
   end
 
-  test "ACP loads an existing provider session through ExMCP" do
+  test "ACP loads an existing provider session through Arbor ACP" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:kimi, %{provider_session_id: "saved-provider-session"})
 
@@ -97,7 +97,7 @@ defmodule Jido.Harness.ACPSessionTest do
              Jido.Harness.Session.await(session_id, turn_id, 2_000)
   end
 
-  test "ACP forks an existing provider session into a new one through ExMCP" do
+  test "ACP forks an existing provider session into a new one through Arbor ACP" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:kimi, %{fork_session_id: "saved-provider-session"})
 
@@ -215,7 +215,7 @@ defmodule Jido.Harness.ACPSessionTest do
 
     assert {:ok, _info} = await_state(session_id, :idle)
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
-    limit = Jido.Harness.SessionAdapters.ACP.ExMCPTransport.max_frame_bytes()
+    limit = Jido.Harness.SessionAdapters.ACP.ArborACPTransport.max_frame_bytes()
 
     assert {:error, {:steering_failed, :frame_too_large}} =
              Jido.Harness.Session.steer(session_id, String.duplicate("x", limit))
@@ -266,7 +266,7 @@ defmodule Jido.Harness.ACPSessionTest do
              })
   end
 
-  test "turn completion waits for queued ExMCP update callbacks" do
+  test "turn completion waits for queued Arbor ACP update callbacks" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
     assert {:ok, _info} = await_ready(session_id)
 
@@ -411,7 +411,7 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
   end
 
-  test "ExMCP rejects a duplicate provider request ID before Harness creates a second approval" do
+  test "Arbor ACP rejects a duplicate provider request ID before Harness creates a second approval" do
     assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{approval_timeout_ms: 500})
     assert {:ok, _info} = await_ready(session_id)
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "duplicate approval")

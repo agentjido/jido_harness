@@ -64,7 +64,7 @@ mapping uses `:provider_event`. See [Providers](providers.md) and
 
 ## Package boundaries
 
-Harness owns coding-agent execution, lifecycle, and retained results. ExMCP
+Harness owns coding-agent execution, lifecycle, and retained results. Arbor ACP
 owns ACP messages and protocol correlation. Jido Connect owns service API
 integrations. The host application owns provider selection, workspace setup,
 approval policy, retries, and durable job records.
@@ -72,7 +72,7 @@ approval policy, retries, and durable job records.
 Harness can run without `jido` or `jido_connect`. See the
 [architecture reference](reference/architecture.md) for the process and
 protocol boundary, and [dependencies](reference/dependencies.md) for release
-audit exceptions.
+audit guidance.
 
 ## Start here
 

@@ -40,7 +40,7 @@ headers and library. macOS users can install the Xcode Command Line Tools.
 | `doc/` | Generated API documentation; ignored by Git |
 
 Keep package boundaries clear. Harness owns execution and resource lifetime.
-ExMCP owns ACP protocol handling. Application policy and service integrations
+Arbor ACP owns ACP protocol handling. Application policy and service integrations
 belong outside Harness.
 
 ## Run checks
@@ -100,7 +100,7 @@ components and runs the same ExUnit contracts.
 ## Prepare a release
 
 Run the four checks above and the affected live provider profiles. Review the
-[dependency audit exceptions](guides/reference/dependencies.md#audit-exceptions) and
+[dependency audit](guides/reference/dependencies.md#dependency-audit) and
 [current provider limits](guides/providers.md). Verify the bundled native engine from a clean source package.
 
 The Hex package contains runtime source, vendored native source, provider assets, and documentation. Repository

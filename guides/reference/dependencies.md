@@ -1,4 +1,4 @@
-# Dependencies and audit exceptions
+# Dependencies and audit
 
 Runtime dependencies support Harness execution, validation, and observation.
 They must preserve the [architecture boundary](architecture.md).
@@ -7,14 +7,20 @@ They must preserve the [architecture boundary](architecture.md).
 
 | Dependency | Purpose |
 | --- | --- |
-| `ex_mcp` | ACP messages, protocol validation, and request correlation |
+| `arbor_acp` | ACP messages, protocol validation, and request correlation |
 | `telemetry` | Runtime observation |
 | `zoi` | Validation and construction of public structs |
 | `jason` | Journal encoding and local data |
 
-Harness requires ExMCP `~> 1.3` for ACP message-context callbacks. The current
-lockfile selects ExMCP 1.5.0. Zoi accepts the 0.17 and 0.18 lines so consumers
-can share a validation runtime with Jido.
+Harness requires `arbor_acp ~> 1.0.0-rc.1` from Hex. It provides the
+`Arbor.ACP.Client`, handler callbacks, and transport contract. Its required
+`arbor_rpc` dependency supplies shared protocol primitives. Harness does not
+need `arbor_acp_adapters` or `arbor_mcp`; it retains its own provider adapters
+and managed-process transport. Zoi uses the 0.18 line.
+
+`arbor_rpc` builds its own native subprocess helper on macOS and Linux and
+requires a C17 compiler. Harness continues to use its bundled erlexec engine
+for managed processes; this migration does not select Arbor's process backend.
 
 Harness does not require provider SDKs, `jido`, `jido_shell`, Sprites, or
 Splode. Provider routing, workspace provisioning, retries, and durable job
@@ -52,43 +58,11 @@ The older Codex observation in
 stderr. Its cause remains unproven. Harness retains bounded process stderr
 and lifecycle events for any recurrence.
 
-## Audit exceptions
+## Dependency audit
 
-The current lockfile selects Cowlib 2.20.0 through ExMCP's required Cowboy
-and `plug_cowboy` dependencies. Harness uses ACP over managed process streams
-and does not start an HTTP listener itself.
-
-`mix.exs` contains two explicit audit exceptions:
-
-| Advisory | Record |
-| --- | --- |
-| `EEF-CVE-2026-43966` | [Structured HTTP header encoder](https://cna.erlef.org/cves/CVE-2026-43966.html) |
-| `EEF-CVE-2026-43969` | [Cookie request header encoder](https://cna.erlef.org/cves/CVE-2026-43969.html) |
-
-Run the audit before release:
-
-```console
-mix hex.audit
-```
-
-The listed IDs are excluded from audit failure. Other advisories can fail the
-check. A passing audit does not mean these exceptions have been resolved.
-The current exceptions require review before a production release.
-
-The September 2026 review found no calls to the affected header or cookie
-encoders in the Harness ACP path. ExMCP's application starts no HTTP listener.
-These are scope limits, not fixes to Cowlib. The
-[structured-header advisory](https://cna.erlef.org/cves/CVE-2026-43966.html)
-requires validation of encoder input. It also identifies Cowboy 2.16 and
-later with `invalid_response_headers: :error_terminate` as a server-side
-mitigation. The locked Cowboy 2.19.0 keeps that default.
-The [cookie advisory](https://cna.erlef.org/cves/CVE-2026-43969.html)
-requires valid cookie names and values before encoding. Host applications
-that use these HTTP functions must check their own input paths and options.
-
-Remove an exception when a supported dependency update resolves it. Then run
-audit, package, protocol, and lifecycle checks. The bundled native process correction
-does not address these findings.
+The ACP-only dependency removes the former MCP HTTP dependency tree, including
+Cowboy, Cowlib, Plug and JOSE. The Cowlib audit exceptions have been removed.
+Run `mix hex.audit` before release and review any new advisories.
 
 ## Dependency changes
 
@@ -111,5 +85,4 @@ For a provider-related dependency change, run fake-CLI protocol and cleanup
 checks, the full unit suite, static analysis, documentation, and package
 builds. Run affected live profiles as described in [Testing](../testing.md).
 
-Changes to ExMCP's required HTTP dependencies need a compatible ExMCP release
-and verification of the ACP APIs that Harness uses.
+Changes to Arbor ACP require verification of the ACP APIs that Harness uses.

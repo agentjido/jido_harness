@@ -1,7 +1,7 @@
 # Custom adapters
 
 A provider adapter describes its base CLI and one ACP entry point. Harness
-owns runs, sessions, processes, and results. ExMCP owns ACP framing, validation,
+owns runs, sessions, processes, and results. Arbor ACP owns ACP framing, validation,
 and protocol request correlation.
 
 ## Required callbacks

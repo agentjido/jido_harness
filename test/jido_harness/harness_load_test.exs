@@ -2,8 +2,8 @@ defmodule Jido.Harness.HarnessLoadTest do
   use ExUnit.Case, async: false
 
   alias Jido.Harness.{Buffer, Event, EventLog, MemoryHarness, ProcessEvent, Redaction, TextTail, Waiters}
-  alias Jido.Harness.SessionAdapters.ACP.{ExMCPTransport, FrameBuffer}
-  alias ExMCPTransport.Bridge
+  alias Jido.Harness.SessionAdapters.ACP.{ArborACPTransport, FrameBuffer}
+  alias ArborACPTransport.Bridge
 
   @moduletag :load
   @moduletag timeout: 120_000
