@@ -121,20 +121,16 @@ defmodule Jido.Harness.AntigravityTest do
     assert {:ok, %{status: :completed, text: "fixture-ok"}} = Session.await(session, turn, 5_000)
   end
 
-  test "the preload fails closed for an untested wrapper version", %{directory: directory, config: config} do
+  test "the preload fails closed for an unsupported supervisor contract", %{directory: directory, config: config} do
     target = Path.join(directory, "unsupported-wrapper")
     File.cp_r!(fixture_path("antigravity_acp"), target)
-
-    File.write!(
-      Path.join(target, "package.json"),
-      Jason.encode!(%{name: "@simonepri/refined-antigravity-acp", version: "2.0.0", type: "module"})
-    )
+    File.write!(Path.join(target, "dist/src/core/supervisor.js"), "export class ProcessSupervisor {}\n")
 
     config = %{config | acp_path: Path.join(target, "dist/bin/cli.js")}
     Application.put_env(:jido_harness, :provider_config, %{antigravity: config})
     assert {:ok, result} = Jido.Harness.run(:antigravity, "normal", await_timeout: 5_000)
     assert result.status == :failed
-    assert result.error.details.process["stderr"] =~ "requires refined-antigravity-acp 1.2.11"
+    assert result.error.details.process["stderr"] =~ "Unsupported Antigravity ACP supervisor contract"
     refute Enum.any?(result.events, &(&1.type == :output_text_delta))
   end
 

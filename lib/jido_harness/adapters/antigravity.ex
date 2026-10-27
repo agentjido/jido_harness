@@ -41,7 +41,7 @@ defmodule Jido.Harness.Adapters.Antigravity do
       acp_agent:
         Jido.Harness.ACPAgentSpec.adapter(
           "refined-antigravity-acp",
-          "@simonepri/refined-antigravity-acp@1.2.11",
+          "@simonepri/refined-antigravity-acp@1.6.3",
           %{
             maturity: :experimental,
             capabilities: %{

@@ -66,11 +66,11 @@ Run `mix hex.audit` before release and review any new advisories.
 
 ## Dependency changes
 
-Antigravity uses the pinned `@simonepri/refined-antigravity-acp@1.2.11`
+Antigravity uses the `@simonepri/refined-antigravity-acp@1.6.3`
 Node package. Its supervisor converts a known server panic to `end_turn`.
 The bundled module at `priv/acp/antigravity.mjs` changes that response to an
 ACP error before Harness receives it. The installed Node package stays
-unchanged. This version-specific correction is included in the Hex package
+unchanged. This supervisor-specific correction is included in the Hex package
 and release assets alongside the native process helper.
 
 The Antigravity CI job runs the actual pinned wrapper against a fake backend.

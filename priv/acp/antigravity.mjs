@@ -1,7 +1,7 @@
-// The pinned wrapper turns a server panic into a successful end_turn. Change
+// The wrapper turns a server panic into a successful end_turn. Change
 // that response to an ACP error while preserving its process recovery state.
 // This preload is inherited by child Node processes, so only patch the named
-// package. The exact version and regression tests bound this compatibility fix.
+// package. The supervisor contract check and regression tests bound this fix.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,10 +15,6 @@ async function preserveCrashErrors() {
     if (existsSync(metadata)) {
       const pkg = JSON.parse(readFileSync(metadata, "utf8"));
       if (pkg.name !== "@simonepri/refined-antigravity-acp") return;
-      if (pkg.version !== "1.2.11") {
-        throw new Error("Harness requires refined-antigravity-acp 1.2.11 for its crash guard");
-      }
-
       const module = pathToFileURL(join(directory, "dist/src/core/supervisor.js"));
       const { ProcessSupervisor } = await import(module.href);
       const original = ProcessSupervisor?.prototype?.declareHang;
