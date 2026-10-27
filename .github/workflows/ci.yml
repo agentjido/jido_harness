@@ -52,7 +52,7 @@ jobs:
         run: >-
           npm install --prefix "$RUNNER_TEMP/antigravity-acp"
           --ignore-scripts --no-audit --no-fund
-          @simonepri/refined-antigravity-acp@1.2.11
+          @simonepri/refined-antigravity-acp@1.6.3
       - name: Test wrapper failures and session recovery without model requests
         env:
           HARNESS_TEST_ANTIGRAVITY_ACP_PATH: ${{ runner.temp }}/antigravity-acp/node_modules/.bin/refined-antigravity-acp

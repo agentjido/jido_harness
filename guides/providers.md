@@ -72,14 +72,14 @@ the base id as `model` and the effort as `reasoning_effort`. The adapter is
 community maintained, so this profile is experimental. See the
 [Antigravity CLI documentation](https://antigravity.google/docs/cli/install/).
 
-Harness includes a crash guard for wrapper version 1.2.11. The wrapper can
+Harness includes a crash guard for the wrapper supervisor. The wrapper can
 otherwise report a server panic as a successful turn. The guard changes that
 response to an ACP error and preserves the wrapper's recovery state. It is
 loaded only for Antigravity through `NODE_OPTIONS`, which retains explicit
 request values over provider configuration and the ambient environment.
-Other Node packages inherit the module but receive no patch. An untested
-version of the wrapper fails at startup. Recheck the guard when changing the
-package pin.
+Other Node packages inherit the module but receive no patch. A wrapper whose
+supervisor no longer matches the patched method fails at startup. Recheck the
+guard when changing the package pin.
 
 ## Separate ACP packages
 
@@ -88,7 +88,7 @@ package pin.
 | Provider | ACP package |
 | --- | --- |
 | Amp | `amp-acp@0.9.0` |
-| Antigravity CLI | `@simonepri/refined-antigravity-acp@1.2.11` |
+| Antigravity CLI | `@simonepri/refined-antigravity-acp@1.6.3` |
 | Claude Code | `@agentclientprotocol/claude-agent-acp@0.70.0` |
 | Codex | `@agentclientprotocol/codex-acp@1.6.2` |
 | Pi | `pi-acp@0.0.33` |
