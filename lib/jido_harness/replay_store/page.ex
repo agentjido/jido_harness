@@ -62,15 +62,15 @@ defmodule Jido.Harness.ReplayStore.Page do
       (is_nil(page.oldest_sequence) or
          (is_integer(page.oldest_sequence) and page.oldest_sequence > 0 and
             page.oldest_sequence <= page.latest_sequence)) and
-      length(page.records) <= limits.max_events and length(page.gaps) <= limits.max_events + 1 and
-      valid_ranges?(page.records, page.gaps, cursor, page.next_cursor, limits.max_events)
+      length(page.records) <= limits.max_signals and length(page.gaps) <= limits.max_signals + 1 and
+      valid_ranges?(page.records, page.gaps, cursor, page.next_cursor, limits.max_signals)
   end
 
   def valid?(_page, _cursor, _limits), do: false
 
   defp valid_ranges?([], [], cursor, last, remaining), do: cursor == last and remaining >= 0
 
-  defp valid_ranges?([%{"sequence" => sequence, "format_version" => 1} | records], gaps, cursor, last, remaining)
+  defp valid_ranges?([%{"sequence" => sequence, "format_version" => 2} | records], gaps, cursor, last, remaining)
        when sequence == cursor + 1 and remaining > 0,
        do: valid_ranges?(records, gaps, sequence, last, remaining - 1)
 
@@ -100,7 +100,7 @@ defmodule Jido.Harness.ReplayStore.Page do
     }
   end
 
-  defp consume(_record, %{count: count} = acc, %{max_events: limit}) when count >= limit,
+  defp consume(_record, %{count: count} = acc, %{max_signals: limit}) when count >= limit,
     do: {:halt, %{acc | complete?: false}}
 
   defp consume(record, acc, limits) when is_map(record), do: consume({record, Record.bytes(record)}, acc, limits)

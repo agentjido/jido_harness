@@ -11,7 +11,7 @@ By the end you will have:
 - inspected normalized provider metadata and readiness;
 - made one provider request;
 - received a `Jido.Harness.RunResult` instead of provider-specific JSON;
-- inspected the canonical event types behind the final response.
+- inspected the canonical Signal types behind the final response.
 
 Read the [getting-started guide](../getting_started.md) and
 [normalization guide](../normalization_and_data_model.md) for the
@@ -106,7 +106,7 @@ end
 ## Run one request
 
 The result is provider-neutral. Provider-specific records that do not have a
-canonical mapping remain available as `:provider_event` events.
+canonical mapping remain available as `jido.harness.provider.message` Signals.
 
 ```elixir
 result =
@@ -125,7 +125,7 @@ result =
   text: result.text,
   text_truncated?: result.text_truncated?,
   usage: result.usage,
-  event_types: Enum.map(result.events, & &1.type)
+  signal_types: Enum.map(result.signals, & &1.type)
 }
 ```
 

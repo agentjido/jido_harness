@@ -2,7 +2,7 @@ defmodule Jido.Harness.ACPFrameLimitTest do
   # Not async: the limit is application configuration
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.ProcessEvent
+  alias Jido.Harness.SignalFactory
   alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport
   alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
@@ -118,6 +118,6 @@ defmodule Jido.Harness.ACPFrameLimitTest do
   end
 
   defp event(data) do
-    %ProcessEvent{process_id: "fixture", sequence: 1, timestamp: "2026-09-04T00:00:00Z", type: :stdout, data: data}
+    SignalFactory.process(:stdout, data)
   end
 end

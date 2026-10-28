@@ -1,6 +1,6 @@
 defmodule Jido.Harness.ProcessLiveTest do
   use ExUnit.Case, async: false
-  alias Jido.Harness.{MemoryHarness, ProcessManager}
+  alias Jido.Harness.{MemoryHarness, ProcessManager, Signal, SignalFactory}
 
   setup do
     original = Application.get_env(:jido_harness, :process_driver)
@@ -43,13 +43,13 @@ defmodule Jido.Harness.ProcessLiveTest do
     wire = "{\"token\":\"test-secret-1234\"}\n"
     send(worker, {:stdout, os_pid, wire})
     send(exec, :finish)
-    events = Task.await(reader)
-    assert Enum.map(events, & &1.type) == [:started, :stdout, :exited]
-    assert Enum.at(events, 1).data == wire
+    signals = Task.await(reader)
+    assert Enum.map(signals, &Signal.kind/1) == [:process_started, :process_stdout, :process_exited]
+    assert signals |> Enum.at(1) |> SignalFactory.process_data() == wire
     refute_received :disk_replay
 
     assert {:ok, persisted} = ProcessManager.replay_process(id)
-    refute Enum.at(persisted, 1).data =~ "test-secret-1234"
+    refute persisted |> Enum.at(1) |> SignalFactory.process_data() =~ "test-secret-1234"
     assert_receive :disk_replay
     assert :ok = ProcessManager.prune_process(id)
   end
@@ -68,7 +68,9 @@ defmodule Jido.Harness.ProcessLiveTest do
     send(worker, {:stdout, os_pid, String.duplicate("x", 2_000)})
     assert {:ok, %{output_cursor: 2}} = ProcessManager.info_process(id)
     assert {:ok, stream} = ProcessManager.live_stream_process(id)
-    assert [%{type: :replay_gap, data: %{"available_from" => 3}}] = Enum.to_list(stream)
+    assert [gap] = Enum.to_list(stream)
+    assert Signal.kind(gap) == :replay_gap
+    assert SignalFactory.payload(gap) == %{"from" => 2, "reason" => "unavailable", "to" => 2}
   end
 
   test "a normal worker exit during a call returns not_found" do

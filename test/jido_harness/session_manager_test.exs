@@ -2,6 +2,8 @@ defmodule Jido.Harness.SessionManagerTest do
   use ExUnit.Case, async: false
 
   import Jido.Harness.TestHelpers
+  alias Jido.Harness.Signal
+  alias Jido.Harness.Adapter.Message
 
   setup context do
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-session-test-#{System.unique_integer([:positive])}")
@@ -26,18 +28,18 @@ defmodule Jido.Harness.SessionManagerTest do
     assert {:ok, second} = Jido.Harness.Session.await(session_id, second_turn, 5_000)
     assert second.provider_session_id == "acp-fixture-session"
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert hd(events).type == :session_started
-    assert Enum.any?(events, &(&1.type == :session_ready))
-    assert Enum.count(events, &(&1.type == :turn_completed)) == 2
-    assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
-    assert Enum.all?(events, &(&1.session_id == session_id and is_nil(&1.run_id)))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert Signal.kind(hd(signals)) == :session_started
+    assert Enum.any?(signals, &(Signal.kind(&1) == :session_ready))
+    assert Enum.count(signals, &(Signal.kind(&1) == :turn_completed)) == 2
+    assert Enum.map(signals, &Signal.sequence/1) == Enum.to_list(1..length(signals))
+    assert Enum.all?(signals, &(&1.data["session_id"] == session_id and is_nil(&1.data["run_id"])))
 
     assert :ok = Jido.Harness.Session.close(session_id)
     assert {:ok, %{state: :closed}} = Jido.Harness.Session.info(session_id)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.count(events, &Jido.Harness.Event.session_terminal?/1) == 1
-    assert List.last(events).type == :session_closed
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert Enum.count(signals, &Signal.session_terminal?/1) == 1
+    assert Signal.kind(List.last(signals)) == :session_closed
   end
 
   test "rejects concurrent sends and queues managed follow ups FIFO" do
@@ -52,12 +54,12 @@ defmodule Jido.Harness.SessionManagerTest do
     assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, queued_one, 5_000)
     assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, queued_two, 5_000)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
 
     completed =
-      events
-      |> Enum.filter(&(&1.type == :turn_completed))
-      |> Enum.map(& &1.turn_id)
+      signals
+      |> Enum.filter(&(Signal.kind(&1) == :turn_completed))
+      |> Enum.map(& &1.data["turn_id"])
 
     assert completed == [active, queued_one, queued_two]
   end
@@ -145,18 +147,20 @@ defmodule Jido.Harness.SessionManagerTest do
 
     send(
       worker,
-      {:session_adapter_event,
-       Jido.Harness.Event.new!(
+      {:session_adapter_message,
+       Message.new!(
          type: :turn_completed,
-         provider: :test,
          turn_id: turn_id,
          payload: %{"duplicate" => true}
        )}
     )
 
     Process.sleep(10)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.count(events, &(&1.type == :turn_completed and &1.turn_id == turn_id)) == 1
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+
+    assert Enum.count(signals, fn signal ->
+             Signal.kind(signal) == :turn_completed and signal.data["turn_id"] == turn_id
+           end) == 1
   end
 
   test "closing an active session terminates active and queued turns without idle churn" do
@@ -168,12 +172,12 @@ defmodule Jido.Harness.SessionManagerTest do
 
     assert {:ok, %{status: :interrupted}} = Jido.Harness.Session.await(session_id, active_id, 2_000)
     assert {:ok, %{status: :interrupted}} = Jido.Harness.Session.await(session_id, queued_id, 2_000)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
 
-    first_interrupted = Enum.find_index(events, &(&1.type == :turn_interrupted))
+    first_interrupted = Enum.find_index(signals, &(Signal.kind(&1) == :turn_interrupted))
     assert first_interrupted
-    refute events |> Enum.drop(first_interrupted) |> Enum.any?(&(&1.type == :session_idle))
-    assert List.last(events).type == :session_closed
+    refute signals |> Enum.drop(first_interrupted) |> Enum.any?(&(Signal.kind(&1) == :session_idle))
+    assert Signal.kind(List.last(signals)) == :session_closed
   end
 
   test "a transport exit produces a retained failed session instead of crashing its worker" do
@@ -187,9 +191,9 @@ defmodule Jido.Harness.SessionManagerTest do
     assert eventually(fn -> match?({:ok, %{state: :failed}}, Jido.Harness.Session.info(session_id)) end)
     assert Process.alive?(worker)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.count(events, &Jido.Harness.Event.session_terminal?/1) == 1
-    assert List.last(events).type == :session_failed
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert Enum.count(signals, &Signal.session_terminal?/1) == 1
+    assert Signal.kind(List.last(signals)) == :session_failed
   end
 
   test "rejects the removed transport selection option" do

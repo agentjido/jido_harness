@@ -1,4 +1,4 @@
-defmodule Jido.Harness.EventLog do
+defmodule Jido.Harness.SignalLog do
   @moduledoc false
 
   alias Jido.Harness.{Buffer, ReplayStore}
@@ -19,7 +19,7 @@ defmodule Jido.Harness.EventLog do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
-  @doc "Returns the resource event log schema."
+  @doc "Returns the resource Signal log schema."
   def schema, do: @schema
 
   @doc "Constructs validated storage state."
@@ -39,7 +39,7 @@ defmodule Jido.Harness.EventLog do
   @spec open(atom(), String.t(), map(), term()) :: t()
   def open(kind, id, retention, config \\ Application.get_env(:jido_harness, :replay_store, {FileStore, %{}})) do
     {module, options} = configuration(config, retention)
-    resource = %{kind: kind, id: id, format_version: 1}
+    resource = %{kind: kind, id: id, format_version: 2}
     {:ok, fallback} = Memory.open(resource, %{max_bytes: Map.get(retention, :memory_bytes, 1_048_576)})
     log = %__MODULE__{module: module, resource: resource, fallback: fallback}
 
@@ -72,7 +72,7 @@ defmodule Jido.Harness.EventLog do
   defp configuration(_config, _retention), do: raise(ArgumentError, "replay_store must be {module, options_map}")
 
   defp file_options(options, retention) do
-    keys = [:journal_dir, :segment_bytes, :disk_limit_bytes, :max_events]
+    keys = [:journal_dir, :segment_bytes, :disk_limit_bytes, :max_signals]
 
     Application.get_env(:jido_harness, :process_manager, %{})
     |> Map.new()
@@ -81,14 +81,14 @@ defmodule Jido.Harness.EventLog do
     |> Map.merge(Map.take(retention, keys))
   end
 
-  @doc "Creates the original event buffer used by the internal live path."
+  @doc "Creates the original Signal buffer used by the internal live path."
   @spec new_buffer(pos_integer()) :: Buffer.t()
   def new_buffer(memory_bytes), do: Buffer.new(memory_bytes)
 
-  @doc "Prepares public replay once and retains original events only in the live buffer."
+  @doc "Prepares public replay once and retains original Signals only in the live buffer."
   @spec append(Buffer.t(), t(), map(), term()) :: {Buffer.t(), t()}
-  def append(buffer, log, event, secrets \\ []) do
-    record = Record.prepare(event, secrets)
+  def append(buffer, log, signal, secrets \\ []) do
+    record = Record.prepare(signal, secrets)
     {_, fallback} = append_result(Memory.append(log.fallback, record))
     log = %{log | fallback: fallback, latest_sequence: max(log.latest_sequence, record["sequence"])}
     started = System.monotonic_time()
@@ -111,8 +111,8 @@ defmodule Jido.Harness.EventLog do
       end
 
     retained = info(log)
-    telemetry(log, :append, started, Map.take(retained, [:retained_events, :retained_bytes]))
-    {Buffer.append(buffer, event), log}
+    telemetry(log, :append, started, Map.take(retained, [:retained_signals, :retained_bytes]))
+    {Buffer.append(buffer, signal), log}
   end
 
   defp append_result({:ok, handle}), do: {:ok, handle}
@@ -121,7 +121,7 @@ defmodule Jido.Harness.EventLog do
   @doc "Reads a bounded replay page, with the same data policy during storage failure."
   @spec replay(t(), non_neg_integer(), pos_integer(), pos_integer(), function()) :: {Page.t(), t()}
   def replay(log, cursor, count, bytes \\ 1_048_576, normalize \\ &Function.identity/1) do
-    limits = %{max_events: count, max_bytes: bytes}
+    limits = %{max_signals: count, max_bytes: bytes}
     started = System.monotonic_time()
 
     {page, log} =
@@ -165,13 +165,17 @@ defmodule Jido.Harness.EventLog do
     {%{page | records: Enum.map(page.records, normalize)}, %{log | fallback: fallback}}
   end
 
-  @doc "Maps a page to the compatible ordered event list, including each missing range."
-  @spec events(Page.t(), function(), function()) :: [map()]
-  def events(page, record_fun, gap_fun) do
+  @doc "Maps a page to the ordered Signal list, including each missing range."
+  @spec signals(Page.t(), function(), function()) :: [Jido.Signal.t()]
+  def signals(page, record_fun, gap_fun) do
     records = Enum.map(page.records, record_fun)
     gaps = Enum.map(page.gaps, gap_fun)
-    Enum.sort_by(records ++ gaps, & &1.sequence)
+    Enum.sort_by(records ++ gaps, &sequence/1)
   end
+
+  defp sequence(%Jido.Signal{} = signal), do: Jido.Harness.Signal.sequence(signal)
+  defp sequence(%{sequence: sequence}), do: sequence
+  defp sequence(%{"sequence" => sequence}), do: sequence
 
   @doc "Returns storage-neutral status and retention metadata."
   @spec info(t()) :: map()
@@ -199,13 +203,13 @@ defmodule Jido.Harness.EventLog do
     })
   end
 
-  defp valid_info?(%{oldest_sequence: oldest, latest_sequence: latest, retained_events: count, retained_bytes: bytes})
+  defp valid_info?(%{oldest_sequence: oldest, latest_sequence: latest, retained_signals: count, retained_bytes: bytes})
        when is_integer(latest) and latest >= 0 and is_integer(count) and count >= 0 and is_integer(bytes) and bytes >= 0,
        do: (is_nil(oldest) and count == 0) or (is_integer(oldest) and oldest > 0 and oldest <= latest and count > 0)
 
   defp valid_info?(_info), do: false
 
-  @doc "Returns the optional file directory for compatibility."
+  @doc "Returns the optional file directory."
   @spec dir(t()) :: String.t() | nil
   def dir(log), do: Map.get(info(log), :directory)
 

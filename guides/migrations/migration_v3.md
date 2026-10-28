@@ -1,105 +1,82 @@
 # Migrate to version 3
 
-Version 3 uses ACP for every coding-agent run and session. It has no switch
-back to the version 2 direct-CLI or alternative session transports. The host
-application still receives Harness requests, events, results, and errors.
+Version 3 is a full cutover. It has no compatibility layer for the V2 event
+model, replay record format, direct CLI adapters, or alternate session
+transports.
 
-## Update a version 2 application
+## Required versions
 
-| Previous behavior | Version 3 action |
+The `3.0.0-rc.1` branch uses the current Jido V3 source packages for `jido`,
+`jido_action`, and `jido_signal`. During local development, use sibling path
+dependencies from the same `proj_jido_core` checkout. Published applications
+must use compatible Jido V3 releases from one source revision.
+
+The development baseline for this cutover is:
+
+| Package | Branch | Version | Revision |
+| --- | --- | --- | --- |
+| `jido_harness` | `feat/v3-native-primitives` | `3.0.0-rc.1` | based on `77465640a6e1` |
+| `jido` | `release/v3` | `3.0.0-beta.2` | `233c37d1eee8` |
+| `jido_action` | `release/v3` | `3.0.0-beta.22` | `177e7a4ce434` |
+| `jido_signal` | `release/v3` | `3.0.0-beta.5` | `7b825f1d050a` |
+| `runic` | `feat/workflow-scoped-fact-storage` | `0.1.0-alpha.12` | `2a8cffa9fa38` |
+
+## Native primitives
+
+| V2 | V3 |
 | --- | --- |
-| Custom adapter `run/2` and `cancel/2` | Declare one `ACPAgentSpec`; Harness owns execution and cancellation |
-| `SessionRequest.transport` | Remove it; all sessions use ACP |
-| `AdapterSpec.default_session_transport` and `session_transports` | Replace them with `acp_agent` |
-| `SessionTransportSpec` and `InteractionCapabilities` | Use `ACPAgentSpec` and `SessionCapabilities` |
-| `SessionInfo.transport` | Remove field access |
-| Managed resume or Pi JSONL RPC transport | Use the provider's ACP entry point |
-| `max_turns` on a finite run | Remove it; one run sends one ACP turn |
-| Direct-CLI provider flags | Use only declared normalized or provider options |
+| `Jido.Harness.Event` | Fixed `Jido.Signal` modules under `Jido.Harness.Signal.*` |
+| `Jido.Harness.ProcessEvent` | `Jido.Harness.Signal.Process.*` |
+| `result.events` | `result.signals` |
+| event struct `sequence` | `Jido.Harness.Signal.sequence(signal)` |
+| event struct `payload` | `signal.data["payload"]` |
+| `:provider_event` | `:provider_message` |
+| separate process replay gap | `jido.harness.replay.gap` for all resources |
+| replay record format 1 | replay record format 2 with a native Signal map |
+| `max_events` | `max_signals` |
+| replay-store `retained_events` | `retained_signals` |
 
-The run, session, event, replay, retention, and process lifecycle APIs remain
-Harness APIs. Review [Providers](../providers.md) for the exact ACP executables
-and pinned adapter packages.
+There are no aliases for the removed modules or fields.
 
-## Approvals
+## Jido Agents
 
-Finite runs reject `approval_mode: :prompt`. They approve ACP permission
-requests only in `:auto_approve` mode and deny them in other modes.
+Remove application-owned Harness wrappers when they only convert commands and
+facts to custom Actions or Signals. Use:
 
-Use [Interactive sessions](../interactive_sessions.md) for manual approval
-responses. The tested [policy job recipe](../recipes/policy_jobs.md) uses one
-bounded session turn when host code must decide each request. It closes the
-session on exit.
+- `Jido.Harness.Action.*` for typed command routes;
+- `Jido.Harness.Directive.*` for post-commit effects;
+- `Jido.Harness.Plugin` for workspace policy, ownership, idempotency, cursor
+  recovery, and Signal delivery.
 
-Only answer permission requests the provider sends. Provider options must be
-supported by its profile. OpenCode supports ACP permission requests but does
-not accept the normalized `approval_mode` field.
+Keep the provider-specific Agent in the application. Do not put a Claude Code
+Agent in the Harness package. See [Jido Agent integration](../jido_agents.md).
 
-## Structured output and isolation
+## ACP-only execution
 
-No built-in version 3 ACP profile supports structured output. Requests for
-`structured_output` fail before agent execution. The retained request and
-result fields do not establish support.
+All coding-agent runs and sessions use ACP. Remove `SessionRequest.transport`,
+legacy session transport specs, direct provider command flags, and finite-run
+`max_turns`. A finite run sends one ACP turn. Use a full Session for multi-turn
+work.
 
-The pinned Codex ACP profile also does not implement the optional ephemeral
-and ignore-user-config controls. See [Codex isolation controls](../providers.md#codex-isolation-controls)
-before relying on them. A custom ACP executable must report the applied
-controls.
+Finite runs reject interactive approval mode. Use a Session when host code must
+answer provider permission requests.
 
-Keep a version 2 dependency when its direct-Codex structured-output contract
-is required. Version 3 has no direct-CLI fallback.
+No built-in V3 ACP profile advertises structured output. Requests for it fail
+before execution.
 
-## Raw events and model evidence
+## Raw provider data
 
-`Event.raw` now contains the decoded message at the ACP boundary. For a
-separate ACP adapter, it contains the adapter's translated message.
-Provider-native fields omitted during translation are unavailable.
+Raw decoded ACP envelopes are private adapter messages. They are not public
+Signals and are not stored. Use normalized provider-message payloads or a
+provider-specific adapter boundary.
 
-Session-open configuration is retained as a `:provider_event` with kind
-`acp_session_configuration` and source `session_open`. It describes the
-response before requested configuration changes. Later updates use
-`acp_update`. A requested model alone does not prove which model ran.
+## Verification
 
-Review the [event reference](../reference/event_reference.md) if your
-application reads raw fields or provider model evidence.
+After migration:
 
-## Earlier provider packages
-
-Applications migrating from provider namespaces such as `Jido.Amp` should use
-the common `Jido.Harness` facade and its Run, Session, and Process modules.
-Replace provider SDK result and event structs with `RunResult`, `TurnResult`,
-`Event`, and `Error`.
-
-Keep Harness resource IDs separate from `provider_session_id`. Move workspace
-provisioning and retry policy to the host application. Replace shell templates
-with executable-plus-argv processes. Remove old adapter discovery, Jido Action
-or Signal wrappers, and Splode error matching. Supply an existing working
-directory.
-
-## Install and verify
-
-Follow [Getting started](../getting_started.md) for the release-candidate
-dependency and CLI setup. Some providers need both a base CLI and a separate
-ACP adapter. Preview both with `Jido.Harness.install(provider, dry_run: true)`.
-
-Harness uses Arbor ACP `~> 1.0.0-rc.1` from Hex. If another application dependency also
-uses Arbor ACP, check compatible requirements before adding an override.
-Review [dependency audit](../reference/dependencies.md#dependency-audit).
-
-For a custom adapter, follow [Custom adapters](../custom_adapters.md).
-Run the deterministic and affected live checks in [Testing](../testing.md).
-
-## Keep version 2 when required
-
-The version 2.1 release candidate is tagged `v2.1.0-rc.2` at commit
-`cea12d9132f0cf954deb329ec81a0e187332edb6`:
-
-```elixir
-{:jido_harness, github: "agentjido/jido_harness", tag: "v2.1.0-rc.2"}
-```
-
-The tag keeps the historical
-[version 2 migration guide](https://github.com/agentjido/jido_harness/blob/v2.1.0-rc.2/docs/migration_v2.md),
-[structured-output contract](https://github.com/agentjido/jido_harness/blob/v2.1.0-rc.2/docs/structured_output_execution.md),
-and [schema-isolation decision](https://github.com/agentjido/jido_harness/blob/v2.1.0-rc.2/docs/decisions/structured-output-schema-isolation.md).
-Those documents describe version 2 behavior, not the current release.
+1. Remove all references to `Jido.Harness.Event`, `ProcessEvent`, and
+   `result.events`.
+2. Delete old format-1 replay data or move it outside the V3 journal root.
+3. Test one finite run and one two-turn Session with a real provider.
+4. If you use a Jido Agent, test commit-before-I/O, duplicate command IDs,
+   workspace escape denial, connection ownership, quiesce, and resume.

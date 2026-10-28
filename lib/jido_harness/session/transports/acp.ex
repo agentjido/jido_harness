@@ -3,7 +3,8 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   use GenServer, restart: :temporary
 
   alias Arbor.ACP.Client
-  alias Jido.Harness.{ApprovalResponse, Error, Event, ID, TurnRequest}
+  alias Jido.Harness.{ApprovalResponse, Error, ID, TurnRequest}
+  alias Jido.Harness.Adapter.Message
   alias Jido.Harness.SessionAdapters.ACP.{ArborACPHandler, ArborACPTransport}
   alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
@@ -180,16 +181,15 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
     update
     |> map_update()
-    |> Enum.each(fn event ->
-      event = %{
-        event
-        | provider: state.provider,
-          provider_session_id: provider_session_id,
-          turn_id: event.turn_id || turn_id,
+    |> Enum.each(fn %Message{} = adapter_message ->
+      adapter_message = %Message{
+        adapter_message
+        | provider_session_id: provider_session_id,
+          turn_id: adapter_message.turn_id || turn_id,
           raw: message
       }
 
-      Jido.Harness.SessionAdapter.emit(state.owner, event)
+      Jido.Harness.SessionAdapter.emit(state.owner, adapter_message)
     end)
 
     {:noreply, state |> Map.put(:pending_updates, pending_updates) |> maybe_finish_prompt()}
@@ -243,7 +243,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   end
 
   def handle_info({:acp_process_stderr, data}, state) do
-    emit(state, :provider_event, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
+    emit(state, :provider_message, %{"stream" => "stderr", "data" => data, "kind" => "acp_log"})
     {:noreply, state}
   end
 
@@ -410,7 +410,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     configuration = Map.drop(result, ["sessionId", "session_id"])
 
     if map_size(configuration) > 0 do
-      emit(%{state | provider_session_id: provider_session_id}, :provider_event, %{
+      emit(%{state | provider_session_id: provider_session_id}, :provider_message, %{
         "kind" => "acp_session_configuration",
         "source" => "session_open",
         "configuration" => configuration
@@ -572,32 +572,31 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   defp map_update(%{"sessionUpdate" => type} = update) do
     case type do
-      "agent_message_chunk" -> text_event(:output_text_delta, update)
-      "agent_thought_chunk" -> text_event(:thinking_delta, update)
-      "tool_call" -> [event(:tool_call, update)]
-      "tool_call_update" -> [event(:tool_result, update)]
-      "plan" -> [event(:plan_updated, update)]
-      type when type in ["usage", "usage_update"] -> [event(:usage, Map.drop(update, ["sessionUpdate"]))]
-      _other -> [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
+      "agent_message_chunk" -> text_message(:output_text_delta, update)
+      "agent_thought_chunk" -> text_message(:thinking_delta, update)
+      "tool_call" -> [message(:tool_call, update)]
+      "tool_call_update" -> [message(:tool_result, update)]
+      "plan" -> [message(:plan_updated, update)]
+      type when type in ["usage", "usage_update"] -> [message(:usage, Map.drop(update, ["sessionUpdate"]))]
+      _other -> [message(:provider_message, %{"kind" => "acp_update", "update" => update})]
     end
   end
 
-  defp map_update(update), do: [event(:provider_event, %{"kind" => "acp_update", "update" => update})]
+  defp map_update(update), do: [message(:provider_message, %{"kind" => "acp_update", "update" => update})]
 
-  defp text_event(type, update) do
+  defp text_message(type, update) do
     content = update["content"] || %{}
     text = content["text"] || update["text"]
-    if is_binary(text), do: [event(type, %{"text" => text})], else: [event(:provider_event, update)]
+    if is_binary(text), do: [message(type, %{"text" => text})], else: [message(:provider_message, update)]
   end
 
-  defp event(type, payload), do: Event.new!(type: type, provider: :acp, payload: payload)
+  defp message(type, payload), do: Message.new!(type: type, payload: payload)
 
   defp emit(state, type, payload, options \\ []) do
     Jido.Harness.SessionAdapter.emit(
       state.owner,
-      Event.new!(
+      Message.new!(
         type: type,
-        provider: state.provider,
         provider_session_id: state.provider_session_id,
         turn_id: Keyword.get(options, :turn_id),
         request_id: Keyword.get(options, :request_id),

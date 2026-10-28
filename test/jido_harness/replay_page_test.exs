@@ -1,27 +1,27 @@
 defmodule Jido.Harness.ReplayPageTest do
   use ExUnit.Case, async: false
-  alias Jido.Harness.{Buffer, Event, EventLog, MemoryHarness, ProcessEvent}
+  alias Jido.Harness.{Buffer, MemoryHarness, Signal, SignalFactory, SignalLog}
   alias Jido.Harness.ReplayStore.{ETS, File, Memory}
 
   test "run and session workers return pages and all gap ranges" do
     for kind <- [:run, :session] do
-      log = EventLog.open(kind, "page", %{}, {Memory, %{}})
+      log = SignalLog.open(kind, "page", %{}, {Memory, %{}})
 
       {_, log} =
         Enum.reduce([1, 4, 6], {Buffer.new(1_000), log}, fn n, {buffer, log} ->
-          event = Event.new!(type: :output_text_delta, provider: :test, sequence: n, payload: %{"text" => "value"})
-          EventLog.append(buffer, log, event)
+          signal = SignalFactory.fact(:output_text_delta, %{sequence: n, resource: kind, payload: %{"text" => "value"}})
+          SignalLog.append(buffer, log, signal)
         end)
 
-      state = %{MemoryHarness.state() | id: "page", event_log: log}
+      state = %{MemoryHarness.state() | id: "page", signal_log: log}
       worker = if kind == :run, do: Jido.Harness.RunWorker, else: Jido.Harness.SessionWorker
-      limits = %{max_events: 2, max_bytes: 10_000}
+      limits = %{max_signals: 2, max_bytes: 10_000}
       assert {:reply, {:ok, page}, state} = worker.handle_call({:replay_page, 0, limits}, nil, state)
-      assert Enum.map(page.records, & &1.sequence) == [1, 4]
+      assert Enum.map(page.records, &Signal.sequence/1) == [1, 4]
       assert page.gaps == [%{from: 2, to: 3, reason: :unavailable}]
       assert page.next_cursor == 4
-      assert {:reply, {:ok, events}, _} = worker.handle_call({:replay, 0, 100}, nil, state)
-      assert Enum.map(events, & &1.sequence) == [1, 3, 4, 5, 6]
+      assert {:reply, {:ok, signals}, _} = worker.handle_call({:replay, 0, 100}, nil, state)
+      assert Enum.map(signals, &Signal.sequence/1) == [1, 3, 4, 5, 6]
     end
   end
 
@@ -59,9 +59,13 @@ defmodule Jido.Harness.ReplayPageTest do
       send(worker, {:stdout, os_pid, "fixture-secret"})
       state = :sys.get_state(worker)
       assert {:ok, page} = Jido.Harness.Process.replay_page(id, limit: 10)
-      assert Enum.any?(page.records, &match?(%ProcessEvent{type: :stdout, data: "[REDACTED]"}, &1))
+
+      assert Enum.any?(page.records, fn signal ->
+               Signal.kind(signal) == :process_stdout and SignalFactory.process_data(signal) == "[REDACTED]"
+             end)
+
       assert page.next_cursor == state.sequence
-      assert Enum.any?(Buffer.events(state.buffer), &(&1.data == "fixture-secret"))
+      assert Enum.any?(Buffer.signals(state.buffer), &(SignalFactory.process_data(&1) == "fixture-secret"))
       assert {:ok, info} = Jido.Harness.Process.info(id)
       assert info.replay_store.adapter == adapter
       assert info.replay_store.status == :healthy
@@ -82,22 +86,24 @@ defmodule Jido.Harness.ReplayPageTest do
     end
   end
 
-  test "invalid stored event fields use fallback in page and list APIs" do
-    event = Event.new!(type: :output_text_delta, provider: :test, sequence: 1, payload: %{"text" => "safe"})
-    record = Jido.Harness.ReplayStore.Record.prepare(event, [])
-    invalid = Map.put(record, "type", "unknown_stored_event_type")
-    limits = %{max_events: 100, max_bytes: 10_000}
+  test "invalid stored Signal fields use fallback in page and list APIs" do
+    signal = SignalFactory.fact(:output_text_delta, %{payload: %{"text" => "safe"}})
+    record = Jido.Harness.ReplayStore.Record.prepare(signal, [])
+    invalid = put_in(record, ["signal", "type"], "unknown.stored.signal.type")
+    limits = %{max_signals: 100, max_bytes: 10_000}
     page = Jido.Harness.ReplayStore.Page.build([invalid], 0, %{latest_sequence: 1, oldest_sequence: 1}, limits)
 
     for kind <- [:run, :session] do
-      log = EventLog.open(kind, "corrupt-event", %{}, {Jido.Harness.ReplayStore.FaultStore, %{page: page}})
-      {_, log} = EventLog.append(Buffer.new(10_000), log, event)
-      state = %{MemoryHarness.state() | event_log: log}
+      log = SignalLog.open(kind, "corrupt-signal", %{}, {Jido.Harness.ReplayStore.FaultStore, %{page: page}})
+      {_, log} = SignalLog.append(Buffer.new(10_000), log, signal)
+      state = %{MemoryHarness.state() | signal_log: log}
       worker = if kind == :run, do: Jido.Harness.RunWorker, else: Jido.Harness.SessionWorker
       assert {:reply, {:ok, page}, state} = worker.handle_call({:replay_page, 0, limits}, nil, state)
-      assert [%Event{type: :output_text_delta}] = page.records
-      assert state.event_log.status == :degraded
-      assert {:reply, {:ok, [%Event{type: :output_text_delta}]}, _} = worker.handle_call({:replay, 0, 100}, nil, state)
+      assert [%Jido.Signal{} = replayed] = page.records
+      assert Signal.kind(replayed) == :output_text_delta
+      assert state.signal_log.status == :degraded
+      assert {:reply, {:ok, [%Jido.Signal{} = replayed]}, _} = worker.handle_call({:replay, 0, 100}, nil, state)
+      assert Signal.kind(replayed) == :output_text_delta
     end
   end
 

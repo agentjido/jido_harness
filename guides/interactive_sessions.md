@@ -25,7 +25,7 @@ token.
 
 Starting returns a worker ID before ACP initialization finishes. The info
 call can wait for startup and confirms the idle state before input. A startup
-failure leaves a terminal session with its error and retained events.
+failure leaves a terminal session with its error and retained Signals.
 
 ## Resume or fork a provider conversation
 
@@ -62,7 +62,7 @@ and `fork_session_id`.
 ```
 
 `send_message/3` requires an idle session. The accepted `turn_id` remains
-stable across event streaming and later lookup.
+stable across Signal streaming and later lookup.
 
 ## Queue follow-up turns
 
@@ -96,10 +96,10 @@ The oldest completed results expire when either result limit is reached.
 Later `turn_result/2` and `await/3` calls return `{:error, :not_found}` for an
 expired turn. Callers already waiting for that turn receive its result. A
 single result larger than `max_result_bytes` is delivered to current waiters
-and is then discarded. Journal event retention is separate from result
+and is then discarded. Journal Signal retention is separate from result
 retention. Store results in the host application if you need a longer history.
 Approval requests above the limit are denied, and the session records an
-`approval_limit_reached` provider event.
+`approval_limit_reached` provider message.
 
 ## Inspect, stream, and replay
 
@@ -109,13 +109,13 @@ Approval requests above the limit are denied, and the session records an
 
 {:ok, stream} = Jido.Harness.Session.stream(session_id, cursor: 0)
 
-Enum.each(stream, fn event ->
-  IO.inspect({event.sequence, event.turn_id, event.type})
+Enum.each(stream, fn signal ->
+  IO.inspect({Jido.Harness.Signal.sequence(signal), signal.data["turn_id"], signal.type})
 end)
 ```
 
 Session streams include session lifecycle, queue, approval, turn, provider,
-and output events in one ordered sequence.
+and output Signals in one ordered sequence.
 
 ## Interrupt an active turn
 
@@ -125,7 +125,7 @@ and output events in one ordered sequence.
 
 Interrupt ends the active turn while preserving a healthy session when the
 ACP agent supports it. The turn receives one `:turn_interrupted` terminal
-event.
+Signal.
 
 ## Steering, approvals, and configuration
 
@@ -212,7 +212,7 @@ an unanswered permission request cannot wait without a limit.
 ```
 
 `close/1` is graceful: it resolves pending approvals as denied, stops the
-ACP process, and emits one terminal session event. `kill/1` forcibly cancels the
+ACP process, and emits one terminal session Signal. `kill/1` forcibly cancels the
 session. Only terminal sessions can be pruned.
 
 ## Timeouts

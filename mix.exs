@@ -19,6 +19,7 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/runs.md",
        "guides/interactive_sessions.md",
+       "guides/jido_agents.md",
        "guides/managed_processes.md",
        "guides/recipes/policy_jobs.md"
      ]},
@@ -41,7 +42,7 @@ defmodule Jido.Harness.MixProject do
     {"Reference",
      [
        "guides/reference/configuration_reference.md",
-       "guides/reference/event_reference.md",
+       "guides/reference/signal_reference.md",
        "guides/reference/telemetry.md",
        "guides/reference/architecture.md",
        "guides/reference/dependencies.md"
@@ -103,10 +104,13 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.ProcessSpec,
             Jido.Harness.ProcessInfo
           ],
-          "Events and errors": [
-            Jido.Harness.Event,
-            Jido.Harness.ProcessEvent,
+          "Signals and errors": [
+            Jido.Harness.Signal,
             Jido.Harness.Error
+          ],
+          "Jido Agent integration": [
+            Jido.Harness.Plugin,
+            Jido.Harness.Action
           ],
           "Providers and extension contracts": [
             Jido.Harness.ProviderStatus,
@@ -198,7 +202,11 @@ defmodule Jido.Harness.MixProject do
   defp deps do
     [
       # Runtime
-      {:zoi, "~> 0.19.0"},
+      {:jido, path: "../../proj_jido_core/jido", override: true},
+      {:jido_action, path: "../../proj_jido_core/jido_action", override: true},
+      {:jido_signal, path: "../../proj_jido_core/jido_signal", override: true},
+      {:runic, path: "../../proj_jido_core/runic", override: true},
+      {:zoi, "~> 0.18.11"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:arbor_acp, "~> 1.0.0-rc.1"},
@@ -208,6 +216,7 @@ defmodule Jido.Harness.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:doctor, "~> 0.21", only: :dev, runtime: false},
+      {:sourceror, "~> 1.7", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: [:dev, :test]},
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}

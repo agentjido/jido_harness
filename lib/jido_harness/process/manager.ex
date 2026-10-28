@@ -51,7 +51,7 @@ defmodule Jido.Harness.ProcessManager do
     |> Enum.filter(fn info -> is_nil(states) or info.state in states end)
   end
 
-  @doc "Returns up to `limit` retained events after the supplied cursor."
+  @doc "Returns up to `limit` retained Signals after the supplied cursor."
   def replay_process(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          cursor = Keyword.get(options, :cursor, 0),
@@ -68,7 +68,7 @@ defmodule Jido.Harness.ProcessManager do
     end
   end
 
-  @doc "Returns a pull-based process event stream starting at an optional cursor."
+  @doc "Returns a pull-based process Signal stream starting at an optional cursor."
   def stream_process(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          {:ok, _info} <- info_process(id) do
@@ -99,20 +99,21 @@ defmodule Jido.Harness.ProcessManager do
 
   defp live_batch(id, cursor) do
     case call(id, {:live_output, cursor, 100}) do
-      {:ok, events} ->
-        {events, List.last(events).sequence}
+      {:ok, signals} ->
+        {signals, signals |> List.last() |> Jido.Harness.Signal.sequence()}
 
       :eof ->
         {:halt, :done}
 
       {:gap, available_from} ->
-        gap = %Jido.Harness.ProcessEvent{
-          process_id: id,
-          sequence: max(1, available_from - 1),
-          timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-          type: :replay_gap,
-          data: %{"available_from" => available_from}
-        }
+        sequence = max(1, available_from - 1)
+
+        gap =
+          Jido.Harness.Signal.replay_gap(:process, id, %{
+            from: sequence,
+            to: sequence,
+            reason: :unavailable
+          })
 
         {[gap], :done}
 

@@ -90,4 +90,4 @@ without an authorization decision.
 
 Built-in telemetry metadata omits prompts, credentials, environment values, and
 complete argv. Application handlers should preserve the same boundary when
-adding metadata or exporting events.
+adding metadata or exporting Signals.

@@ -6,7 +6,7 @@ defmodule Jido.Harness.ReplayStore do
   ID, and record format version. The core assigns sequences and removes secrets
   and raw payloads before append. Adapters never receive execution requests.
 
-  Reads use an exclusive sequence cursor and positive `:max_events` and
+  Reads use an exclusive sequence cursor and positive `:max_signals` and
   `:max_bytes` limits. See `Jido.Harness.ReplayStore.Page` for gap and cursor
   rules. Append success means the next read can see the record, not that the
   write survives a crash. Repeating a retained record is safe; different data
@@ -24,15 +24,15 @@ defmodule Jido.Harness.ReplayStore do
 
   alias Jido.Harness.ReplayStore.Page
 
-  @type resource :: %{kind: :process | :run | :session, id: String.t(), format_version: 1}
-  @type limits :: %{max_events: pos_integer(), max_bytes: pos_integer()}
+  @type resource :: %{kind: :process | :run | :session, id: String.t(), format_version: 2}
+  @type limits :: %{max_signals: pos_integer(), max_bytes: pos_integer()}
   @type replay_record :: %{required(String.t()) => term()}
   @type info :: %{
           optional(:directory) => String.t() | nil,
           oldest_sequence: pos_integer() | nil,
           latest_sequence: non_neg_integer(),
           retained_bytes: non_neg_integer(),
-          retained_events: non_neg_integer()
+          retained_signals: non_neg_integer()
         }
 
   @callback validate_options(map()) :: :ok | {:error, term()}
@@ -45,7 +45,7 @@ defmodule Jido.Harness.ReplayStore do
 
   @doc false
   @spec validate_resource(term()) :: :ok | {:error, :invalid_resource}
-  def validate_resource(%{kind: kind, id: id, format_version: 1})
+  def validate_resource(%{kind: kind, id: id, format_version: 2})
       when kind in [:process, :run, :session] and is_binary(id) and byte_size(id) > 0, do: :ok
 
   def validate_resource(_resource), do: {:error, :invalid_resource}
@@ -58,7 +58,7 @@ defmodule Jido.Harness.ReplayStore do
          count = Keyword.get(options, :limit, 100),
          bytes = Keyword.get(options, :max_bytes, 1_048_576),
          :ok <- validate_read(cursor, count, bytes) do
-      {:ok, cursor, %{max_events: count, max_bytes: bytes}}
+      {:ok, cursor, %{max_signals: count, max_bytes: bytes}}
     else
       {:error, :invalid_replay_limits} ->
         {:error, Jido.Harness.Error.validation("invalid replay cursor, limit, or max_bytes")}

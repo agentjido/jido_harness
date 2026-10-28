@@ -74,8 +74,8 @@ when another process must inspect or control the work.
 {:ok, stream} =
   Jido.Harness.Run.stream(run_id, cursor: 0, limit: 100, poll_interval_ms: 25)
 
-Enum.each(stream, fn event ->
-  IO.inspect({event.sequence, event.type})
+Enum.each(stream, fn signal ->
+  IO.inspect({Jido.Harness.Signal.sequence(signal), signal.type})
 end)
 ```
 
@@ -90,14 +90,14 @@ For explicit pages:
 next_cursor =
   case List.last(first_page) do
     nil -> 0
-    event -> event.sequence
+    signal -> Jido.Harness.Signal.sequence(signal)
   end
 
 {:ok, second_page} =
   Jido.Harness.Run.replay(run_id, cursor: next_cursor, limit: 100)
 ```
 
-A cursor is the last consumed sequence. Replay returns later events and caps
+A cursor is the last consumed sequence. Replay returns later Signals and caps
 each page at 10,000. See [Streaming, replay, and retention](streaming_replay_and_retention.md)
 for journal limits and replay gaps.
 
@@ -123,7 +123,7 @@ A returned result is terminal. Its status is `:completed`, `:failed`, or
 `:cancelled`. The outer `{:ok, result}` tuple does not establish task success.
 
 `text` is the bounded final text tail. `usage` contains the data the provider
-supplies, and `events` contains the retained memory tail. If
+supplies, and `signals` contains the retained memory tail. If
 `text_truncated?` is true, use replay for the complete retained sequence.
 Rotated journal segments cannot be recovered.
 

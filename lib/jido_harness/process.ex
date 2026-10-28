@@ -3,7 +3,7 @@ defmodule Jido.Harness.Process do
   Supervised lifecycle API for structured local OS processes.
 
   Processes are started from an executable plus argv, never an interpolated
-  shell command. Their output is retained as cursor-addressable events.
+  shell command. Their output is retained as cursor-addressable Signals.
 
   Public processes survive caller and stream-consumer exits. Cancellation
   targets the complete process group and escalates through SIGINT, SIGTERM, and
@@ -27,12 +27,12 @@ defmodule Jido.Harness.Process do
   @spec list(keyword()) :: [Jido.Harness.ProcessInfo.t()]
   def list(filters \\ []), do: ProcessManager.list_processes(filters)
 
-  @doc "Returns a cursor-driven stream for managed-process events."
+  @doc "Returns a cursor-driven stream for managed-process Signals."
   @spec stream(String.t(), keyword()) :: Jido.Harness.result(term())
   def stream(process_id, options \\ []), do: ProcessManager.stream_process(process_id, options)
 
-  @doc "Replays a bounded page of managed-process events after a cursor."
-  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.ProcessEvent.t()])
+  @doc "Replays a bounded page of managed-process Signals after a cursor."
+  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Signal.t()])
   def replay(process_id, options \\ []), do: ProcessManager.replay_process(process_id, options)
 
   @doc "Returns a replay page with records, gap ranges, and the next cursor."

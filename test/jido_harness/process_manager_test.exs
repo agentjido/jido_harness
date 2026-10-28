@@ -3,6 +3,8 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   import Jido.Harness.TestHelpers
 
+  alias Jido.Harness.{Signal, SignalFactory}
+
   defmodule ControlledExitDriver do
     @behaviour Jido.Harness.ProcessDriver
 
@@ -69,11 +71,20 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert info.exit_status == 0
     assert info.metadata == %{purpose: "test"}
 
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "stdout-value"))
-    assert Enum.any?(events, &(&1.type == :stderr and &1.data == "stderr-value"))
-    assert List.last(events).type == :exited
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Enum.map(signals, &Signal.sequence/1) == Enum.to_list(1..length(signals))
+
+    assert Enum.any?(
+             signals,
+             &(Signal.kind(&1) == :process_stdout and SignalFactory.process_data(&1) == "stdout-value")
+           )
+
+    assert Enum.any?(
+             signals,
+             &(Signal.kind(&1) == :process_stderr and SignalFactory.process_data(&1) == "stderr-value")
+           )
+
+    assert Signal.kind(List.last(signals)) == :process_exited
 
     assert {:ok, stat} = File.stat(info.journal_dir)
     assert Bitwise.band(stat.mode, 0o777) == 0o700
@@ -96,10 +107,10 @@ defmodule Jido.Harness.ProcessManagerTest do
     send(worker, {:finish_exit, state.exit_drain_token})
 
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
 
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "late-output"))
-    assert List.last(events).type == :exited
+    assert Enum.any?(signals, &(Signal.kind(&1) == :process_stdout and SignalFactory.process_data(&1) == "late-output"))
+    assert Signal.kind(List.last(signals)) == :process_exited
   end
 
   test "continuous output cannot extend the exit drain without limit" do
@@ -111,9 +122,14 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 1_000)
     send(producer, :stop)
 
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "trailing-output"))
-    assert List.last(events).type == :exited
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 100)
+
+    assert Enum.any?(
+             signals,
+             &(Signal.kind(&1) == :process_stdout and SignalFactory.process_data(&1) == "trailing-output")
+           )
+
+    assert Signal.kind(List.last(signals)) == :process_exited
   end
 
   test "an observed exit is not replaced by drain-window control messages" do
@@ -178,8 +194,8 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert_receive {:DOWN, ^exec_monitor, :process, ^exec_pid, :normal}, 1_000
 
     assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 1_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert List.last(events).type == :exited
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+    assert Signal.kind(List.last(signals)) == :process_exited
   end
 
   test "supports stdin, EOF, cursor replay, and pull streaming" do
@@ -188,14 +204,14 @@ defmodule Jido.Harness.ProcessManagerTest do
     assert :ok = Jido.Harness.Process.close_input(id)
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
 
-    assert {:ok, all_events} = Jido.Harness.Process.replay(id, limit: 20)
-    first = List.first(all_events)
-    assert {:ok, later} = Jido.Harness.Process.replay(id, cursor: first.sequence, limit: 20)
-    assert Enum.all?(later, &(&1.sequence > first.sequence))
+    assert {:ok, all_signals} = Jido.Harness.Process.replay(id, limit: 20)
+    first = List.first(all_signals)
+    assert {:ok, later} = Jido.Harness.Process.replay(id, cursor: Signal.sequence(first), limit: 20)
+    assert Enum.all?(later, &(Signal.sequence(&1) > Signal.sequence(first)))
 
     assert {:ok, stream} = Jido.Harness.Process.stream(id, poll_interval_ms: 1)
     streamed = Enum.to_list(stream)
-    assert Enum.map(streamed, & &1.sequence) == Enum.map(all_events, & &1.sequence)
+    assert Enum.map(streamed, &Signal.sequence/1) == Enum.map(all_signals, &Signal.sequence/1)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
              Jido.Harness.Process.replay(id, cursor: -1, limit: 100)
@@ -306,8 +322,8 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     Enum.each(ids, fn id ->
       assert {:ok, info} = Jido.Harness.Process.await(id, 5_000)
-      assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-      assert info.state == :exited, inspect(%{info: info, events: events}, pretty: true)
+      assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+      assert info.state == :exited, inspect(%{info: info, signals: signals}, pretty: true)
     end)
 
     if File.exists?("/usr/bin/tty") do
@@ -315,8 +331,11 @@ defmodule Jido.Harness.ProcessManagerTest do
                Jido.Harness.Process.start(%{executable: "/usr/bin/tty", pty: true, stdin: true})
 
       assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(pty_id, 5_000)
-      assert {:ok, events} = Jido.Harness.Process.replay(pty_id, limit: 20)
-      assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "/dev/")))
+      assert {:ok, signals} = Jido.Harness.Process.replay(pty_id, limit: 20)
+
+      assert Enum.any?(signals, fn signal ->
+               Signal.kind(signal) == :process_stdout and String.contains?(SignalFactory.process_data(signal), "/dev/")
+             end)
     end
   end
 
@@ -390,30 +409,38 @@ defmodule Jido.Harness.ProcessManagerTest do
 
     assert_receive {:telemetry, [:jido, :harness, :replay_store, :error], %{count: 1}, _metadata}, 1_000
     assert {:ok, %{state: :exited, journal_dir: nil}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert Enum.any?(events, &(&1.type == :stdout and String.contains?(&1.data, "memory-only")))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :process_stdout and
+               String.contains?(SignalFactory.process_data(signal), "memory-only")
+           end)
   end
 
   test "a disk read failure returns memory events immediately and permits later writes" do
     {id, worker, _exec_pid, os_pid} = start_controlled_process(%{})
     send(worker, {:stdout, os_pid, "before read error"})
     state = :sys.get_state(worker)
-    contents = File.read!(state.event_log.handle.journal.path)
-    File.rm!(state.event_log.handle.journal.path)
+    contents = File.read!(state.signal_log.handle.journal.path)
+    File.rm!(state.signal_log.handle.journal.path)
 
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "before read error"))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 100)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :process_stdout and SignalFactory.process_data(signal) == "before read error"
+           end)
+
     state = :sys.get_state(worker)
-    assert state.event_log.handle.journal.read_failed?
-    refute state.event_log.handle.journal.failed?
+    assert state.signal_log.handle.journal.read_failed?
+    refute state.signal_log.handle.journal.failed?
 
-    File.write!(state.event_log.handle.journal.path, contents)
+    File.write!(state.signal_log.handle.journal.path, contents)
     send(worker, {:stdout, os_pid, "after read error"})
     _state = :sys.get_state(worker)
-    assert {:ok, [event]} = Jido.Harness.Process.replay(id, cursor: state.sequence, limit: 1)
-    assert event.type == :stdout
-    assert event.data == "after read error"
-    refute :sys.get_state(worker).event_log.handle.journal.read_failed?
+    assert {:ok, [signal]} = Jido.Harness.Process.replay(id, cursor: state.sequence, limit: 1)
+    assert Signal.kind(signal) == :process_stdout
+    assert SignalFactory.process_data(signal) == "after read error"
+    refute :sys.get_state(worker).signal_log.handle.journal.read_failed?
   end
 
   test "redacts request environment credentials from persisted process output" do
@@ -428,8 +455,11 @@ defmodule Jido.Harness.ProcessManagerTest do
              })
 
     assert {:ok, %{state: :exited, journal_dir: journal_dir}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "[REDACTED]"))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :process_stdout and SignalFactory.process_data(signal) == "[REDACTED]"
+           end)
 
     persisted = journal_dir |> Path.join("*.jsonl") |> Path.wildcard() |> Enum.map_join(&File.read!/1)
     refute persisted =~ secret
@@ -456,8 +486,11 @@ defmodule Jido.Harness.ProcessManagerTest do
              })
 
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|scoped"))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :process_stdout and SignalFactory.process_data(signal) == "unset|scoped"
+           end)
   end
 
   test "overlay environment can remove ambient host variables explicitly" do
@@ -486,8 +519,11 @@ defmodule Jido.Harness.ProcessManagerTest do
              })
 
     assert {:ok, %{state: :exited}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 20)
-    assert Enum.any?(events, &(&1.type == :stdout and &1.data == "unset|unset"))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 20)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :process_stdout and SignalFactory.process_data(signal) == "unset|unset"
+           end)
   end
 
   test "runs the deterministic long-session fixture in a short PR-safe mode" do
@@ -503,8 +539,8 @@ defmodule Jido.Harness.ProcessManagerTest do
              })
 
     assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id, limit: 100)
-    assert Enum.count(events, &(&1.type == :stdout)) >= 2
+    assert {:ok, signals} = Jido.Harness.Process.replay(id, limit: 100)
+    assert Enum.count(signals, &(Signal.kind(&1) == :process_stdout)) >= 2
   end
 
   defp await_stdout_integer(id, attempts \\ 100)
@@ -513,14 +549,14 @@ defmodule Jido.Harness.ProcessManagerTest do
 
   defp await_stdout_integer(id, attempts) do
     case Jido.Harness.Process.replay(id, limit: 20) do
-      {:ok, events} ->
-        case Enum.find(events, &(&1.type == :stdout)) do
+      {:ok, signals} ->
+        case Enum.find(signals, &(Signal.kind(&1) == :process_stdout)) do
           nil ->
             Process.sleep(10)
             await_stdout_integer(id, attempts - 1)
 
-          event ->
-            event.data |> String.trim() |> String.to_integer()
+          signal ->
+            signal |> SignalFactory.process_data() |> String.trim() |> String.to_integer()
         end
 
       _ ->

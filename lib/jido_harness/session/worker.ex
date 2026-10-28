@@ -5,18 +5,18 @@ defmodule Jido.Harness.SessionWorker do
   alias Jido.Harness.{
     ApprovalResponse,
     Error,
-    Event,
-    EventLog,
+    SignalLog,
     ID,
     SessionInfo,
     TurnRequest,
     Waiters
   }
 
-  alias Jido.Harness.Session.{EventStore, Lifecycle, RequestValidator, State, Timers}
+  alias Jido.Harness.Adapter.Message
+  alias Jido.Harness.Session.{Lifecycle, RequestValidator, SignalStore, State, Timers}
   alias Jido.Harness.SessionAdapters.ACP
 
-  import EventStore, only: [append: 2, append_queue_changed: 1]
+  import SignalStore, only: [append: 2, append_queue_changed: 1]
 
   def start_link({id, provider, request, adapter, acp_agent, config}) do
     GenServer.start_link(
@@ -53,8 +53,8 @@ defmodule Jido.Harness.SessionWorker do
       context: context,
       started_at: timestamp(),
       provider_session_id: request.provider_session_id,
-      buffer: EventLog.new_buffer(memory_bytes),
-      event_log: EventLog.open(:session, id, retention)
+      buffer: SignalLog.new_buffer(memory_bytes),
+      signal_log: SignalLog.open(:session, id, retention)
     }
 
     {:ok, state, {:continue, :open}}
@@ -65,7 +65,7 @@ defmodule Jido.Harness.SessionWorker do
     state =
       append(
         state,
-        Event.new!(type: :session_started, provider: state.provider, payload: %{"cwd" => state.request.cwd})
+        Message.new!(type: :session_started, payload: %{"cwd" => state.request.cwd})
       )
 
     :telemetry.execute([:jido, :harness, :session, :start], %{system_time: System.system_time()}, %{
@@ -83,8 +83,8 @@ defmodule Jido.Harness.SessionWorker do
           |> Map.put(:handle, handle)
           |> Map.put(:handle_monitor, monitor)
           |> Map.put(:status, :idle)
-          |> append(Event.new!(type: :session_ready, provider: state.provider, payload: transport_payload(state)))
-          |> append(Event.new!(type: :session_idle, provider: state.provider, payload: %{}))
+          |> append(Message.new!(type: :session_ready, payload: transport_payload(state)))
+          |> append(Message.new!(type: :session_idle, payload: %{}))
           |> Timers.schedule_session_idle()
 
         {:noreply, state}
@@ -95,24 +95,24 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   @impl true
-  def handle_call(:info, _from, state), do: {:reply, {:ok, EventStore.info(state)}, state}
+  def handle_call(:info, _from, state), do: {:reply, {:ok, SignalStore.info(state)}, state}
 
   def handle_call({:replay, cursor, limit}, _from, state) do
-    {events, state} = EventStore.replay(state, cursor, limit)
-    {:reply, {:ok, events}, state}
+    {signals, state} = SignalStore.replay(state, cursor, limit)
+    {:reply, {:ok, signals}, state}
   end
 
   def handle_call({:replay_page, cursor, limits}, _from, state) do
-    {page, event_log} =
-      EventLog.replay(
-        state.event_log,
+    {page, signal_log} =
+      SignalLog.replay(
+        state.signal_log,
         cursor,
-        limits.max_events,
+        limits.max_signals,
         limits.max_bytes,
-        &EventStore.record_to_event(state, &1)
+        &SignalStore.record_to_signal(state, &1)
       )
 
-    {:reply, {:ok, page}, %{state | event_log: event_log}}
+    {:reply, {:ok, page}, %{state | signal_log: signal_log}}
   end
 
   def handle_call({:turn_result, turn_id}, _from, state) do
@@ -122,7 +122,7 @@ defmodule Jido.Harness.SessionWorker do
 
       :error ->
         if MapSet.member?(state.known_turns, turn_id) do
-          {:reply, {:pending, EventStore.info(state)}, state}
+          {:reply, {:pending, SignalStore.info(state)}, state}
         else
           {:reply, {:error, :not_found}, state}
         end
@@ -171,7 +171,7 @@ defmodule Jido.Harness.SessionWorker do
             queued_bytes: state.queued_bytes + :erlang.external_size(request),
             known_turns: MapSet.put(state.known_turns, turn_id)
         }
-        |> append(Event.new!(type: :turn_queued, provider: state.provider, turn_id: turn_id, payload: %{}))
+        |> append(Message.new!(type: :turn_queued, turn_id: turn_id, payload: %{}))
         |> append_queue_changed()
 
       if state.status == :idle, do: send(self(), :start_next)
@@ -191,7 +191,7 @@ defmodule Jido.Harness.SessionWorker do
       unsupported = RequestValidator.unsupported(state, :steer)
 
       # The agent answers once the input is in the turn. Meanwhile this
-      # process goes on answering approvals and recording the turn's events.
+      # process goes on answering approvals and recording the turn's Signals.
       {:ok, _pid} =
         Task.Supervisor.start_child(Jido.Harness.SessionTaskSupervisor, fn ->
           GenServer.reply(from, steer_reply(ACP.steer(handle, request, active.id), active.id, unsupported))
@@ -225,16 +225,15 @@ defmodule Jido.Harness.SessionWorker do
          :ok <- ACP.respond_approval(state.handle, request_id, response) do
       Timers.cancel(approval.timer)
 
-      event =
-        Event.new!(
+      message =
+        Message.new!(
           type: :approval_resolved,
-          provider: state.provider,
           turn_id: state.active && state.active.id,
           request_id: request_id,
           payload: %{"decision" => Atom.to_string(response.decision), "scope" => Atom.to_string(response.scope)}
         )
 
-      state = %{state | pending_approvals: Map.delete(state.pending_approvals, request_id)} |> append(event)
+      state = %{state | pending_approvals: Map.delete(state.pending_approvals, request_id)} |> append(message)
       {:reply, :ok, after_approval(state)}
     else
       :error -> {:reply, {:error, :not_found}, state}
@@ -269,7 +268,7 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_call(:prune, _from, state) when state.status in [:closed, :failed, :cancelled] do
-    case EventLog.remove(state.event_log) do
+    case SignalLog.remove(state.signal_log) do
       :ok -> {:stop, :normal, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -282,25 +281,29 @@ defmodule Jido.Harness.SessionWorker do
     do: {:noreply, %{state | waiters: Waiters.cancel(state.waiters, request_ref)}}
 
   @impl true
-  def handle_info({:session_adapter_event, %Event{} = event}, state) do
+  def handle_info({:session_adapter_message, %Message{} = message}, state) do
     cond do
-      SessionInfo.terminal?(EventStore.info(state)) ->
+      SessionInfo.terminal?(SignalStore.info(state)) ->
         {:noreply, state}
 
-      Event.run_terminal?(event) or event.type == :run_started ->
+      message.type in [:run_started, :run_completed, :run_failed, :run_cancelled] ->
         {:noreply, state}
 
-      Event.session_terminal?(event) ->
-        {:noreply, Lifecycle.terminate_session(state, event.type, event.payload)}
+      message.type in [:session_closed, :session_failed, :session_cancelled] ->
+        {:noreply, Lifecycle.terminate_session(state, message.type, message.payload)}
 
       true ->
-        event = EventStore.normalize_adapter_event(event, state)
-        state = if event.provider_session_id, do: %{state | provider_session_id: event.provider_session_id}, else: state
+        message = SignalStore.normalize_adapter_message(message, state)
 
-        if event.type == :approval_requested do
-          {:noreply, Lifecycle.handle_approval_request(state, event)}
+        state =
+          if message.provider_session_id,
+            do: %{state | provider_session_id: message.provider_session_id},
+            else: state
+
+        if message.type == :approval_requested do
+          {:noreply, Lifecycle.handle_approval_request(state, message)}
         else
-          handle_turn_event(state, event)
+          handle_turn_message(state, message)
         end
     end
   end
@@ -367,16 +370,15 @@ defmodule Jido.Harness.SessionWorker do
 
         _ = ACP.respond_approval(state.handle, request_id, response)
 
-        event =
-          Event.new!(
+        message =
+          Message.new!(
             type: :approval_resolved,
-            provider: state.provider,
             turn_id: state.active && state.active.id,
             request_id: request_id,
             payload: %{"decision" => "deny", "scope" => "once", "reason" => "timeout"}
           )
 
-        {:noreply, after_approval(%{append(state, event) | pending_approvals: approvals})}
+        {:noreply, after_approval(%{append(state, message) | pending_approvals: approvals})}
     end
   end
 
@@ -408,21 +410,22 @@ defmodule Jido.Harness.SessionWorker do
     end
   end
 
-  defp handle_turn_event(state, event) do
-    if stale_turn_event?(state, event) do
+  defp handle_turn_message(state, message) do
+    if stale_turn_message?(state, message) do
       {:noreply, state}
     else
       state = Timers.schedule_turn_idle(state)
 
       cond do
-        event.type == :turn_started ->
+        message.type == :turn_started ->
           {:noreply, state}
 
-        (Event.turn_terminal?(event) and state.active) && event.turn_id == state.active.id ->
-          {:noreply, Lifecycle.finish_turn(state, event.type, event.payload, nil, event)}
+        (message.type in [:turn_completed, :turn_failed, :turn_interrupted] and state.active) &&
+            message.turn_id == state.active.id ->
+          {:noreply, Lifecycle.finish_turn(state, message.type, message.payload, nil, message)}
 
         true ->
-          {:noreply, append(state, event)}
+          {:noreply, append(state, message)}
       end
     end
   end
@@ -435,13 +438,13 @@ defmodule Jido.Harness.SessionWorker do
       _ = ACP.close(state.handle)
     end
 
-    EventLog.close(state.event_log)
+    SignalLog.close(state.signal_log)
   rescue
     _ -> :ok
   end
 
-  defp stale_turn_event?(_state, %Event{turn_id: nil}), do: false
-  defp stale_turn_event?(state, %Event{turn_id: turn_id}), do: is_nil(state.active) or state.active.id != turn_id
+  defp stale_turn_message?(_state, %Message{turn_id: nil}), do: false
+  defp stale_turn_message?(state, %Message{turn_id: turn_id}), do: is_nil(state.active) or state.active.id != turn_id
 
   defp validate_queue_capacity(state, request) do
     if :queue.len(state.queue) >= state.request.max_queued_turns or

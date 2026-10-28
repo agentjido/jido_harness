@@ -1,6 +1,9 @@
 defmodule Jido.Harness.ACPSessionTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.{Signal, SignalFactory}
+  alias Jido.Harness.Adapter.Message
+
   setup do
     providers = Application.get_env(:jido_harness, :providers)
     config = Application.get_env(:jido_harness, :provider_config)
@@ -51,15 +54,15 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{status: :completed, text: "fixture-ok"} = second_result} =
              Jido.Harness.Session.await(session_id, second_id, 2_000)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.map(events, & &1.sequence) == Enum.to_list(1..length(events))
-    refute Enum.any?(events, &(&1.payload["kind"] == "decode_error"))
-    assert Enum.all?(events, &is_nil(&1.raw))
-    output = Enum.filter(first_result.events ++ second_result.events, &(&1.type == :output_text_delta))
-    assert Enum.map(output, & &1.turn_id) == [first_id, second_id]
-    assert length(Enum.uniq(Enum.map(output, & &1.raw["fixturePromptId"]))) == 2
-    assert Enum.all?(output, &(&1.raw["method"] == "session/update"))
-    assert Enum.all?(output, &(&1.raw["providerEnvelope"]["secret"] == "raw-only-secret"))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    assert Enum.map(signals, &Signal.sequence/1) == Enum.to_list(1..length(signals))
+    refute Enum.any?(signals, &(SignalFactory.payload(&1)["kind"] == "decode_error"))
+
+    output =
+      Enum.filter(first_result.signals ++ second_result.signals, &(Signal.kind(&1) == :output_text_delta))
+
+    assert Enum.map(output, & &1.data["turn_id"]) == [first_id, second_id]
+    assert Enum.all?(output, &(SignalFactory.payload(&1) == %{"text" => "fixture-ok"}))
 
     journal_files = Path.wildcard(Path.join([journal_dir, "**", "*.jsonl"]))
     assert journal_files != []
@@ -300,11 +303,10 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "request approval")
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    approval = Enum.find(events, &(&1.type == :approval_requested))
-    request_id = approval.request_id
-    assert approval.turn_id == turn_id
-    assert approval.raw == nil
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    approval = Enum.find(signals, &(Signal.kind(&1) == :approval_requested))
+    request_id = approval.data["request_id"]
+    assert approval.data["turn_id"] == turn_id
     assert String.starts_with?(request_id, "request_")
     refute request_id == "99"
     assert :ok = Jido.Harness.Session.respond_approval(session_id, request_id, :approve)
@@ -313,13 +315,9 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{status: :completed, text: "approved"} = result} =
              Jido.Harness.Session.await(session_id, turn_id, 2_000)
 
-    approval = Enum.find(result.events, &(&1.type == :approval_requested))
-    assert approval.request_id == request_id
-    assert approval.raw["id"] == 99
-    assert approval.raw["method"] == "session/request_permission"
-    assert approval.raw["providerEnvelope"] == %{"trace" => "permission-envelope"}
-    assert approval.raw["params"]["providerParameter"] == "permission-parameter"
-    assert approval.raw["params"]["toolCall"] == approval.payload["tool_call"]
+    approval = Enum.find(result.signals, &(Signal.kind(&1) == :approval_requested))
+    assert approval.data["request_id"] == request_id
+    assert SignalFactory.payload(approval)["tool_call"]["title"] == "Fixture tool"
   end
 
   test "a native background permission between turns reaches host policy and returns to idle" do
@@ -327,10 +325,11 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, _info} = await_ready(session_id)
     assert :ok = Jido.Harness.Session.configure(session_id, %{model: "background-approval"})
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
-    assert %{turn_id: nil} = approval = Enum.find(events, &(&1.type == :approval_requested))
-    refute Enum.any?(events, &(&1.payload["kind"] == "stale_approval_denied"))
-    assert :ok = Jido.Harness.Session.respond_approval(session_id, approval.request_id, :approve)
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id)
+    approval = Enum.find(signals, &(Signal.kind(&1) == :approval_requested))
+    assert is_nil(approval.data["turn_id"])
+    refute Enum.any?(signals, &(SignalFactory.payload(&1)["kind"] == "stale_approval_denied"))
+    assert :ok = Jido.Harness.Session.respond_approval(session_id, approval.data["request_id"], :approve)
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "continue")
     assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
@@ -347,8 +346,11 @@ defmodule Jido.Harness.ACPSessionTest do
     assert :ok = Jido.Harness.Session.configure(session_id, %{model: "background-approval"})
 
     assert eventually(fn ->
-             {:ok, events} = Jido.Harness.Session.replay(session_id)
-             Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["reason"] == "timeout"))
+             {:ok, signals} = Jido.Harness.Session.replay(session_id)
+
+             Enum.any?(signals, fn signal ->
+               Signal.kind(signal) == :approval_resolved and SignalFactory.payload(signal)["reason"] == "timeout"
+             end)
            end)
 
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
@@ -361,8 +363,11 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
     assert :ok = Jido.Harness.Session.close(session_id)
     assert {:ok, %{state: :closed, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
-    assert Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["decision"] == "deny"))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :approval_resolved and SignalFactory.payload(signal)["decision"] == "deny"
+           end)
   end
 
   test "an approval explicitly tied to a completed turn is still denied" do
@@ -374,10 +379,9 @@ defmodule Jido.Harness.ACPSessionTest do
 
     send(
       worker,
-      {:session_adapter_event,
-       Jido.Harness.Event.new!(
+      {:session_adapter_message,
+       Message.new!(
          type: :approval_requested,
-         provider: :kimi,
          turn_id: turn_id,
          request_id: "stale-request",
          payload: %{}
@@ -385,8 +389,8 @@ defmodule Jido.Harness.ACPSessionTest do
     )
 
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
-    assert Enum.any?(events, &(&1.payload["kind"] == "stale_approval_denied"))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id)
+    assert Enum.any?(signals, &(SignalFactory.payload(&1)["kind"] == "stale_approval_denied"))
   end
 
   test "approval timeouts deny the provider request without closing the session" do
@@ -396,8 +400,11 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, %{status: :completed, text: "denied"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    assert Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["reason"] == "timeout"))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+
+    assert Enum.any?(signals, fn signal ->
+             Signal.kind(signal) == :approval_resolved and SignalFactory.payload(signal)["reason"] == "timeout"
+           end)
   end
 
   test "ACP cancellation keeps turn and approval lifecycle in Harness" do
@@ -417,16 +424,16 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "duplicate approval")
     assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    approvals = Enum.filter(events, &(&1.type == :approval_requested))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    approvals = Enum.filter(signals, &(Signal.kind(&1) == :approval_requested))
     assert length(approvals) == 1
 
-    assert :ok = Jido.Harness.Session.respond_approval(session_id, hd(approvals).request_id, :approve)
+    assert :ok = Jido.Harness.Session.respond_approval(session_id, hd(approvals).data["request_id"], :approve)
     assert {:ok, %{status: :completed, text: "denied"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
     Process.sleep(50)
 
-    assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
-    approvals = Enum.filter(events, &(&1.type == :approval_requested))
+    assert {:ok, signals} = Jido.Harness.Session.replay(session_id, limit: 1_000)
+    approvals = Enum.filter(signals, &(Signal.kind(&1) == :approval_requested))
     assert length(approvals) == 1
     assert {:ok, %{state: :idle, pending_approvals: 0}} = Jido.Harness.Session.info(session_id)
   end

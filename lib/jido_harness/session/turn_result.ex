@@ -3,11 +3,9 @@ defmodule Jido.Harness.TurnResult do
   Normalized terminal response from one interactive session turn.
 
   `status` is `:completed`, `:failed`, or `:interrupted`. The struct shares the
-  normalized text, usage, event, metadata, and error vocabulary of
+  normalized text, usage, Signal, metadata, and error vocabulary of
   `Jido.Harness.RunResult` while retaining session and turn identity.
   """
-
-  alias Jido.Harness.Event
 
   @schema Zoi.struct(
             __MODULE__,
@@ -20,7 +18,7 @@ defmodule Jido.Harness.TurnResult do
               text: Zoi.string() |> Zoi.default(""),
               text_truncated?: Zoi.boolean() |> Zoi.default(false),
               usage: Zoi.map() |> Zoi.default(%{}),
-              events: Zoi.array(Event.schema()) |> Zoi.default([]),
+              signals: Zoi.array(Zoi.struct(Jido.Signal)) |> Zoi.default([]),
               metadata: Zoi.map() |> Zoi.default(%{}),
               error: Zoi.any() |> Zoi.nullish()
             },

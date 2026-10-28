@@ -154,9 +154,9 @@ Unknown options return errors. Old direct-CLI flags are not passed through
 to an ACP adapter. Harness does not select providers, retry paid work, or fall
 back to another provider.
 
-For a separate ACP adapter, `Event.raw` is the adapter's translated ACP message.
-Native fields it omits are unavailable. See the
-[event reference](reference/event_reference.md#provider-events-and-replay-gaps).
+Raw ACP envelopes remain private to the adapter boundary. Native fields that a
+normalized Signal omits are unavailable. See the
+[Signal reference](reference/signal_reference.md).
 
 ## OpenCode model changes
 

@@ -1,7 +1,7 @@
 defmodule Jido.Harness.Adapters.Helpers do
   @moduledoc false
 
-  alias Jido.Harness.{Capabilities, Error, ProcessInfo, ProcessManager, ProviderStatus}
+  alias Jido.Harness.{Capabilities, Error, ProcessInfo, ProcessManager, ProviderStatus, Signal}
 
   @maximum_timeout_ms 2_147_483_647
 
@@ -143,11 +143,11 @@ defmodule Jido.Harness.Adapters.Helpers do
       {:ok, id} ->
         try do
           with {:ok, info} <- ProcessManager.await_process(id, timeout),
-               {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
+               {:ok, signals} <- ProcessManager.replay_process(id, cursor: 0, limit: 10_000) do
             output =
-              events
-              |> Enum.filter(&(&1.type in [:stdout, :stderr]))
-              |> Enum.map_join("", &to_string(&1.data))
+              signals
+              |> Enum.filter(&(Signal.kind(&1) in [:process_stdout, :process_stderr]))
+              |> Enum.map_join("", &(get_in(&1.data, ["payload", "data"]) |> to_string()))
 
             install_process_result(provider, info, output)
           end
@@ -194,8 +194,12 @@ defmodule Jido.Harness.Adapters.Helpers do
 
     with {:ok, id} <- ProcessManager.start_process(spec),
          {:ok, info} <- ProcessManager.await_process(id, 20_000),
-         {:ok, events} <- ProcessManager.replay_process(id, cursor: 0, limit: 1_000) do
-      output = events |> Enum.filter(&(&1.type in [:stdout, :stderr])) |> Enum.map_join("", &to_string(&1.data))
+         {:ok, signals} <- ProcessManager.replay_process(id, cursor: 0, limit: 1_000) do
+      output =
+        signals
+        |> Enum.filter(&(Signal.kind(&1) in [:process_stdout, :process_stderr]))
+        |> Enum.map_join("", &(get_in(&1.data, ["payload", "data"]) |> to_string()))
+
       _ = ProcessManager.prune_process(id)
       if info.state == :exited, do: {:ok, output}, else: {:error, info.error || {:exit_status, info.exit_status}}
     end

@@ -10,7 +10,7 @@ defmodule Jido.Harness.ReplayStore.ContractCase do
       setup do
         base = Path.join(System.tmp_dir!(), "replay-contract-#{System.unique_integer([:positive])}")
         on_exit(fn -> File.rm_rf!(base) end)
-        %{base: base, resource: %{kind: :run, id: "contract", format_version: 1}}
+        %{base: base, resource: %{kind: :run, id: "contract", format_version: 2}}
       end
 
       defp open(context, options \\ %{}) do
@@ -37,11 +37,11 @@ defmodule Jido.Harness.ReplayStore.ContractCase do
         end)
       end
 
-      defp record(n), do: %{"sequence" => n, "format_version" => 1, "payload" => "event"}
-      defp limits(count \\ 100, bytes \\ 1_048_576), do: %{max_events: count, max_bytes: bytes}
+      defp record(n), do: %{"sequence" => n, "format_version" => 2, "payload" => "signal"}
+      defp limits(count \\ 100, bytes \\ 1_048_576), do: %{max_signals: count, max_bytes: bytes}
 
       test "unsupported resource formats are rejected", context do
-        assert {:error, :invalid_resource} = @adapter.open(%{context.resource | format_version: 2}, %{})
+        assert {:error, :invalid_resource} = @adapter.open(%{context.resource | format_version: 1}, %{})
         assert {:error, _reason} = @adapter.validate_options(%{unknown: 1})
       end
 
@@ -111,7 +111,7 @@ defmodule Jido.Harness.ReplayStore.ContractCase do
         large = Map.put(record(5), "payload", String.duplicate("x", 1_000))
         assert {:error, :record_too_large, handle} = @adapter.append(handle, large)
         assert @adapter.info(handle).retained_bytes <= 100
-        assert @adapter.info(handle).retained_events == 0
+        assert @adapter.info(handle).retained_signals == 0
         assert {:ok, page, _} = @adapter.read(handle, 0, limits())
         assert page.records == []
         assert page.gaps == [%{from: 1, to: 5, reason: :unavailable}]
@@ -133,8 +133,8 @@ defmodule Jido.Harness.ReplayStore.ContractCase do
       end
 
       test "event retention is bounded and reports the removed prefix", context do
-        handle = context |> open(%{max_events: 2}) |> append(1..4)
-        assert @adapter.info(handle).retained_events <= 2
+        handle = context |> open(%{max_signals: 2}) |> append(1..4)
+        assert @adapter.info(handle).retained_signals <= 2
         assert {:ok, page, _} = @adapter.read(handle, 0, limits())
         assert page.records == [record(3), record(4)]
         assert page.gaps == [%{from: 1, to: 2, reason: :unavailable}]
@@ -162,7 +162,7 @@ defmodule Jido.Harness.ReplayStore.ContractCase do
       end
 
       test "expired sequences cannot be inserted again", context do
-        handle = context |> open(%{max_events: 1}) |> append(1..2)
+        handle = context |> open(%{max_signals: 1}) |> append(1..2)
         assert {:error, :expired_sequence, _} = @adapter.append(handle, record(1))
       end
 

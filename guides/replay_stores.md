@@ -12,7 +12,7 @@ config :jido_harness,
     journal_dir: "/var/lib/my_app/harness",
     segment_bytes: 8_388_608,
     disk_limit_bytes: 268_435_456,
-    max_events: 1_000_000
+    max_signals: 1_000_000
   }}
 ```
 
@@ -25,7 +25,7 @@ Two memory stores are also available:
 
 ```elixir
 config :jido_harness,
-  replay_store: {Jido.Harness.ReplayStore.ETS, %{max_bytes: 1_048_576, max_events: 10_000}}
+  replay_store: {Jido.Harness.ReplayStore.ETS, %{max_bytes: 1_048_576, max_signals: 10_000}}
 ```
 
 `ReplayStore.Memory` uses an ordered tree in worker state. `ReplayStore.ETS`
@@ -46,17 +46,17 @@ Process, run, and session APIs expose `replay_page/2`:
   max_bytes: 1_048_576
 )
 
-Enum.each(page.records, &apply_event/1)
+Enum.each(page.records, &apply_signal/1)
 Enum.each(page.gaps, &report_missing_range/1)
 saved_cursor = page.next_cursor
 ```
 
-`page.records` contains the API's event structs. Storage callbacks use prepared
+`page.records` contains native `Jido.Signal` structs. Storage callbacks use prepared
 maps with string keys. Page fields are:
 
 | Field | Meaning |
 | --- | --- |
-| `records` | Events after the exclusive input cursor, in sequence order |
+| `records` | Signals after the exclusive input cursor, in sequence order |
 | `gaps` | Inclusive missing ranges: `%{from: first, to: last, reason: reason}` |
 | `next_cursor` | Last sequence covered by records or reported gaps |
 | `oldest_sequence` | First retained sequence, or `nil` if none remain |
@@ -65,7 +65,7 @@ maps with string keys. Page fields are:
 
 For records 1, 4, and 6, a read after 0 with a count limit of 2 returns records
 1 and 4, gap 2–3, and next cursor 4. It reports gap 5 on the next page. Missing
-ranges do not consume sequence numbers and do not become stored events.
+ranges do not consume sequence numbers and do not become stored Signals.
 
 `:unavailable` covers retention, rejected appends, and unavailable storage.
 It does not claim a more precise cause. `:page_limit` means one retained record
@@ -81,14 +81,13 @@ history scan. A cursor beyond the latest sequence never moves backwards.
 
 Defaults are 100 inspected records and 1 MiB per read; count is capped at
 10,000. Metadata is outside the byte budget. Existing `replay/2` and `stream/2`
-return ordered event lists with gap events at each missing range. Gap metadata
-includes `from_sequence`, `to_sequence`, `reason`, and the compatible
-`available_from` field.
+return ordered Signal lists with gap Signals at each missing range. Gap metadata
+includes `from_sequence`, `to_sequence`, `reason`, and `available_from`.
 
 ## Data and failure policy
 
 The core assigns sequences, removes raw payloads, removes known secrets, and
-prepares a format-version-1 record before calling storage. File, memory, ETS,
+prepares a format-version-2 Signal record before calling storage. File, memory, ETS,
 and fallback all receive the same prepared record. Adapters do not receive the
 request, environment, or secret list. Public retained replay always follows this
 policy. Live internal ACP delivery preserves original protocol bytes through a
@@ -96,7 +95,7 @@ separate bounded buffer. Result text and result objects keep their existing
 policy; this change does not redact them.
 
 Each resource also keeps a sanitized fallback tree, bounded by `memory_bytes`
-(default 1 MiB) and 10,000 records. This is separate from the original live event
+(default 1 MiB) and 10,000 records. This is separate from the original live Signal
 buffer and the selected store. Include all of them when sizing memory. Selecting
 a memory adapter does not remove the fallback budget.
 

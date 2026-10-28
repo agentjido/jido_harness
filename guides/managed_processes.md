@@ -2,7 +2,7 @@
 
 `Jido.Harness.Process` supervises a local executable as an application-owned
 resource. Use it for programs that do not need a provider run. Each process
-has a stable `process_id` and separate `ProcessEvent` records.
+has a stable `process_id` and native process Signals.
 
 ## Start without a shell
 
@@ -76,20 +76,23 @@ terminal end-of-transmission character.
 ```elixir
 {:ok, stream} = Jido.Harness.Process.stream(process_id)
 
-Enum.each(stream, fn
-  %Jido.Harness.ProcessEvent{type: :stdout, data: data} -> IO.write(data)
-  %Jido.Harness.ProcessEvent{type: :stderr, data: data} -> IO.write(:stderr, data)
-  event -> IO.inspect(event)
+Enum.each(stream, fn signal ->
+  case Jido.Harness.Signal.kind(signal) do
+    :process_stdout -> IO.write(signal.data["payload"]["data"])
+    :process_stderr -> IO.write(:stderr, signal.data["payload"]["data"])
+    _kind -> IO.inspect(signal)
+  end
 end)
 ```
 
-Event types are `:started`, `:stdout`, `:stderr`, `:exited`, `:failed`,
-`:cancelled`, `:timed_out`, and `:replay_gap`. Output remains binary and
-need not be valid UTF-8.
+Signal kinds are `:process_started`, `:process_stdout`, `:process_stderr`,
+`:process_exited`, `:process_failed`, `:process_cancelled`,
+`:process_timed_out`, and `:replay_gap`. Invalid UTF-8 output uses a base64
+payload.
 
 Streams and replay use resource-local sequence cursors. Pages are capped at
-10,000 events. After exit, the manager waits for a 50-millisecond output quiet
-period before it appends the terminal event. Each trailing output event resets
+10,000 Signals. After exit, the manager waits for a 50-millisecond output quiet
+period before it appends the terminal Signal. Each trailing output Signal resets
 that period. A deadline of four times the configured period bounds the drain.
 
 ## Await and inspect
@@ -179,8 +182,8 @@ workspace = File.cwd!()
   })
 
 {:ok, info} = Jido.Harness.Process.await(process_id, 310_000)
-{:ok, events} = Jido.Harness.Process.replay(process_id, limit: 10_000)
-{info, events}
+{:ok, signals} = Jido.Harness.Process.replay(process_id, limit: 10_000)
+{info, signals}
 ```
 
 Run this in the target workspace. Closing stdin lets Codex start when the
@@ -188,9 +191,9 @@ complete prompt is in argv. The command uses the CLI's default model; add
 `--model` with an available model when needed. Verify `info.state == :exited`
 and `info.exit_status == 0`, then check the task output before pruning.
 
-The process API records native JSON bytes as stdout events. It returns
-`ProcessInfo` and `ProcessEvent` values. ACP sessions, normalized provider
-events, `RunResult`, and resume are unavailable through this path.
+The process API records native JSON bytes as stdout Signals. It returns
+`ProcessInfo` and `Jido.Signal` values. ACP sessions, provider-level Signals,
+`RunResult`, and resume are unavailable through this path.
 
 The CLI keeps its existing authentication home and applies the scope of its
 `--ignore-user-config` option. Workspace instructions remain active. The

@@ -82,13 +82,17 @@ defmodule Jido.Harness.IntegrationCase do
         provider = @jido_harness_provider
         assert {:ok, spec} = Jido.Harness.Registry.spec(provider)
         assert spec.provider == provider
+        assert %Jido.Harness.ACPAgentSpec{} = spec.acp_agent
         assert {:ok, status} = Jido.Harness.status(provider)
         assert status.provider == provider
+        assert %Jido.Harness.ACPAgentSpec{} = status.acp_agent
+        assert status.acp_agent == spec.acp_agent
+        assert status.session_ready in [true, false]
         assert status.authenticated in [true, false, :unknown]
       end
 
       @tag skip: Jido.Harness.IntegrationCase.skip_reason(@jido_harness_provider, :smoke)
-      test "#{@jido_harness_provider} smoke, event, replay, and result contract" do
+      test "#{@jido_harness_provider} smoke, Signal, replay, and result contract" do
         provider = @jido_harness_provider
 
         Jido.Harness.IntegrationCase.with_ready_provider(provider, fn spec ->
@@ -104,16 +108,26 @@ defmodule Jido.Harness.IntegrationCase do
               Jido.Harness.IntegrationCase.verify!(provider, result, fn ->
                 assert result.status == :completed
                 assert result.run_id
+                assert is_binary(result.provider_session_id)
                 assert is_map(result.usage)
-                assert Enum.all?(result.events, &match?(%Jido.Harness.Event{}, &1))
-                assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
-                assert result.events == Enum.sort_by(result.events, & &1.sequence)
+                assert Enum.all?(result.signals, &match?(%Jido.Signal{}, &1))
+                assert Enum.count(result.signals, &Jido.Harness.Signal.terminal?/1) == 1
+                assert result.signals == Enum.sort_by(result.signals, &Jido.Harness.Signal.sequence/1)
+
+                assert Enum.any?(result.signals, fn signal ->
+                         Jido.Harness.Signal.kind(signal) == :provider_message and
+                           get_in(signal.data, ["payload", "kind"]) == "acp_session_ready"
+                       end)
 
                 assert {:ok, replayed} = Jido.Harness.Run.replay(result.run_id, limit: 10_000)
-                assert Enum.map(replayed, & &1.sequence) == Enum.map(result.events, & &1.sequence)
+
+                assert Enum.map(replayed, &Jido.Harness.Signal.sequence/1) ==
+                         Enum.map(result.signals, &Jido.Harness.Signal.sequence/1)
 
                 assert {:ok, reattached} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 10)
-                assert Enum.map(Enum.to_list(reattached), & &1.sequence) == Enum.map(replayed, & &1.sequence)
+
+                assert Enum.map(Enum.to_list(reattached), &Jido.Harness.Signal.sequence/1) ==
+                         Enum.map(replayed, &Jido.Harness.Signal.sequence/1)
               end)
           end
         end)
@@ -156,7 +170,7 @@ defmodule Jido.Harness.IntegrationCase do
 
           Jido.Harness.IntegrationCase.verify!(provider, result, fn ->
             assert result.status == :cancelled
-            assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+            assert Enum.count(result.signals, &Jido.Harness.Signal.terminal?/1) == 1
           end)
         end)
       end
@@ -484,7 +498,7 @@ defmodule Jido.Harness.IntegrationCase do
       state: if(info, do: info.state)
     })
 
-    write_events(Path.join(dir, "events.jsonl"), replay_events(run_id))
+    write_signals(Path.join(dir, "signals.jsonl"), replay_signals(run_id))
     dir
   rescue
     _error -> Path.join(System.tmp_dir!(), @artifact_root)
@@ -613,14 +627,19 @@ defmodule Jido.Harness.IntegrationCase do
 
   defp live_soak_summary!(provider, session_id, turns, provider_session_id) do
     case Jido.Harness.Session.replay(session_id, limit: 10_000) do
-      {:ok, events} ->
-        sequences = Enum.map(events, & &1.sequence)
-        completed = Enum.count(events, &(&1.type == :turn_completed))
-        acp_ready? = Enum.any?(events, &match?(%{type: :session_ready, payload: %{"protocol" => "acp"}}, &1))
+      {:ok, signals} ->
+        sequences = Enum.map(signals, &Jido.Harness.Signal.sequence/1)
+        completed = Enum.count(signals, &(Jido.Harness.Signal.kind(&1) == :turn_completed))
+
+        acp_ready? =
+          Enum.any?(signals, fn signal ->
+            Jido.Harness.Signal.kind(signal) == :provider_message and
+              get_in(signal.data, ["payload", "kind"]) == "acp_session_ready"
+          end)
 
         cond do
-          sequences != Enum.sort(sequences) -> failure!(provider, nil, :live_soak_event_order)
-          completed < turns -> failure!(provider, nil, :live_soak_missing_turn_events)
+          sequences != Enum.sort(sequences) -> failure!(provider, nil, :live_soak_signal_order)
+          completed < turns -> failure!(provider, nil, :live_soak_missing_turn_signals)
           not acp_ready? -> failure!(provider, nil, :live_soak_not_acp)
           true -> %{provider: provider, protocol: :acp, turns: turns, provider_session_id: provider_session_id}
         end
@@ -739,11 +758,11 @@ defmodule Jido.Harness.IntegrationCase do
     end
   end
 
-  defp replay_events(nil), do: []
+  defp replay_signals(nil), do: []
 
-  defp replay_events(run_id) do
+  defp replay_signals(run_id) do
     case Jido.Harness.Run.replay(run_id, cursor: 0, limit: 10_000) do
-      {:ok, events} -> events
+      {:ok, signals} -> signals
       _error -> []
     end
   end
@@ -753,10 +772,10 @@ defmodule Jido.Harness.IntegrationCase do
     File.chmod!(path, 0o600)
   end
 
-  defp write_events(path, events) do
+  defp write_signals(path, signals) do
     contents =
-      Enum.map_join(events, "", fn event ->
-        event
+      Enum.map_join(signals, "", fn signal ->
+        signal
         |> Map.from_struct()
         |> Map.put(:raw, nil)
         |> redact()

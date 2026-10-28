@@ -1,7 +1,7 @@
 defmodule Jido.Harness.CursorStream do
   @moduledoc false
 
-  @doc "Builds a pull stream that replays events by cursor until the resource is terminal."
+  @doc "Builds a pull stream that replays Signals by cursor until the resource is terminal."
   def build(replay_fun, info_fun, terminal_fun, options \\ []) do
     cursor = Keyword.get(options, :cursor, 0)
     limit = Keyword.get(options, :limit, 100)
@@ -11,9 +11,9 @@ defmodule Jido.Harness.CursorStream do
       fn -> cursor end,
       fn current ->
         case replay_fun.(current, limit) do
-          {:ok, [_ | _] = events} ->
-            next_cursor = events |> List.last() |> Map.fetch!(:sequence)
-            {events, next_cursor}
+          {:ok, [_ | _] = signals} ->
+            next_cursor = signals |> List.last() |> sequence()
+            {signals, next_cursor}
 
           {:ok, []} ->
             case info_fun.() do
@@ -39,9 +39,9 @@ defmodule Jido.Harness.CursorStream do
 
   defp replay_after_terminal(replay_fun, current, limit) do
     case replay_fun.(current, limit) do
-      {:ok, [_ | _] = events} ->
-        next_cursor = events |> List.last() |> Map.fetch!(:sequence)
-        {events, next_cursor}
+      {:ok, [_ | _] = signals} ->
+        next_cursor = signals |> List.last() |> sequence()
+        {signals, next_cursor}
 
       {:ok, []} ->
         {:halt, current}
@@ -50,4 +50,7 @@ defmodule Jido.Harness.CursorStream do
         {:halt, current}
     end
   end
+
+  defp sequence(%Jido.Signal{} = signal), do: Jido.Harness.Signal.sequence(signal)
+  defp sequence(%{sequence: sequence}), do: sequence
 end

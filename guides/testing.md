@@ -14,7 +14,7 @@ mix hex.build
 ```
 
 The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
-mapping, terminal events, caller exits, timeouts, stdin, output, PTY behavior,
+mapping, terminal Signals, caller exits, timeouts, stdin, output, PTY behavior,
 journal rotation, replay gaps, and process cleanup. It excludes live provider
 and long process-soak and replay-load tests.
 
@@ -94,7 +94,7 @@ mix test --no-cover --include integration test/integration/providers_test.exs \
 | Profile | Coverage |
 | --- | --- |
 | `smoke` | Readiness and one minimal run |
-| `contract` | Smoke checks, canonical events, results, replay, and reattachment |
+| `contract` | Smoke checks, ACP session identity, ACP ready Signal, results, replay, and reattachment |
 | `lifecycle` | Contract checks plus caller death, resume, cancellation, and cleanup |
 | `interactive` | Smoke checks and live two-turn ACP context |
 | `soak` | Smoke checks and one long-lived ACP session per selected provider |
@@ -113,7 +113,7 @@ installs the base CLI and its required ACP entry point.
 Select `JIDO_HARNESS_INTEGRATION_PROFILE=soak` with the same command. The default
 keeps each selected ACP session open for 10 minutes and sends a small turn every
 minute. Provider modules run concurrently. Each turn checks response text,
-session identity, process ownership, replay order, and terminal events.
+session identity, process ownership, replay order, and terminal Signals.
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
@@ -134,7 +134,7 @@ mix test --no-cover --include soak test/jido_harness/process_startup_regression_
 
 The local check runs 50 timeouts and 400 short CLI processes without retries.
 CI uses 250 timeouts and 2,000 short processes. A failure
-includes the process state, stderr, and terminal events. Native CI runs this
+includes the process state, stderr, and terminal Signals. Native CI runs this
 check on macOS and Linux on every pull request and main push. It is excluded
 from the default suite to keep local checks short.
 
@@ -206,10 +206,10 @@ starts no CLI process and makes no network or model request. It checks:
 - one-byte frame fragments and text deltas at increasing sizes;
 - 5,000 frames with a slow reader, bounded queue bytes, and ordered delivery;
 - closing a paused reader;
-- 2,000 completed turns with fixed result and event budgets;
+- 2,000 completed turns with fixed result and Signal budgets;
 - cleanup of 1,000 and 10,000 waiting callers;
-- event encoding and secret removal at 1 KiB and 16 KiB payload sizes;
-- 3,000 live process events through a BEAM driver with no journal replay.
+- Signal encoding and secret removal at 1 KiB and 16 KiB payload sizes;
+- 3,000 live process Signals through a BEAM driver with no journal replay.
 
 Set `HARNESS_LOAD_BYTES` to increase the largest fragmentation input. The
 default is 262,144 bytes. Reduction counts check work growth without a fixed

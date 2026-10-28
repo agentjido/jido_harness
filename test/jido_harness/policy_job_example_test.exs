@@ -3,6 +3,7 @@ Code.require_file("../../guides/recipes/policy_job.exs", __DIR__)
 defmodule Jido.Harness.PolicyJobExampleTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.{Signal, SignalFactory}
   alias Jido.Harness.Examples.PolicyJob
   import Jido.Harness.TestHelpers
 
@@ -21,7 +22,9 @@ defmodule Jido.Harness.PolicyJobExampleTest do
     end
 
     assert {:ok, %{status: :completed, text: "approved"}} = PolicyJob.run(:test, "approval", policy)
-    assert_receive {:policy_request, %{type: :approval_requested, request_id: request_id}}
+    assert_receive {:policy_request, %Jido.Signal{} = request}
+    assert Signal.kind(request) == :approval_requested
+    request_id = request.data["request_id"]
     assert String.starts_with?(request_id, "request_")
     assert_closed()
   end
@@ -49,10 +52,9 @@ defmodule Jido.Harness.PolicyJobExampleTest do
       assert {:ok, %{status: :completed, text: ^text} = result} =
                PolicyJob.run(:opencode, "request approval", fn _ -> decision end, session_options: %{acp_path: fixture})
 
-      approval = Enum.find(result.events, &(&1.type == :approval_requested))
-      assert approval.raw["method"] == "session/request_permission"
-      assert approval.raw["id"] == 99
-      assert String.starts_with?(approval.request_id, "request_")
+      approval = Enum.find(result.signals, &(Signal.kind(&1) == :approval_requested))
+      assert SignalFactory.payload(approval)["tool_call"]["toolCallId"] == "tool-1"
+      assert String.starts_with?(approval.data["request_id"], "request_")
     end
 
     assert_closed()

@@ -3,35 +3,35 @@ defmodule Jido.Harness.ReplayStore.Record do
 
   alias Jido.Harness.Redaction
 
-  @doc "Prepares one JSON-compatible record for every store and fallback."
-  @spec prepare(map(), Redaction.prepared() | [String.t()]) :: map()
-  def prepare(event, secrets) do
+  @doc "Prepares one JSON-compatible Signal record for every store and fallback."
+  @spec prepare(Jido.Signal.t(), Redaction.prepared() | [String.t()]) :: map()
+  def prepare(%Jido.Signal{} = signal, secrets) do
     secrets = if is_list(secrets), do: Redaction.prepare(secrets), else: secrets
 
-    event
-    |> plain_map()
-    |> Map.drop([:raw, "raw", :format_version, "format_version"])
-    |> Map.put("raw", nil)
-    |> Map.put("format_version", 1)
-    |> Redaction.redact(secrets)
-    |> sanitize_envelope(secrets)
+    wire =
+      signal
+      |> Jido.Signal.to_map()
+      |> sanitize(secrets)
+      |> redact_wire(secrets)
+
+    %{
+      "format_version" => 2,
+      "sequence" => Jido.Harness.Signal.sequence(signal),
+      "signal" => wire
+    }
   end
 
   @doc "Measures the logical record budget as JSON bytes, without a line separator."
   @spec bytes(map()) :: non_neg_integer()
   def bytes(record), do: record |> Jason.encode_to_iodata!() |> IO.iodata_length()
 
-  defp plain_map(%_{} = value), do: Map.from_struct(value)
-  defp plain_map(value), do: value
+  @envelope_keys ~w(specversion id source type subject time datacontenttype dataschema data data_base64)
 
-  defp sanitize_envelope(value, secrets) do
-    Map.new(value, fn {key, value} ->
-      value =
-        if key in [:type, :provider, :stream, "type", "provider", "stream"] and is_atom(value) and not is_nil(value),
-          do: Atom.to_string(value),
-          else: sanitize(value, secrets)
-
-      {to_string(key), value}
+  defp redact_wire(wire, secrets) do
+    Map.new(wire, fn
+      {"data", value} -> {"data", Redaction.redact(value, secrets)}
+      {key, value} when key in @envelope_keys -> {key, value}
+      {key, value} -> {key, Redaction.redact(value, secrets)}
     end)
   end
 

@@ -2,7 +2,8 @@ defmodule Jido.Harness.SessionAdapters.ACP do
   @moduledoc false
   @behaviour Jido.Harness.SessionAdapter
 
-  alias Jido.Harness.{Event, SessionAdapters.ACPTransport}
+  alias Jido.Harness.Adapter.Message
+  alias Jido.Harness.SessionAdapters.ACPTransport
 
   @startup_timeout 30_000
 
@@ -17,9 +18,8 @@ defmodule Jido.Harness.SessionAdapters.ACP do
           {:ok, provider_session_id} ->
             Jido.Harness.SessionAdapter.emit(
               context.owner,
-              Event.new!(
-                type: :provider_event,
-                provider: context.provider,
+              Message.new!(
+                type: :provider_message,
                 provider_session_id: provider_session_id,
                 payload: %{"kind" => "acp_session_ready"}
               )

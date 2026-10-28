@@ -3,7 +3,7 @@ defmodule Jido.Harness.ReplayStore.File do
   Default replay adapter for the bounded, segmented file journal.
 
   Options are `:journal_dir`, `:segment_bytes`, `:disk_limit_bytes`, and
-  `:max_events` (default 1,000,000). Retention removes complete segments, so it
+  `:max_signals` (default 1,000,000). Retention removes complete segments, so it
   can retain fewer records than the configured limit. Records larger than the
   disk budget are rejected. Writes do not promise fsync durability.
 
@@ -46,7 +46,7 @@ defmodule Jido.Harness.ReplayStore.File do
         {:journal_dir, path} ->
           is_binary(path) and byte_size(path) > 0
 
-        {key, value} when key in [:segment_bytes, :disk_limit_bytes, :max_events] ->
+        {key, value} when key in [:segment_bytes, :disk_limit_bytes, :max_signals] ->
           is_integer(value) and value > 0
 
         _ ->
@@ -57,7 +57,7 @@ defmodule Jido.Harness.ReplayStore.File do
   end
 
   @impl true
-  def open(%{kind: kind, id: id, format_version: 1}, options)
+  def open(%{kind: kind, id: id, format_version: 2}, options)
       when kind in [:process, :run, :session] and is_binary(id) and byte_size(id) > 0 do
     with :ok <- validate_options(options),
          true <- Path.basename(id) == id and id not in [".", ".."] and not String.contains?(id, "\\"),
@@ -115,12 +115,12 @@ defmodule Jido.Harness.ReplayStore.File do
   end
 
   # Persist progress if retention leaves no record from which it can be rebuilt.
-  defp keep_cursor(%{journal: %{retained_events: 0}} = state), do: write_cursor(state)
+  defp keep_cursor(%{journal: %{retained_signals: 0}} = state), do: write_cursor(state)
   defp keep_cursor(_state), do: :ok
 
   defp write_cursor(state) do
     path = Path.join(state.journal.dir, ".cursor")
-    data = Jason.encode!(%{format_version: 1, latest_sequence: state.latest})
+    data = Jason.encode!(%{format_version: 2, latest_sequence: state.latest})
 
     with :ok <- Elixir.File.write(path <> ".tmp", data),
          :ok <- Elixir.File.chmod(path <> ".tmp", 0o600),
@@ -132,7 +132,7 @@ defmodule Jido.Harness.ReplayStore.File do
     case Elixir.File.read(Path.join(directory, ".cursor")) do
       {:ok, data} ->
         case Jason.decode(data) do
-          {:ok, %{"format_version" => 1, "latest_sequence" => value}} when is_integer(value) and value >= 0 ->
+          {:ok, %{"format_version" => 2, "latest_sequence" => value}} when is_integer(value) and value >= 0 ->
             {:ok, value}
 
           _ ->
@@ -164,8 +164,8 @@ defmodule Jido.Harness.ReplayStore.File do
 
   @impl true
   def read(state, cursor, limits) do
-    with :ok <- Jido.Harness.ReplayStore.validate_read(cursor, limits.max_events, limits.max_bytes) do
-      {records, journal} = Journal.replay(state.journal, cursor, limits.max_events + 1, limits.max_bytes)
+    with :ok <- Jido.Harness.ReplayStore.validate_read(cursor, limits.max_signals, limits.max_bytes) do
+      {records, journal} = Journal.replay(state.journal, cursor, limits.max_signals + 1, limits.max_bytes)
       state = %{state | journal: journal}
 
       if journal.failed? or journal.read_failed?,
@@ -179,10 +179,10 @@ defmodule Jido.Harness.ReplayStore.File do
   @impl true
   def info(state) do
     %{
-      oldest_sequence: if(state.journal.retained_events > 0, do: state.journal.available_from),
+      oldest_sequence: if(state.journal.retained_signals > 0, do: state.journal.available_from),
       latest_sequence: state.latest,
       retained_bytes: state.journal.total_bytes,
-      retained_events: state.journal.retained_events,
+      retained_signals: state.journal.retained_signals,
       directory: state.journal.dir
     }
   end

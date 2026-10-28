@@ -10,7 +10,7 @@ defmodule Jido.Harness.Session.State do
     :context,
     :started_at,
     :buffer,
-    :event_log
+    :signal_log
   ]
 
   defstruct [
@@ -22,12 +22,12 @@ defmodule Jido.Harness.Session.State do
     :context,
     :started_at,
     :buffer,
-    :event_log,
+    :signal_log,
     :handle,
     :handle_monitor,
     :finished_at,
     :provider_session_id,
-    :terminal_event,
+    :terminal_signal,
     :active,
     :error,
     :session_idle_timer,

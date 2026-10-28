@@ -4,7 +4,7 @@ defmodule Jido.Harness.Buffer do
   @schema Zoi.struct(
             __MODULE__,
             %{
-              events: Zoi.any() |> Zoi.default(:queue.new()),
+              signals: Zoi.any() |> Zoi.default(:queue.new()),
               bytes: Zoi.integer() |> Zoi.default(0),
               max_bytes: Zoi.integer() |> Zoi.default(1_048_576)
             },
@@ -15,10 +15,10 @@ defmodule Jido.Harness.Buffer do
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
   defstruct Zoi.Struct.struct_fields(@schema)
 
-  @doc "Returns the validation schema for the internal event buffer."
+  @doc "Returns the validation schema for the internal Signal buffer."
   def schema, do: @schema
 
-  @doc "Creates an empty event buffer with a positive byte limit."
+  @doc "Creates an empty Signal buffer with a positive byte limit."
   def new(max_bytes) do
     case Zoi.parse(@schema, %{max_bytes: max_bytes}) do
       {:ok, buffer} when is_integer(max_bytes) and max_bytes > 0 -> buffer
@@ -26,21 +26,21 @@ defmodule Jido.Harness.Buffer do
     end
   end
 
-  @doc "Adds an event and drops the oldest events until the byte limit is met."
-  def append(%__MODULE__{} = buffer, event) do
-    size = :erlang.external_size(event)
-    buffer = %{buffer | events: :queue.in({event, size}, buffer.events), bytes: buffer.bytes + size}
+  @doc "Adds a Signal and drops the oldest Signals until the byte limit is met."
+  def append(%__MODULE__{} = buffer, signal) do
+    size = :erlang.external_size(signal)
+    buffer = %{buffer | signals: :queue.in({signal, size}, buffer.signals), bytes: buffer.bytes + size}
     trim(buffer)
   end
 
-  @doc "Returns retained events in insertion order."
-  def events(%__MODULE__{} = buffer), do: for({event, _size} <- :queue.to_list(buffer.events), do: event)
+  @doc "Returns retained Signals in insertion order."
+  def signals(%__MODULE__{} = buffer), do: for({signal, _size} <- :queue.to_list(buffer.signals), do: signal)
 
   defp trim(%__MODULE__{bytes: bytes, max_bytes: max} = buffer) when bytes <= max, do: buffer
 
   defp trim(%__MODULE__{} = buffer) do
-    case :queue.out(buffer.events) do
-      {{:value, {_event, size}}, queue} -> trim(%{buffer | events: queue, bytes: buffer.bytes - size})
+    case :queue.out(buffer.signals) do
+      {{:value, {_signal, size}}, queue} -> trim(%{buffer | signals: queue, bytes: buffer.bytes - size})
       {:empty, _queue} -> %{buffer | bytes: 0}
     end
   end

@@ -1,7 +1,7 @@
 defmodule Jido.Harness.HarnessLoadTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Harness.{Buffer, Event, EventLog, MemoryHarness, ProcessEvent, Redaction, TextTail, Waiters}
+  alias Jido.Harness.{Buffer, MemoryHarness, Redaction, Signal, SignalFactory, SignalLog, TextTail, Waiters}
   alias Jido.Harness.SessionAdapters.ACP.{ArborACPTransport, FrameBuffer}
   alias ArborACPTransport.Bridge
 
@@ -68,15 +68,9 @@ defmodule Jido.Harness.HarnessLoadTest do
     padding = String.duplicate("x", 1_024)
     data = for n <- 1..count, into: "", do: "#{n}:#{padding}\n"
 
-    event = %ProcessEvent{
-      process_id: "memory",
-      sequence: 1,
-      timestamp: "2026-10-16T00:00:00Z",
-      type: :stdout,
-      data: data
-    }
+    signal = SignalFactory.process(:stdout, data, process_id: "memory")
 
-    send(reader, {:events, [event]})
+    send(reader, {:events, [signal]})
     MemoryHarness.await(fn -> :sys.get_state(bridge).reader_ack != nil end)
     before = :sys.get_state(bridge)
     assert before.frame_bytes <= before.buffer_limit
@@ -121,15 +115,9 @@ defmodule Jido.Harness.HarnessLoadTest do
 
     assert_receive {:memory_reader, reader}
 
-    event = %ProcessEvent{
-      process_id: "memory",
-      sequence: 1,
-      timestamp: "2026-10-16T00:00:00Z",
-      type: :stdout,
-      data: String.duplicate("frame\n", 50_000)
-    }
+    signal = SignalFactory.process(:stdout, String.duplicate("frame\n", 50_000), process_id: "memory")
 
-    send(reader, {:events, [event]})
+    send(reader, {:events, [signal]})
     MemoryHarness.await(fn -> :sys.get_state(bridge).reader_ack != nil end)
     monitor = Process.monitor(reader)
     assert :ok = Bridge.close(bridge)
@@ -152,7 +140,7 @@ defmodule Jido.Harness.HarnessLoadTest do
       end)
 
     assert Map.has_key?(state.results, "turn-#{turns}")
-    assert length(Buffer.events(state.buffer)) < turns
+    assert length(Buffer.signals(state.buffer)) < turns
 
     report(
       :session_history,
@@ -183,14 +171,14 @@ defmodule Jido.Harness.HarnessLoadTest do
     refute {:process, self()} in elem(Process.info(self(), :monitors), 1)
   end
 
-  test "event persistence bounds memory and removes secrets and raw payloads" do
+  test "Signal persistence bounds memory and removes secrets" do
     dir = Path.join(System.tmp_dir!(), "harness-pipeline-load-#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf!(dir) end)
     secrets = Redaction.prepare(["load-secret-value"])
 
     for bytes <- [1_024, 16_384] do
       journal =
-        EventLog.open(:run, "pipeline-#{bytes}", %{
+        SignalLog.open(:run, "pipeline-#{bytes}", %{
           journal_dir: dir,
           disk_limit_bytes: 64_000_000,
           segment_bytes: 262_144
@@ -201,28 +189,25 @@ defmodule Jido.Harness.HarnessLoadTest do
       {stats, {buffer, journal}} =
         measure(fn ->
           Enum.reduce(1..1_000, {Buffer.new(65_536), journal}, fn sequence, {buffer, journal} ->
-            event =
-              Event.new!(
-                type: :output_text_delta,
-                provider: :test,
+            signal =
+              SignalFactory.fact(:output_text_delta, %{
                 sequence: sequence,
-                payload: %{"text" => text, "nested" => [%{"authorization" => "private"}]},
-                raw: text
-              )
+                payload: %{"text" => text, "nested" => [%{"authorization" => "private"}]}
+              })
 
-            EventLog.append(buffer, journal, event, secrets)
+            SignalLog.append(buffer, journal, signal, secrets)
           end)
         end)
 
       assert buffer.bytes <= buffer.max_bytes
-      assert List.last(Buffer.events(buffer)).raw == text
-      {page, journal} = EventLog.replay(journal, 999, 1)
+      assert SignalFactory.payload(List.last(Buffer.signals(buffer)))["text"] == text
+      {page, journal} = SignalLog.replay(journal, 999, 1)
       records = page.records
-      assert [%{"sequence" => 1_000, "raw" => nil, "payload" => payload}] = records
+      assert [%{"sequence" => 1_000, "signal" => %{"data" => %{"payload" => payload}}}] = records
       refute payload["text"] =~ "load-secret-value"
       assert payload["nested"] == [%{"authorization" => "[REDACTED]"}]
       assert journal.status == :healthy
-      report(:event_pipeline, Map.merge(stats, %{events: 1_000, payload_bytes: bytes, retained_bytes: buffer.bytes}))
+      report(:signal_pipeline, Map.merge(stats, %{signals: 1_000, payload_bytes: bytes, retained_bytes: buffer.bytes}))
     end
   end
 
@@ -269,10 +254,11 @@ defmodule Jido.Harness.HarnessLoadTest do
 
     reader =
       Task.async(fn ->
-        Enum.reduce(stream, 0, fn event, previous ->
-          assert event.sequence == previous + 1
-          if rem(event.sequence, 100) == 1, do: send(parent, {:live_received, event.sequence})
-          event.sequence
+        Enum.reduce(stream, 0, fn signal, previous ->
+          sequence = Signal.sequence(signal)
+          assert sequence == previous + 1
+          if rem(sequence, 100) == 1, do: send(parent, {:live_received, sequence})
+          sequence
         end)
       end)
 

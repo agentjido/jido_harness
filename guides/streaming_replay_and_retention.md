@@ -1,27 +1,23 @@
 # Streaming, replay, and retention
 
-Runs, sessions, and processes expose the same observation pattern: ordered
-events, cursor-based replay, and a pull-driven stream built on replay.
+Runs, sessions, and processes expose ordered native Signals, cursor replay,
+and pull streams.
 
-## Cursor semantics
+## Cursors and pages
 
-Every event has an increasing `sequence` within its resource. A cursor means
-"the last sequence already consumed."
+Each Signal has an increasing resource-local sequence. A cursor is the last
+sequence that the consumer accepted.
 
 ```elixir
-{:ok, events} = Jido.Harness.Run.replay(run_id, cursor: 20, limit: 100)
+{:ok, signals} = Jido.Harness.Run.replay(run_id, cursor: 20, limit: 100)
+cursor = signals |> List.last() |> Jido.Harness.Signal.sequence()
 ```
 
-The returned page begins after sequence 20. Save the last returned sequence to
-continue later. Cursors are resource-local and cannot be transferred between a
-run, session, or process.
+Replay begins after the cursor. `replay_page/2` also returns `next_cursor`,
+explicit missing ranges, and a byte count. A page can inspect at most 10,000
+records and returns at most the configured byte limit.
 
-Replay defaults to a page size of 100, caps a page at 10,000 inspected events,
-and bounds returned record bytes to 1 MiB. Use `replay_page/2` for explicit
-missing ranges, `next_cursor`, and a custom byte limit. See
-[Replay stores](replay_stores.md) for the full page contract and adapter selection.
-
-## Pull-based streams
+## Pull streams
 
 ```elixir
 {:ok, stream} =
@@ -32,115 +28,50 @@ missing ranges, `next_cursor`, and a custom byte limit. See
   )
 ```
 
-The stream repeatedly requests bounded replay pages. When no page is available,
-it checks resource state and polls again only while the resource is active. A
-slow consumer therefore controls its own pace instead of accumulating an
-unbounded mailbox.
-
-Dropping a stream has no effect on the resource. A later process can attach
-again from the last saved cursor.
-
-## Memory tail and disk journal
-
-The in-memory event and text tail is bounded. A segmented JSONL journal retains
-older normalized records up to its disk limit.
-
-Default limits are:
-
-| Setting | Default |
-| --- | --- |
-| Memory tail | 1 MiB |
-| Journal segment | 8 MiB |
-| Total journal | 256 MiB |
-| Terminal-resource TTL | 24 hours |
-
-Retention maps accept:
-
-- `journal_dir`
-- `memory_bytes`
-- `segment_bytes`
-- `disk_limit_bytes`
-
-Unknown keys and invalid byte relationships are rejected.
-
-Each retained segment has a sparse sequence-to-byte index. Replay seeks to a
-checkpoint near the requested cursor, then reads the requested page. Index
-checkpoints are at most 64 records or about 64 KiB apart. One record can exceed
-that byte interval. A poll at or past the latest sequence returns without file
-access. Each request uses its own file handle, so readers can use independent
-cursors and can seek backward.
-
-Index entries are removed with their segments. If an existing journal is opened
-again, its index is built once from the retained files. The journal still uses
-the same redacted JSONL format.
+A slow consumer controls its own pace. Dropping a stream does not stop the
+resource. A new consumer can attach with the saved cursor.
 
 ## Replay gaps
 
-When old journal segments have rotated away, replay cannot recreate every
-sequence. Replay inserts gap events for missing prefixes and internal missing ranges.
-Their sequence is the end of the missing range.
-
-Application consumers should treat a replay gap as a continuity boundary. Run
-and session gaps use a `:provider_event` with `payload["kind"] ==
-"replay_gap"`; process gaps use the `:replay_gap` process-event type:
+All resources use the native `jido.harness.replay.gap` Signal. Its payload has
+`from`, `to`, and `reason`.
 
 ```elixir
-case event do
-  %Jido.Harness.Event{type: :provider_event, payload: %{"kind" => "replay_gap"}} ->
-    reset_projection(event)
-
-  %Jido.Harness.ProcessEvent{type: :replay_gap} ->
-    reset_projection(event)
-
-  event ->
-    apply_event(event)
+case Jido.Harness.Signal.kind(signal) do
+  :replay_gap -> reset_projection(signal.data["payload"])
+  _kind -> apply_signal(signal)
 end
 ```
 
-Provider events use `Jido.Harness.Event`; process replay gaps use
-`Jido.Harness.ProcessEvent`. Run and session replay gaps are represented as
-normalized provider events with gap metadata.
+A gap is a continuity boundary. It can report retention, an unavailable store,
+or a record that did not fit the page byte limit.
 
-## Text truncation
+## Memory and disk
 
-`RunResult` and `TurnResult` expose `text_truncated?`. When it is true:
+The memory Signal tail and text tail are bounded. The default file store uses
+8 MiB segments, a 256 MiB total limit, and a 24-hour terminal-resource TTL.
+Retention options include `journal_dir`, `memory_bytes`, `segment_bytes`, and
+`disk_limit_bytes`.
 
-- `text` contains the newest retained text tail;
-- retained events remain available through replay;
-- already-rotated journal segments cannot be reconstructed.
+The V3 replay record format stores one sanitized native Signal as:
 
-Use replay continuously when complete output is a hard requirement.
+```elixir
+%{"format_version" => 2, "sequence" => sequence, "signal" => signal_map}
+```
 
-## Journal failure
+It does not read the V2 Harness event format.
 
-If a journal cannot be created or written, the resource continues with bounded
-sanitized memory and emits replay-store error telemetry. Disk retention is operational support,
-not a durable message broker.
+If disk storage fails, the resource continues with bounded sanitized memory.
+A later read retries the store. Public replay and fallback use the same
+redaction policy.
 
-A disk read error returns the available memory tail on the same replay call.
-It does not disable future writes. Later replay calls retry the disk journal.
-A cursor before the memory tail receives a replay-gap event. All public replay and fallback return prepared records with raw payloads removed
-and the same redaction policy.
+The ACP reader uses a separate demand-based live process Signal stream. It
+keeps protocol bytes in memory and does not read the replay journal.
 
-The internal ACP reader uses a separate demand-based memory stream. A read
-waits for the next process event without polling or reading a journal. This
-path preserves the original protocol bytes. Disk redaction must not change
-messages sent to the ACP client. A slow internal reader that falls behind the
-process memory buffer receives a gap, and the transport fails explicitly.
-Public process replay uses the selected replay store and sanitized fallback.
+## Pruning and security
 
-## Pruning
+`prune/1` removes a terminal resource and its retained journal. Active
+resources are not removed by the TTL sweep.
 
-Explicit `prune/1` removes a terminal resource and its journal. The retention
-worker prunes terminal resources after their TTL. Active resources are never
-removed by the TTL sweep.
-
-## Security
-
-Journal directories use restrictive permissions and structured secrets are
-redacted before persistence. Journals still contain provider activity and
-should be treated as sensitive operational data. Raw provider values are kept
-out of disk records.
-
-The file journal remains the default store. See [Replay stores](replay_stores.md)
-for the memory alternatives, cleanup rules, and storage-neutral status metadata.
+Journal paths use restrictive permissions. Stored provider activity can still
+contain sensitive data. Protect journal directories and exported records.

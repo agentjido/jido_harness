@@ -24,7 +24,7 @@ Times are milliseconds for each full phase. Read phases each contain 1,000
 reads. The queue baseline uses external-term-size budgets; stores use JSON
 bytes. Retained counts therefore differ slightly.
 
-| Payload | Implementation | Retained events | Append ms | Tail reads ms | Empty reads ms | Worker + ETS bytes |
+| Payload | Implementation | Retained Signals | Append ms | Tail reads ms | Empty reads ms | Worker + ETS bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | 256 B | Buffer | 13,189 | 3.36 | 537.03 | 533.04 | 2,546,328 |
 | 256 B | Memory | 13,732 | 25.16 | 0.32 | 0.18 | 1,574,032 |

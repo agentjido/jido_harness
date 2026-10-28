@@ -1,7 +1,7 @@
 defmodule Jido.Harness.ACPTransportTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Harness.ProcessEvent
+  alias Jido.Harness.SignalFactory
   alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge
 
   defmodule ControlledProcessManager do
@@ -125,7 +125,7 @@ defmodule Jido.Harness.ACPTransportTest do
   end
 
   defp event(type, data) do
-    %ProcessEvent{process_id: "fixture", sequence: 1, timestamp: "2026-09-04T00:00:00Z", type: type, data: data}
+    SignalFactory.process(type, data)
   end
 
   defp await(condition, attempts \\ 100)

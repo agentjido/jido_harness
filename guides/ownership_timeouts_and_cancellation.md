@@ -55,7 +55,7 @@ execution timeouts use `:infinity`; see the [architecture reference](reference/a
 :ok = Jido.Harness.Run.cancel(run_id)
 ```
 
-The run reaches `:cancelled` and emits exactly one `:run_cancelled` event.
+The run reaches `:cancelled` and emits exactly one `jido.harness.run.cancelled` Signal.
 Cancellation does not delete the resource; its result and journal remain
 available until pruning.
 

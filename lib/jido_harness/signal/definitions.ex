@@ -1,0 +1,46 @@
+require Jido.Harness.Signal.Definition
+
+alias Jido.Harness.Signal.Definition, as: D
+
+D.define(Jido.Harness.Signal.Run.Started, "jido.harness.run.started")
+D.define(Jido.Harness.Signal.Run.Completed, "jido.harness.run.completed")
+D.define(Jido.Harness.Signal.Run.Failed, "jido.harness.run.failed")
+D.define(Jido.Harness.Signal.Run.Cancelled, "jido.harness.run.cancelled")
+
+D.define(Jido.Harness.Signal.Session.Started, "jido.harness.session.started")
+D.define(Jido.Harness.Signal.Session.Ready, "jido.harness.session.ready")
+D.define(Jido.Harness.Signal.Session.Idle, "jido.harness.session.idle")
+D.define(Jido.Harness.Signal.Session.Closed, "jido.harness.session.closed")
+D.define(Jido.Harness.Signal.Session.Failed, "jido.harness.session.failed")
+D.define(Jido.Harness.Signal.Session.Cancelled, "jido.harness.session.cancelled")
+
+D.define(Jido.Harness.Signal.Input.Accepted, "jido.harness.input.accepted")
+D.define(Jido.Harness.Signal.Turn.Queued, "jido.harness.turn.queued")
+D.define(Jido.Harness.Signal.Turn.Started, "jido.harness.turn.started")
+D.define(Jido.Harness.Signal.Turn.Completed, "jido.harness.turn.completed")
+D.define(Jido.Harness.Signal.Turn.Failed, "jido.harness.turn.failed")
+D.define(Jido.Harness.Signal.Turn.Interrupted, "jido.harness.turn.interrupted")
+
+D.define(Jido.Harness.Signal.Output.TextDelta, "jido.harness.output.text.delta")
+D.define(Jido.Harness.Signal.Output.TextFinal, "jido.harness.output.text.final")
+D.define(Jido.Harness.Signal.Output.Structured, "jido.harness.output.structured")
+D.define(Jido.Harness.Signal.Thinking.Delta, "jido.harness.thinking.delta")
+D.define(Jido.Harness.Signal.ProviderCommand.OutputDelta, "jido.harness.provider_command.output.delta")
+D.define(Jido.Harness.Signal.Tool.Call, "jido.harness.tool.call")
+D.define(Jido.Harness.Signal.Tool.Result, "jido.harness.tool.result")
+D.define(Jido.Harness.Signal.File.Changed, "jido.harness.file.changed")
+D.define(Jido.Harness.Signal.Plan.Updated, "jido.harness.plan.updated")
+D.define(Jido.Harness.Signal.Usage.Reported, "jido.harness.usage.reported")
+D.define(Jido.Harness.Signal.Approval.Requested, "jido.harness.approval.requested")
+D.define(Jido.Harness.Signal.Approval.Resolved, "jido.harness.approval.resolved")
+D.define(Jido.Harness.Signal.Queue.Changed, "jido.harness.queue.changed")
+D.define(Jido.Harness.Signal.Provider.Message, "jido.harness.provider.message")
+D.define(Jido.Harness.Signal.Replay.Gap, "jido.harness.replay.gap")
+
+D.define(Jido.Harness.Signal.Process.Started, "jido.harness.process.started")
+D.define(Jido.Harness.Signal.Process.Stdout, "jido.harness.process.stdout")
+D.define(Jido.Harness.Signal.Process.Stderr, "jido.harness.process.stderr")
+D.define(Jido.Harness.Signal.Process.Exited, "jido.harness.process.exited")
+D.define(Jido.Harness.Signal.Process.Failed, "jido.harness.process.failed")
+D.define(Jido.Harness.Signal.Process.Cancelled, "jido.harness.process.cancelled")
+D.define(Jido.Harness.Signal.Process.TimedOut, "jido.harness.process.timed_out")

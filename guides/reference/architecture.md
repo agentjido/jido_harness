@@ -11,7 +11,7 @@ RunRequest or SessionRequest
           -> Harness process manager
           -> managed ACP executable
           -> Arbor ACP client
-          -> Harness events and terminal results
+          -> native Harness Signals and terminal results
 ```
 
 A finite run opens one temporary ACP session and sends one turn. An interactive
@@ -23,7 +23,7 @@ be managed directly through `Jido.Harness.Process`.
 | Component | Owns |
 | --- | --- |
 | Provider adapter | CLI discovery, status, installation, option declarations, and provider configuration mapping |
-| Harness | Resource IDs, supervisors, environment policy, process groups, timers, approvals, events, replay, and retention |
+| Harness | Resource IDs, supervisors, environment policy, process groups, timers, approvals, Signals, replay, and retention |
 | Arbor ACP | ACP encoding, parsing, validation, request IDs, and response correlation |
 | Host application | Workspaces, provider choice, authorization policy, retries, and durable job records |
 
@@ -32,7 +32,7 @@ encoded frames to the managed process. It enforces a frame-size limit and
 handles process exit and output drain. It does not decode ACP JSON or keep a
 JSON-RPC request map.
 
-The client handler maps ACP session updates to Harness events. Permission
+The client handler maps ACP session updates to native Harness Signals. Permission
 callbacks become asynchronous Harness approval requests. Harness creates the
 approval ID, applies its timer, and returns the selected permission outcome to
 Arbor ACP.
@@ -44,21 +44,20 @@ Arbor ACP.
 | Initialize | `Arbor.ACP.Client.start_link/1` | Executable, arguments, environment, and process owner |
 | Create a session | `Arbor.ACP.Client.new_session/3` | Harness session identity and lifecycle |
 | Load a session | `Arbor.ACP.Client.load_session/4` | Provider resume ID |
-| Send a prompt | `Arbor.ACP.Client.prompt/4` | Run or turn ID, timers, events, result, and replay |
+| Send a prompt | `Arbor.ACP.Client.prompt/4` | Run or turn ID, timers, Signals, result, and replay |
 | Cancel | `Arbor.ACP.Client.cancel/2` | Turn and process lifetime |
 | Request permission | `Arbor.ACP.Client.Handler` callbacks | Approval ID, deadline, stale response handling, and default denial |
 | End a session | `Arbor.ACP.Client.end_session/2` | Terminal state and process cleanup |
 
-## Raw messages and protocol errors
+## Adapter messages and protocol errors
 
-Arbor ACP message-context callbacks supply the decoded ACP message for
-`Event.raw`. A separate ACP adapter can translate or omit native provider
-fields before that message reaches Harness. Raw messages stay in memory and
-are excluded from disk journals. See the
-[event reference](event_reference.md#provider-events-and-replay-gaps).
+Arbor ACP message-context callbacks supply decoded data to a private Harness
+adapter message. The normalization layer creates native Signals from it. Raw
+ACP envelopes are not public and are excluded from replay stores. See the
+[Signal reference](signal_reference.md).
 
 Malformed ACP frames are handled by Arbor ACP and do not create a Harness
-`decode_error` event. Duplicate outstanding JSON-RPC request IDs are rejected
+`decode_error` Signal. Duplicate outstanding JSON-RPC request IDs are rejected
 before another Harness approval request is created.
 
 ## Internal deadlines

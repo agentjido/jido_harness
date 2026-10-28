@@ -3,7 +3,7 @@ defmodule Jido.Harness do
   Normalized, supervised runtime for coding-agent CLIs.
 
   Jido.Harness runs coding-agent CLIs through one ACP interface and translates
-  ACP activity into validated Elixir requests, ordered events, terminal
+  ACP activity into validated Elixir requests, ordered native Signals, terminal
   results, readiness information, capabilities, and errors. Built-in adapters
   cover Amp, Claude Code, Codex, Cursor CLI, Gemini CLI, Grok, Kimi Code,
   OpenCode, Pi, and Z.AI.

@@ -8,7 +8,7 @@ defmodule Jido.Harness.Examples.PolicyJob do
   to request approval for the operations that need host review.
   """
 
-  alias Jido.Harness.Session
+  alias Jido.Harness.{Session, Signal}
 
   def run(provider, prompt, policy, options \\ []) when is_function(policy, 1) do
     timeout = Keyword.get(options, :timeout_ms, 5_000)
@@ -57,13 +57,13 @@ defmodule Jido.Harness.Examples.PolicyJob do
       Session.interrupt(state.session_id, state.turn_id)
       {:error, :timeout}
     else
-      with {:ok, events} <- Session.replay(state.session_id, cursor: state.cursor, limit: 100) do
-        Enum.each(events, &resolve_approval(&1, state))
+      with {:ok, signals} <- Session.replay(state.session_id, cursor: state.cursor, limit: 100) do
+        Enum.each(signals, &resolve_approval(&1, state))
 
         cursor =
-          case List.last(events) do
+          case List.last(signals) do
             nil -> state.cursor
-            event -> event.sequence
+            signal -> Signal.sequence(signal)
           end
 
         case Session.await(state.session_id, state.turn_id, min(10, remaining(state))) do
@@ -74,11 +74,19 @@ defmodule Jido.Harness.Examples.PolicyJob do
     end
   end
 
-  defp resolve_approval(%{type: :approval_requested, turn_id: turn_id} = event, %{turn_id: turn_id} = state) do
+  defp resolve_approval(%Jido.Signal{} = signal, %{turn_id: turn_id} = state) do
+    if Signal.kind(signal) == :approval_requested and signal.data["turn_id"] == turn_id do
+      resolve_approval_signal(signal, state)
+    else
+      :ok
+    end
+  end
+
+  defp resolve_approval_signal(signal, state) do
     task =
       Task.Supervisor.async_nolink(state.supervisor, fn ->
         try do
-          state.policy.(event)
+          state.policy.(signal)
         rescue
           _error -> :deny
         catch
@@ -98,14 +106,13 @@ defmodule Jido.Harness.Examples.PolicyJob do
 
     # The Harness timer can resolve the request first. A stale response does
     # not change the decision or create another permission request.
-    case Session.respond_approval(state.session_id, event.request_id, decision) do
+    case Session.respond_approval(state.session_id, signal.data["request_id"], decision) do
       :ok -> :ok
       {:error, :not_found} -> :ok
       {:error, reason} -> raise "approval response failed: #{inspect(reason)}"
     end
   end
 
-  defp resolve_approval(_event, _state), do: :ok
   defp remaining(state), do: max(state.deadline - now(), 0)
   defp now, do: System.monotonic_time(:millisecond)
 end

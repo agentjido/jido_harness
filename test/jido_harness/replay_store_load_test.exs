@@ -10,7 +10,7 @@ defmodule Jido.Harness.ReplayStoreLoadTest do
       stats =
         for count <- [2_000, 16_000] do
           {:ok, handle} =
-            adapter.open(%{kind: :run, id: "load", format_version: 1}, %{max_events: 20_000, max_bytes: 16_000_000})
+            adapter.open(%{kind: :run, id: "load", format_version: 2}, %{max_signals: 20_000, max_bytes: 16_000_000})
 
           handle =
             Enum.reduce(1..count, handle, fn n, handle ->
@@ -24,12 +24,12 @@ defmodule Jido.Harness.ReplayStoreLoadTest do
             cursor = count - rem(n, 100) - 1
 
             assert {:ok, %{records: [%{"sequence" => sequence}]}, _} =
-                     adapter.read(handle, cursor, %{max_events: 1, max_bytes: 1_000})
+                     adapter.read(handle, cursor, %{max_signals: 1, max_bytes: 1_000})
 
             assert sequence == cursor + 1
 
             assert {:ok, %{records: [], gaps: [], next_cursor: ^count}, _} =
-                     adapter.read(handle, count, %{max_events: 1, max_bytes: 1_000})
+                     adapter.read(handle, count, %{max_signals: 1, max_bytes: 1_000})
           end
 
           {_, after_count} = Process.info(self(), :reductions)

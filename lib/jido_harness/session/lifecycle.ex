@@ -1,8 +1,9 @@
 defmodule Jido.Harness.Session.Lifecycle do
   @moduledoc false
 
-  alias Jido.Harness.{ApprovalResponse, Buffer, Error, Event, ID, TurnResult, Waiters}
-  alias Jido.Harness.Session.{ActiveTurn, EventStore, State, Timers}
+  alias Jido.Harness.{ApprovalResponse, Buffer, Error, ID, TurnResult, Waiters}
+  alias Jido.Harness.Adapter.Message
+  alias Jido.Harness.Session.{ActiveTurn, SignalStore, State, Timers}
   alias Jido.Harness.SessionAdapters.ACP
 
   @doc false
@@ -22,17 +23,14 @@ defmodule Jido.Harness.Session.Lifecycle do
       :ok ->
         state =
           state
-          |> EventStore.append(
-            Event.new!(
+          |> SignalStore.append(
+            Message.new!(
               type: :input_accepted,
-              provider: state.provider,
               turn_id: turn_id,
               payload: %{"kind" => "message"}
             )
           )
-          |> EventStore.append(
-            Event.new!(type: :turn_started, provider: state.provider, turn_id: turn_id, payload: %{})
-          )
+          |> SignalStore.append(Message.new!(type: :turn_started, turn_id: turn_id, payload: %{}))
           |> Timers.schedule_turn_runtime()
           |> Timers.schedule_turn_idle()
 
@@ -44,23 +42,22 @@ defmodule Jido.Harness.Session.Lifecycle do
   end
 
   @doc false
-  @spec finish_turn(State.t(), atom(), map(), term(), Event.t() | nil, boolean()) :: State.t()
-  def finish_turn(state, type, payload, error, event \\ nil, continue_session? \\ true)
+  @spec finish_turn(State.t(), atom(), map(), term(), Message.t() | nil, boolean()) :: State.t()
+  def finish_turn(state, type, payload, error, message \\ nil, continue_session? \\ true)
 
-  def finish_turn(state, type, payload, error, event, continue_session?) do
+  def finish_turn(state, type, payload, error, message, continue_session?) do
     state = deny_pending_approvals(state, "turn_finished")
 
-    event =
-      event ||
-        Event.new!(
+    message =
+      message ||
+        Message.new!(
           type: type,
-          provider: state.provider,
           provider_session_id: state.provider_session_id,
           turn_id: state.active.id,
           payload: payload
         )
 
-    state = EventStore.append(state, event)
+    state = SignalStore.append(state, message)
     active = state.active
 
     status =
@@ -81,7 +78,7 @@ defmodule Jido.Harness.Session.Lifecycle do
       text: Jido.Harness.TextTail.text(text),
       text_truncated?: text.truncated?,
       usage: active.usage,
-      events: Enum.filter(Buffer.events(state.buffer), &(&1.turn_id == active.id)),
+      signals: Enum.filter(Buffer.signals(state.buffer), &(&1.data["turn_id"] == active.id)),
       metadata: active.request.metadata,
       error: normalize_turn_error(state, error, payload, status)
     }
@@ -105,7 +102,7 @@ defmodule Jido.Harness.Session.Lifecycle do
     if continue_session? do
       state =
         state
-        |> EventStore.append(Event.new!(type: :session_idle, provider: state.provider, payload: %{}))
+        |> SignalStore.append(Message.new!(type: :session_idle, payload: %{}))
         |> Timers.schedule_session_idle()
 
       send(self(), :start_next)
@@ -128,7 +125,7 @@ defmodule Jido.Harness.Session.Lifecycle do
 
   @doc false
   @spec terminate_session(State.t(), atom(), map()) :: State.t()
-  def terminate_session(%{terminal_event: %Event{}} = state, _type, _payload), do: state
+  def terminate_session(%{terminal_signal: %Jido.Signal{}} = state, _type, _payload), do: state
 
   def terminate_session(state, type, payload) do
     state = %{state | status: :closing}
@@ -153,10 +150,10 @@ defmodule Jido.Harness.Session.Lifecycle do
     state = cancel_queued(state, Map.get(payload, "reason", "session_closed"))
     _ = if state.handle, do: ACP.close(state.handle), else: :ok
 
-    event =
-      Event.new!(type: type, provider: state.provider, provider_session_id: state.provider_session_id, payload: payload)
+    message = Message.new!(type: type, provider_session_id: state.provider_session_id, payload: payload)
 
-    state = EventStore.append(state, event)
+    state = SignalStore.append(state, message)
+    terminal_signal = state.buffer |> Buffer.signals() |> List.last()
 
     status =
       case type do
@@ -173,7 +170,7 @@ defmodule Jido.Harness.Session.Lifecycle do
     })
 
     Timers.cancel_all(state)
-    %{state | status: status, finished_at: timestamp(), terminal_event: event, handle: nil}
+    %{state | status: status, finished_at: timestamp(), terminal_signal: terminal_signal, handle: nil}
   end
 
   @doc false
@@ -191,17 +188,17 @@ defmodule Jido.Harness.Session.Lifecycle do
   end
 
   @doc false
-  @spec handle_approval_request(State.t(), Event.t()) :: State.t()
-  def handle_approval_request(state, event) do
-    request_id = event.request_id || ID.generate("request")
-    event = %{event | request_id: request_id}
+  @spec handle_approval_request(State.t(), Message.t()) :: State.t()
+  def handle_approval_request(state, message) do
+    request_id = message.request_id || ID.generate("request")
+    message = %{message | request_id: request_id}
     active_turn_id = state.active && state.active.id
 
     # A native background callback can ask permission between harness turns.
     # Forward that session-level request to the host; a concrete old turn
     # still has no authority to ask after it ended.
     stale =
-      event.turn_id != active_turn_id or stale_turn_event?(state, event) or
+      message.turn_id != active_turn_id or stale_turn_message?(state, message) or
         (is_nil(active_turn_id) and state.status not in [:idle, :awaiting_approval])
 
     full =
@@ -211,15 +208,14 @@ defmodule Jido.Harness.Session.Lifecycle do
     if stale or full do
       _ = deny_approval(state, request_id, if(full, do: "approval limit reached", else: "stale approval request"))
 
-      EventStore.append(
+      SignalStore.append(
         state,
-        Event.new!(
-          type: :provider_event,
-          provider: state.provider,
+        Message.new!(
+          type: :provider_message,
           request_id: request_id,
           payload: %{
             "kind" => if(full, do: "approval_limit_reached", else: "stale_approval_denied"),
-            "turn_id" => event.turn_id
+            "turn_id" => message.turn_id
           }
         )
       )
@@ -230,8 +226,8 @@ defmodule Jido.Harness.Session.Lifecycle do
       end
 
       timer = Timers.approval(state.request.approval_timeout_ms, request_id)
-      approvals = Map.put(state.pending_approvals, request_id, %{event: event, timer: timer})
-      %{EventStore.append(state, event) | pending_approvals: approvals, status: :awaiting_approval}
+      approvals = Map.put(state.pending_approvals, request_id, %{message: message, timer: timer})
+      %{SignalStore.append(state, message) | pending_approvals: approvals, status: :awaiting_approval}
     end
   end
 
@@ -270,11 +266,10 @@ defmodule Jido.Harness.Session.Lifecycle do
 
         if state.handle, do: ACP.respond_approval(state.handle, request_id, response)
 
-        EventStore.append(
+        SignalStore.append(
           state,
-          Event.new!(
+          Message.new!(
             type: :approval_resolved,
-            provider: state.provider,
             turn_id: state.active && state.active.id,
             request_id: request_id,
             payload: %{"decision" => "deny", "scope" => "once", "reason" => reason}
@@ -308,10 +303,10 @@ defmodule Jido.Harness.Session.Lifecycle do
   defp normalize_error(state, reason),
     do: Error.execution("interactive session failed", provider: state.provider, cause: reason)
 
-  defp stale_turn_event?(state, %Event{turn_id: turn_id}) when is_binary(turn_id),
+  defp stale_turn_message?(state, %Message{turn_id: turn_id}) when is_binary(turn_id),
     do: is_nil(state.active) or state.active.id != turn_id
 
-  defp stale_turn_event?(_state, _event), do: false
+  defp stale_turn_message?(_state, _message), do: false
 
   defp retain_result(state, result) do
     bytes = :erlang.external_size(result)

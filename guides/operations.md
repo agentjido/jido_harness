@@ -84,7 +84,7 @@ Jido.Harness.Process.list(states: [:starting, :running, :stopping])
 ```
 
 Each info struct exposes the current output cursor and redacted terminal state.
-Avoid polling at very high frequency; event streams are the appropriate path
+Avoid polling at very high frequency; Signal streams are the appropriate path
 for output consumption.
 
 ## Telemetry
@@ -119,7 +119,7 @@ job record and treat a restarted harness execution as a new resource.
 ## ACP process failures
 
 A failed ACP run or turn can include `error.details.process`. It contains the
-process ID, terminal state, exit details, a stderr tail, and lifecycle events.
+process ID, terminal state, exit details, a stderr tail, and lifecycle Signals.
 The stderr tail is limited to 4 KiB. `stderr_truncated` identifies a truncated
 tail. Environment secrets are redacted before these diagnostics leave the
 transport. Startup failures return the same diagnostics, including failures

@@ -25,7 +25,7 @@ defmodule Jido.Harness.ReplayStore.FaultStore do
   def read(state, _cursor, _limits), do: {:error, :timeout, state}
   @impl true
   def info(%{operation: :invalid_info}), do: %{latest_sequence: "invalid"}
-  def info(_state), do: %{oldest_sequence: nil, latest_sequence: 0, retained_bytes: 0, retained_events: 0}
+  def info(_state), do: %{oldest_sequence: nil, latest_sequence: 0, retained_bytes: 0, retained_signals: 0}
   @impl true
   def close(%{operation: :invalid_close}), do: :bad_result
   def close(_state), do: :ok

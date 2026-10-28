@@ -12,7 +12,7 @@ By the end you will have:
 - completed and queued normalized turns;
 - replayed the session lifecycle;
 - started a local process without a shell command;
-- consumed normalized stdout, stderr, and exit events.
+- consumed normalized stdout, stderr, and exit Signals.
 
 Read the [interactive-session guide](../interactive_sessions.md) and
 [managed-process guide](../managed_processes.md) for the corresponding
@@ -125,15 +125,15 @@ second_turn =
 }
 ```
 
-Session events include both lifecycle and turn boundaries. Closing is graceful;
+Session Signals include both lifecycle and turn boundaries. Closing is graceful;
 `kill/1` is available for forced cancellation.
 
 ```elixir
 :ok = Jido.Harness.Session.close(session_id)
-{:ok, session_events} = Jido.Harness.Session.replay(session_id, cursor: 0, limit: 100)
+{:ok, session_signals} = Jido.Harness.Session.replay(session_id, cursor: 0, limit: 100)
 
 %{
-  event_types: Enum.map(session_events, & &1.type),
+  signal_types: Enum.map(session_signals, & &1.type),
   final_info: Jido.Harness.Session.info(session_id)
 }
 ```
@@ -158,13 +158,18 @@ elixir = System.find_executable("elixir") || raise "elixir executable not found"
   })
 
 {:ok, process_info} = Jido.Harness.Process.await(process_id, 30_000)
-{:ok, process_events} = Jido.Harness.Process.replay(process_id, cursor: 0, limit: 100)
+{:ok, process_signals} = Jido.Harness.Process.replay(process_id, cursor: 0, limit: 100)
 
 %{
   process_id: process_id,
   state: process_info.state,
   exit_status: process_info.exit_status,
-  events: Enum.map(process_events, &%{sequence: &1.sequence, type: &1.type, data: &1.data})
+  signals:
+    Enum.map(process_signals, &%{
+      sequence: Jido.Harness.Signal.sequence(&1),
+      type: &1.type,
+      payload: &1.data["payload"]
+    })
 }
 ```
 

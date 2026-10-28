@@ -3,7 +3,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
   Bounded replay storage in the resource worker's state.
 
   An ordered tree supports cursor reads without scanning the retained prefix.
-  `:max_bytes` defaults to 1 MiB and `:max_events` to 10,000. The byte budget is
+  `:max_bytes` defaults to 1 MiB and `:max_signals` to 10,000. The byte budget is
   JSON record bytes. Records disappear when the owner exits. Close is a no-op;
   deletion is handled by discarding the state.
   """
@@ -18,7 +18,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
             count: Zoi.integer() |> Zoi.default(0),
             latest: Zoi.integer() |> Zoi.default(0),
             max_bytes: Zoi.integer() |> Zoi.default(1_048_576),
-            max_events: Zoi.integer() |> Zoi.default(10_000)
+            max_signals: Zoi.integer() |> Zoi.default(10_000)
           })
   @type t :: unquote(Zoi.type_spec(@schema))
   @enforce_keys Zoi.Struct.enforce_keys(@schema)
@@ -42,7 +42,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
 
   @impl true
   def validate_options(options) do
-    if Map.keys(options) -- [:max_bytes, :max_events] == [] and
+    if Map.keys(options) -- [:max_bytes, :max_signals] == [] and
          Enum.all?(Map.values(options), &(is_integer(&1) and &1 > 0)),
        do: :ok,
        else: {:error, :invalid_memory_options}
@@ -77,7 +77,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
 
   @impl true
   def read(state, cursor, limits) do
-    with :ok <- Jido.Harness.ReplayStore.validate_read(cursor, limits.max_events, limits.max_bytes) do
+    with :ok <- Jido.Harness.ReplayStore.validate_read(cursor, limits.max_signals, limits.max_bytes) do
       records = stream(state, cursor)
       {:ok, Page.build(records, cursor, info(state), limits), state}
     else
@@ -91,7 +91,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
       oldest_sequence: oldest(state),
       latest_sequence: state.latest,
       retained_bytes: state.bytes,
-      retained_events: state.count,
+      retained_signals: state.count,
       directory: nil
     }
   end
@@ -143,7 +143,7 @@ defmodule Jido.Harness.ReplayStore.Memory do
     %{state | data: data, bytes: state.bytes + bytes, count: state.count + 1, latest: sequence}
   end
 
-  defp trim(state) when state.bytes <= state.max_bytes and state.count <= state.max_events, do: state
+  defp trim(state) when state.bytes <= state.max_bytes and state.count <= state.max_signals, do: state
 
   defp trim(state) do
     sequence = oldest(state)

@@ -1,6 +1,7 @@
 defmodule Jido.Harness.ProcessStartupRegressionTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.{Signal, SignalFactory}
   alias Jido.Harness.Process, as: NativeProcess
   import Jido.Harness.TestHelpers
 
@@ -43,23 +44,32 @@ defmodule Jido.Harness.ProcessStartupRegressionTest do
 
       for id <- short_runs do
         assert {:ok, info} = NativeProcess.await(id, 5_000)
-        assert {:ok, events} = NativeProcess.replay(id, limit: 20)
+        assert {:ok, signals} = NativeProcess.replay(id, limit: 20)
 
         assert info.state == :exited and info.exit_status == 0,
-               "Short process failed: #{inspect(%{info: info, events: events}, limit: :infinity)}"
+               "Short process failed: #{inspect(%{info: info, signals: signals}, limit: :infinity)}"
 
-        output = events |> Enum.filter(&(&1.type == :stdout)) |> Enum.map(& &1.data) |> IO.iodata_to_binary()
+        output =
+          signals
+          |> Enum.filter(&(Signal.kind(&1) == :process_stdout))
+          |> Enum.map(&SignalFactory.process_data/1)
+          |> IO.iodata_to_binary()
+
         assert output == record
-        assert Enum.count(events, &(&1.type in [:exited, :failed, :cancelled, :timed_out])) == 1
-        assert List.last(events).type == :exited
+
+        assert Enum.count(signals, fn signal ->
+                 Signal.kind(signal) in [:process_exited, :process_failed, :process_cancelled, :process_timed_out]
+               end) == 1
+
+        assert Signal.kind(List.last(signals)) == :process_exited
         assert :ok = NativeProcess.prune(id)
       end
 
       assert {:ok, info} = NativeProcess.await(timed_out, 5_000)
-      assert {:ok, events} = NativeProcess.replay(timed_out, limit: 20)
+      assert {:ok, signals} = NativeProcess.replay(timed_out, limit: 20)
 
       assert info.state == :timed_out,
-             "Timeout process failed: #{inspect(%{info: info, events: events}, limit: :infinity)}"
+             "Timeout process failed: #{inspect(%{info: info, signals: signals}, limit: :infinity)}"
 
       assert :ok = NativeProcess.prune(timed_out)
     end

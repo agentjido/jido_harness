@@ -51,7 +51,7 @@ defmodule Jido.Harness.SessionManager do
     end)
   end
 
-  @doc "Validates the cursor and limit before requesting retained session events."
+  @doc "Validates the cursor and limit before requesting retained session Signals."
   def replay(id, options \\ []) do
     with {:ok, options} <- Jido.Harness.Validation.keyword_options(options),
          cursor = Keyword.get(options, :cursor, 0),

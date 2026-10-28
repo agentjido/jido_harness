@@ -8,10 +8,8 @@ defmodule Jido.Harness.ZoiStructsTest do
     Buffer,
     Capabilities,
     Error,
-    Event,
     SessionCapabilities,
     Journal,
-    ProcessEvent,
     ProcessInfo,
     ProcessSpec,
     ProviderStatus,
@@ -33,10 +31,8 @@ defmodule Jido.Harness.ZoiStructsTest do
     Buffer,
     Capabilities,
     Error,
-    Event,
     SessionCapabilities,
     Journal,
-    ProcessEvent,
     ProcessInfo,
     ProcessSpec,
     ProviderStatus,
@@ -61,17 +57,16 @@ defmodule Jido.Harness.ZoiStructsTest do
 
   test "public result and information structs validate through their schemas" do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
-    event = Event.new!(type: :run_completed, provider: :test)
-
-    assert {:ok, %ProcessEvent{}} =
-             ProcessEvent.new(process_id: "process_1", sequence: 1, timestamp: timestamp, type: :started)
+    signal = Jido.Harness.SignalFactory.fact(:run_completed)
 
     assert {:ok, %ProcessInfo{}} =
              ProcessInfo.new(process_id: "process_1", state: :running, started_at: timestamp)
 
     assert {:ok, %ProviderStatus{}} = ProviderStatus.new(provider: :test)
     assert {:ok, %RunInfo{}} = RunInfo.new(run_id: "run_1", provider: :test, state: :running, started_at: timestamp)
-    assert {:ok, %RunResult{}} = RunResult.new(run_id: "run_1", provider: :test, status: :completed, events: [event])
+
+    assert {:ok, %RunResult{}} =
+             RunResult.new(run_id: "run_1", provider: :test, status: :completed, signals: [signal])
 
     assert {:ok, %SessionInfo{}} =
              SessionInfo.new(session_id: "session_1", provider: :test, state: :idle, started_at: timestamp)

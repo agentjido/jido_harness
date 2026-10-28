@@ -1,7 +1,8 @@
 defmodule Jido.Harness.SessionAdapter do
   @moduledoc "Boundary between Harness lifecycle state and its common ACP engine."
 
-  alias Jido.Harness.{ApprovalResponse, Event, SessionRequest, TurnRequest}
+  alias Jido.Harness.{ApprovalResponse, SessionRequest, TurnRequest}
+  alias Jido.Harness.Adapter.Message
 
   @type context :: %{
           required(:session_id) => String.t(),
@@ -26,9 +27,9 @@ defmodule Jido.Harness.SessionAdapter do
   @optional_callbacks steer: 3, respond_approval: 3, configure: 2
 
   @doc false
-  @spec emit(pid(), Event.t()) :: :ok
-  def emit(owner, %Event{} = event) when is_pid(owner) do
-    send(owner, {:session_adapter_event, event})
+  @spec emit(pid(), Message.t()) :: :ok
+  def emit(owner, %Message{} = message) when is_pid(owner) do
+    send(owner, {:session_adapter_message, message})
     :ok
   end
 

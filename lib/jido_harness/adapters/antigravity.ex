@@ -4,7 +4,8 @@ defmodule Jido.Harness.Adapters.Antigravity do
 
   The `agy` CLI ships no ACP mode of its own, so this profile launches the
   `refined-antigravity-acp` adapter. The adapter drives Google's ACP server and
-  translates it into ACP messages, which makes it the source of `Event.raw`.
+  translates it into ACP messages. The adapter boundary keeps the decoded
+  provider message only until it creates a native Harness Signal.
 
   Provision the adapter once with `refined-antigravity-acp setup`, which also
   accepts the Google Antigravity Terms of Service.

@@ -93,7 +93,7 @@ defmodule ReplayStoreBench do
           tail_read_reductions: sum(stats, :tail_read_reductions),
           empty_read_us_sum: sum(stats, :empty_read_us),
           empty_read_reductions: sum(stats, :empty_read_reductions),
-          retained_events: sum(stats, :retained_events),
+          retained_signals: sum(stats, :retained_signals),
           logical_bytes: sum(stats, :logical_bytes),
           process_memory_bytes: sum(stats, :process_memory_bytes),
           ets_memory_bytes: sum(stats, :ets_memory_bytes),
@@ -182,7 +182,7 @@ defmodule ReplayStoreBench do
 
   defp open(module, budget) do
     {:ok, handle} =
-      module.open(%{kind: :run, id: "bench", format_version: 1}, %{max_bytes: budget, max_events: 100_000})
+      module.open(%{kind: :run, id: "bench", format_version: 2}, %{max_bytes: budget, max_signals: 100_000})
 
     handle
   end
@@ -196,21 +196,21 @@ defmodule ReplayStoreBench do
 
   # This is the original memory replay path, including its full-prefix scan.
   defp read(Buffer, handle, cursor),
-    do: handle |> Buffer.events() |> Enum.filter(&(&1["sequence"] > cursor)) |> Enum.take(1)
+    do: handle |> Buffer.signals() |> Enum.filter(&(&1["sequence"] > cursor)) |> Enum.take(1)
 
-  defp read(module, handle, cursor), do: module.read(handle, cursor, %{max_events: 1, max_bytes: 1_048_576})
+  defp read(module, handle, cursor), do: module.read(handle, cursor, %{max_signals: 1, max_bytes: 1_048_576})
 
   defp memory(module, handle) do
-    {events, bytes} =
+    {signals, bytes} =
       if module == Buffer,
-        do: {length(Buffer.events(handle)), handle.bytes},
-        else: {module.info(handle).retained_events, module.info(handle).retained_bytes}
+        do: {length(Buffer.signals(handle)), handle.bytes},
+        else: {module.info(handle).retained_signals, module.info(handle).retained_bytes}
 
     :erlang.garbage_collect()
     ets = if module == ETS, do: :ets.info(handle.data, :memory) * :erlang.system_info(:wordsize), else: 0
 
     %{
-      retained_events: events,
+      retained_signals: signals,
       logical_bytes: bytes,
       ets_memory_bytes: ets,
       process_memory_bytes: elem(Process.info(self(), :memory), 1),

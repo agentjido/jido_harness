@@ -39,8 +39,14 @@ defmodule JidoHarnessEscriptFixture do
       Jido.Harness.Process.start(%{executable: "/bin/echo", argv: ["escript-native-ok"], stdin: false})
 
     {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(process_id, 5_000)
-    {:ok, events} = Jido.Harness.Process.replay(process_id)
-    output = events |> Enum.filter(&(&1.type == :stdout)) |> Enum.map(& &1.data) |> IO.iodata_to_binary()
+    {:ok, signals} = Jido.Harness.Process.replay(process_id)
+
+    output =
+      signals
+      |> Enum.filter(&(Jido.Harness.Signal.kind(&1) == :process_stdout))
+      |> Enum.map(& &1.data["payload"]["data"])
+      |> IO.iodata_to_binary()
+
     "escript-native-ok\n" = output
     IO.puts("PACKAGE_CONSUMER_OK")
   end

@@ -2,7 +2,7 @@ defmodule Jido.Harness.RemoteProcessDriverTest do
   use ExUnit.Case, async: false
 
   import Jido.Harness.TestHelpers
-  alias Jido.Harness.{Error, ProcessSpec}
+  alias Jido.Harness.{Error, ProcessSpec, Signal}
   alias Jido.Harness.ProcessDriver.Erlexec
 
   defmodule RemoteDriver do
@@ -51,8 +51,8 @@ defmodule Jido.Harness.RemoteProcessDriverTest do
     assert {:ok, id} = Jido.Harness.Process.start(spec)
     assert_receive {:remote_spec, %ProcessSpec{cwd: ^cwd}}, 1_000
     assert {:ok, %{state: :exited, exit_status: 0}} = Jido.Harness.Process.await(id, 5_000)
-    assert {:ok, events} = Jido.Harness.Process.replay(id)
-    assert Enum.any?(events, &(&1.type == :stdout))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id)
+    assert Enum.any?(signals, &(Signal.kind(&1) == :process_stdout))
     assert :ok = Jido.Harness.Process.prune(id)
   end
 
@@ -105,8 +105,8 @@ defmodule Jido.Harness.RemoteProcessDriverTest do
     assert info.state == :failed
     assert info.os_pid == nil
     assert %Error{category: :validation} = info.error
-    assert {:ok, events} = Jido.Harness.Process.replay(id)
-    refute Enum.any?(events, &(&1.type == :started))
+    assert {:ok, signals} = Jido.Harness.Process.replay(id)
+    refute Enum.any?(signals, &(Signal.kind(&1) == :process_started))
     assert :ok = Jido.Harness.Process.prune(id)
     refute Enum.any?(Jido.Harness.Process.list(), &(&1.process_id == id))
   end

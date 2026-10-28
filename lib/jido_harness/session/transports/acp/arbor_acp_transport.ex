@@ -70,7 +70,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   @moduledoc false
   use GenServer
 
-  alias Jido.Harness.{ProcessEvent, Redaction, TextTail}
+  alias Jido.Harness.{Redaction, Signal, TextTail}
   alias Jido.Harness.SessionAdapters.ACP.ArborACPTransport
   alias Jido.Harness.SessionAdapters.ACP.FrameBuffer
 
@@ -161,15 +161,15 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
     reader =
       Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
         chunk_bytes = min(16_384, ArborACPTransport.max_frame_bytes())
-        Enum.each(state.stream, &deliver_event(parent, &1, chunk_bytes))
+        Enum.each(state.stream, &deliver_signal(parent, &1, chunk_bytes))
       end)
 
     {:noreply, %{state | reader: reader}}
   end
 
   @impl true
-  def handle_call({:process_event, event}, from, state) do
-    {:noreply, state} = handle_info({:acp_transport_process_event, event}, state)
+  def handle_call({:process_signal, signal}, from, state) do
+    {:noreply, state} = handle_info({:acp_transport_process_signal, signal}, state)
 
     cond do
       state.status != :open -> {:reply, {:error, :closed}, state}
@@ -225,37 +225,14 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   end
 
   @impl true
-  def handle_info({:acp_transport_process_event, _event}, %{status: status} = state) when status != :open,
+  def handle_info({:acp_transport_process_signal, _signal}, %{status: status} = state) when status != :open,
     do: {:noreply, state}
 
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: :stdout, data: data}}, state) do
-    case FrameBuffer.feed(state.buffer, data, ArborACPTransport.max_frame_bytes()) do
-      {:ok, frames, buffer} ->
-        {frames, state} = Enum.flat_map_reduce(frames, %{state | buffer: buffer}, &inspect_frame/2)
-        {:noreply, enqueue_frames(state, frames)}
+  def handle_info({:acp_transport_process_signal, %Jido.Signal{} = signal}, state) do
+    kind = Signal.kind(signal)
+    data = process_data(signal)
 
-      {:error, reason} ->
-        {:noreply, stop_for_process_event(state, :failed, reason)}
-    end
-  end
-
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: :replay_gap}}, state),
-    do: {:noreply, stop_for_process_event(state, :failed, :output_gap)}
-
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: :stderr, data: data}}, state) do
-    send(state.listener, {:acp_process_stderr, Redaction.redact(data, state.redaction)})
-    {:noreply, %{state | stderr: TextTail.append(state.stderr, data)}}
-  end
-
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: :started} = event}, state) do
-    {:noreply, record_lifecycle(state, event)}
-  end
-
-  def handle_info({:acp_transport_process_event, %ProcessEvent{type: type, data: data} = event}, state)
-      when type in [:failed, :timed_out, :exited, :cancelled] do
-    state = record_lifecycle(state, event)
-    details = diagnostics(state, type, data)
-    {:noreply, stop_for_process_event(state, type, details)}
+    handle_process_signal(kind, data, signal, state)
   end
 
   def handle_info({ref, _result}, %{reader: %{ref: ref}} = state) do
@@ -263,7 +240,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
 
     state =
       if state.status == :open,
-        do: stop_for_process_event(state, :stream_ended, nil),
+        do: stop_for_process_signal(state, :stream_ended, nil),
         else: state
 
     {:noreply, %{state | reader: nil}}
@@ -272,7 +249,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{reader: %{ref: ref}} = state) do
     state =
       if state.status == :open,
-        do: stop_for_process_event(state, :reader_exit, reason),
+        do: stop_for_process_signal(state, :reader_exit, reason),
         else: state
 
     {:noreply, %{state | reader: nil}}
@@ -290,6 +267,37 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp handle_process_signal(:process_stdout, data, _signal, state) do
+    case FrameBuffer.feed(state.buffer, data, ArborACPTransport.max_frame_bytes()) do
+      {:ok, frames, buffer} ->
+        {frames, state} = Enum.flat_map_reduce(frames, %{state | buffer: buffer}, &inspect_frame/2)
+        {:noreply, enqueue_frames(state, frames)}
+
+      {:error, reason} ->
+        {:noreply, stop_for_process_signal(state, :failed, reason)}
+    end
+  end
+
+  defp handle_process_signal(:replay_gap, _data, _signal, state),
+    do: {:noreply, stop_for_process_signal(state, :failed, :output_gap)}
+
+  defp handle_process_signal(:process_stderr, data, _signal, state) do
+    send(state.listener, {:acp_process_stderr, Redaction.redact(data, state.redaction)})
+    {:noreply, %{state | stderr: TextTail.append(state.stderr, data)}}
+  end
+
+  defp handle_process_signal(:process_started, _data, signal, state) do
+    {:noreply, record_lifecycle(state, signal)}
+  end
+
+  defp handle_process_signal(kind, data, signal, state)
+       when kind in [:process_failed, :process_timed_out, :process_exited, :process_cancelled] do
+    type = kind |> Atom.to_string() |> String.replace_prefix("process_", "") |> String.to_existing_atom()
+    state = record_lifecycle(state, signal)
+    details = diagnostics(state, type, data)
+    {:noreply, stop_for_process_signal(state, type, details)}
+  end
 
   @impl true
   def terminate(_reason, state) do
@@ -319,15 +327,19 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
       else: manager.stream_process(id)
   end
 
-  defp deliver_event(parent, %ProcessEvent{type: :stdout, data: data} = event, chunk_bytes)
-       when byte_size(data) > chunk_bytes do
+  defp deliver_signal(
+         parent,
+         %Jido.Signal{data: %{"payload" => %{"data" => data}}} = signal,
+         chunk_bytes
+       )
+       when is_binary(data) and byte_size(data) > chunk_bytes do
     <<chunk::binary-size(^chunk_bytes), rest::binary>> = data
-    deliver_event(parent, %{event | data: chunk}, chunk_bytes)
-    deliver_event(parent, %{event | data: rest}, chunk_bytes)
+    deliver_signal(parent, put_process_data(signal, chunk), chunk_bytes)
+    deliver_signal(parent, put_process_data(signal, rest), chunk_bytes)
   end
 
-  defp deliver_event(parent, event, _chunk_bytes) do
-    case GenServer.call(parent, {:process_event, event}, :infinity) do
+  defp deliver_signal(parent, signal, _chunk_bytes) do
+    case GenServer.call(parent, {:process_signal, signal}, :infinity) do
       :ok -> :ok
       _closed -> exit(:normal)
     end
@@ -403,7 +415,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
     bytes = Enum.reduce(frames, state.frame_bytes, &(frame_cost(&1) + &2))
 
     if bytes > state.buffer_limit do
-      stop_for_process_event(state, :failed, :frame_buffer_full)
+      stop_for_process_signal(state, :failed, :frame_buffer_full)
     else
       queue = Enum.reduce(frames, state.frames, &:queue.in(&1, &2))
       %{state | frames: queue, frame_bytes: bytes}
@@ -412,9 +424,26 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
 
   defp frame_cost(frame), do: byte_size(frame) + 64
 
-  defp record_lifecycle(state, event) do
-    entry = %{"type" => Atom.to_string(event.type), "sequence" => event.sequence, "data" => event.data}
+  defp record_lifecycle(state, signal) do
+    type = signal |> Signal.kind() |> Atom.to_string() |> String.replace_prefix("process_", "")
+
+    entry = %{
+      "type" => type,
+      "sequence" => Signal.sequence(signal),
+      "data" => process_data(signal)
+    }
+
     %{state | lifecycle: Enum.take(state.lifecycle ++ [entry], -@lifecycle_limit)}
+  end
+
+  defp process_data(%Jido.Signal{data: %{"payload" => %{"data" => data}}}), do: decode_process_data(data)
+  defp process_data(%Jido.Signal{}), do: nil
+
+  defp decode_process_data(%{"encoding" => "base64", "data" => data}), do: Base.decode64!(data)
+  defp decode_process_data(data), do: data
+
+  defp put_process_data(%Jido.Signal{} = signal, data) do
+    put_in(signal.data["payload"]["data"], data)
   end
 
   defp diagnostics(state, type, data) do
@@ -446,13 +475,13 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
     end)
   end
 
-  defp stop_for_process_event(%{status: :open} = state, type, data) do
+  defp stop_for_process_signal(%{status: :open} = state, type, data) do
     waiting? = not is_nil(state.waiter)
     state = close_state(state, {:process_stopped, type, data}, false)
     if waiting?, do: notify_process_stopped(state, type, data), else: state
   end
 
-  defp stop_for_process_event(state, _type, _data), do: state
+  defp stop_for_process_signal(state, _type, _data), do: state
 
   defp close_state(state, reason, clear_frames?) do
     if state.waiter, do: GenServer.reply(state.waiter, {:error, receive_error(reason)})

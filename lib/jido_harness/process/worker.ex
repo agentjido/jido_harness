@@ -2,7 +2,8 @@ defmodule Jido.Harness.ProcessWorker do
   @moduledoc false
   use GenServer, restart: :temporary
 
-  alias Jido.Harness.{Buffer, EventLog, ProcessEvent, ProcessInfo, Redaction, Waiters}
+  alias Jido.Harness.{Buffer, ProcessInfo, Redaction, Signal, SignalLog, Waiters}
+  alias Jido.Harness.Process.DriverMessage
 
   @default_grace_ms 5_000
   @default_output_drain_ms 50
@@ -20,7 +21,7 @@ defmodule Jido.Harness.ProcessWorker do
     now = timestamp()
     manager_config = Application.get_env(:jido_harness, :process_manager, %{}) |> Map.new()
     memory_bytes = Map.get(spec.retention, :memory_bytes, Map.get(manager_config, :memory_bytes, 1_048_576))
-    event_log = EventLog.open(:process, id, Map.put_new(spec.retention, :memory_bytes, memory_bytes))
+    signal_log = SignalLog.open(:process, id, Map.put_new(spec.retention, :memory_bytes, memory_bytes))
 
     state = %{
       id: id,
@@ -36,7 +37,7 @@ defmodule Jido.Harness.ProcessWorker do
       error: nil,
       sequence: 0,
       buffer: Buffer.new(memory_bytes),
-      event_log: event_log,
+      signal_log: signal_log,
       runtime_timer: nil,
       runtime_token: nil,
       idle_timer: nil,
@@ -86,15 +87,15 @@ defmodule Jido.Harness.ProcessWorker do
     do: {:noreply, %{state | waiters: Waiters.add(state.waiters, request_ref, from)}}
 
   def handle_call({:replay, cursor, limit}, _from, state) do
-    {events, state} = replay_records(state, cursor, limit)
-    {:reply, {:ok, events}, state}
+    {signals, state} = replay_records(state, cursor, limit)
+    {:reply, {:ok, signals}, state}
   end
 
   def handle_call({:replay_page, cursor, limits}, _from, state) do
-    {page, event_log} =
-      EventLog.replay(state.event_log, cursor, limits.max_events, limits.max_bytes, &record_to_event(state.id, &1))
+    {page, signal_log} =
+      SignalLog.replay(state.signal_log, cursor, limits.max_signals, limits.max_bytes, &record_to_signal(state.id, &1))
 
-    {:reply, {:ok, page}, %{state | event_log: event_log}}
+    {:reply, {:ok, page}, %{state | signal_log: signal_log}}
   end
 
   def handle_call({:live_output, _cursor, _limit}, _from, %{output_waiter: waiter} = state)
@@ -104,12 +105,20 @@ defmodule Jido.Harness.ProcessWorker do
   def handle_call({:live_output, cursor, limit}, from, state) do
     cond do
       cursor < state.sequence ->
-        events = state.buffer |> Buffer.events() |> Enum.filter(&(&1.sequence > cursor)) |> Enum.take(limit)
+        signals =
+          state.buffer
+          |> Buffer.signals()
+          |> Enum.filter(&(Signal.sequence(&1) > cursor))
+          |> Enum.take(limit)
 
-        case events do
-          [first | _] when first.sequence == cursor + 1 -> {:reply, {:ok, events}, state}
-          [first | _] -> {:reply, {:gap, first.sequence}, state}
-          [] -> {:reply, {:gap, state.sequence + 1}, state}
+        case signals do
+          [first | _] ->
+            if Signal.sequence(first) == cursor + 1,
+              do: {:reply, {:ok, signals}, state},
+              else: {:reply, {:gap, Signal.sequence(first)}, state}
+
+          [] ->
+            {:reply, {:gap, state.sequence + 1}, state}
         end
 
       state.status in @terminal_statuses ->
@@ -148,7 +157,7 @@ defmodule Jido.Harness.ProcessWorker do
   def handle_call(:kill, _from, state), do: {:reply, :ok, state}
 
   def handle_call(:prune, _from, state) when state.status in [:exited, :failed, :cancelled, :timed_out] do
-    case EventLog.remove(state.event_log) do
+    case SignalLog.remove(state.signal_log) do
       :ok -> {:stop, :normal, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -234,65 +243,50 @@ defmodule Jido.Harness.ProcessWorker do
   @impl true
   def terminate(_reason, state) do
     if state.status in [:starting, :running, :stopping], do: signal(state, :sigkill)
-    EventLog.close(state.event_log)
+    SignalLog.close(state.signal_log)
   end
 
   defp append(state, type, stream, data) do
     sequence = state.sequence + 1
 
-    event = %ProcessEvent{
-      process_id: state.id,
-      sequence: sequence,
-      timestamp: timestamp(),
+    message = %DriverMessage{
       type: type,
+      timestamp: timestamp(),
       stream: stream,
       data: data,
       metadata: %{}
     }
 
-    {buffer, event_log} = EventLog.append(state.buffer, state.event_log, event, state.secrets)
+    {:ok, signal} = Signal.from_process(message, state.id, sequence)
+    {buffer, signal_log} = SignalLog.append(state.buffer, state.signal_log, signal, state.secrets)
     :telemetry.execute([:jido, :harness, :process, type], %{count: 1}, %{process_id: state.id})
 
-    %{state | sequence: sequence, buffer: buffer, event_log: event_log}
-    |> deliver_output(event)
+    %{state | sequence: sequence, buffer: buffer, signal_log: signal_log}
+    |> deliver_output(signal)
   end
 
-  defp deliver_output(%{output_waiter: nil} = state, _event), do: state
+  defp deliver_output(%{output_waiter: nil} = state, _signal), do: state
 
-  defp deliver_output(%{output_waiter: {from, monitor}} = state, event) do
+  defp deliver_output(%{output_waiter: {from, monitor}} = state, signal) do
     Process.demonitor(monitor, [:flush])
-    GenServer.reply(from, {:ok, [event]})
+    GenServer.reply(from, {:ok, [signal]})
     %{state | output_waiter: nil}
   end
 
   defp replay_records(state, cursor, limit) do
-    {page, event_log} = EventLog.replay(state.event_log, cursor, limit, 1_048_576, &record_to_event(state.id, &1))
-    events = EventLog.events(page, &Function.identity/1, &gap_event(state.id, &1))
-    {events, %{state | event_log: event_log}}
+    {page, signal_log} = SignalLog.replay(state.signal_log, cursor, limit, 1_048_576, &record_to_signal(state.id, &1))
+    signals = SignalLog.signals(page, &Function.identity/1, &gap_signal(state.id, &1))
+    {signals, %{state | signal_log: signal_log}}
   end
 
-  defp gap_event(id, gap) do
-    %ProcessEvent{
-      process_id: id,
-      sequence: gap.to,
-      timestamp: timestamp(),
-      type: :replay_gap,
-      data: %{
-        "available_from" => gap.to + 1,
-        "from_sequence" => gap.from,
-        "to_sequence" => gap.to,
-        "reason" => Atom.to_string(gap.reason)
-      }
-    }
+  defp gap_signal(id, gap), do: Signal.replay_gap(:process, id, gap)
+
+  defp record_to_signal(_id, %Jido.Signal{} = signal), do: signal
+
+  defp record_to_signal(_id, %{"format_version" => 2, "signal" => wire}) do
+    {:ok, signal} = Jido.Signal.Catalog.decode(Signal.catalog(), wire)
+    signal
   end
-
-  defp record_to_event(_id, %ProcessEvent{} = event), do: event
-  defp record_to_event(_id, record) when is_map_key(record, "process_id"), do: ProcessEvent.from_record(record)
-
-  defp record_to_event(id, record),
-    do: record |> stringify_record_keys() |> Map.put_new("process_id", id) |> ProcessEvent.from_record()
-
-  defp stringify_record_keys(record), do: Map.new(record, fn {key, value} -> {to_string(key), value} end)
 
   defp begin_stop(state, reason) when state.status in [:starting, :running, :stopping] do
     _ = signal(state, :sigint)
@@ -430,8 +424,8 @@ defmodule Jido.Harness.ProcessWorker do
       os_pid: state.os_pid,
       exit_status: state.exit_status,
       error: state.error,
-      journal_dir: EventLog.dir(state.event_log),
-      replay_store: EventLog.info(state.event_log),
+      journal_dir: SignalLog.dir(state.signal_log),
+      replay_store: SignalLog.info(state.signal_log),
       output_cursor: state.sequence,
       metadata: state.spec.metadata
     }

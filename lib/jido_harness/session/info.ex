@@ -53,7 +53,7 @@ defmodule Jido.Harness.SessionInfo do
     end
   end
 
-  @doc "Returns whether the session has emitted its terminal lifecycle event."
+  @doc "Returns whether the session has emitted its terminal lifecycle Signal."
   @spec terminal?(t()) :: boolean()
   def terminal?(%__MODULE__{state: state}), do: state in [:closed, :failed, :cancelled]
 end

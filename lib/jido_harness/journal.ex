@@ -17,8 +17,8 @@ defmodule Jido.Harness.Journal do
               segment_bytes: Zoi.integer() |> Zoi.default(8 * 1_024 * 1_024),
               current_bytes: Zoi.integer() |> Zoi.default(0),
               total_bytes: Zoi.integer() |> Zoi.default(0),
-              retained_events: Zoi.integer() |> Zoi.default(0),
-              max_events: Zoi.integer() |> Zoi.default(1_000_000),
+              retained_signals: Zoi.integer() |> Zoi.default(0),
+              max_signals: Zoi.integer() |> Zoi.default(1_000_000),
               disk_limit_bytes: Zoi.integer() |> Zoi.default(256 * 1_024 * 1_024),
               failed?: Zoi.boolean() |> Zoi.default(false),
               read_failed?: Zoi.boolean() |> Zoi.default(false),
@@ -55,7 +55,7 @@ defmodule Jido.Harness.Journal do
            dir: dir,
            segment_bytes: Map.get(config, :segment_bytes, 8 * 1_024 * 1_024),
            disk_limit_bytes: Map.get(config, :disk_limit_bytes, 256 * 1_024 * 1_024),
-           max_events: Map.get(config, :max_events, 1_000_000)
+           max_signals: Map.get(config, :max_signals, 1_000_000)
          },
          {:ok, state} <- load_or_create(state) do
       {:ok, state}
@@ -100,8 +100,8 @@ defmodule Jido.Harness.Journal do
         state
         | current_bytes: state.current_bytes + byte_size(line),
           total_bytes: state.total_bytes + byte_size(line),
-          retained_events: state.retained_events + 1,
-          available_from: if(state.retained_events == 0, do: sequence, else: state.available_from),
+          retained_signals: state.retained_signals + 1,
+          available_from: if(state.retained_signals == 0, do: sequence, else: state.available_from),
           latest_sequence: sequence,
           segments: Map.update!(state.segments, state.segment, &Index.append(&1, sequence, byte_size(line)))
       }
@@ -153,7 +153,7 @@ defmodule Jido.Harness.Journal do
         end)
       end
 
-    {events, state, stats} =
+    {records, state, stats} =
       case result do
         {:ok, acc} ->
           {Enum.reverse(acc.records), %{state | read_failed?: false}, acc}
@@ -166,7 +166,7 @@ defmodule Jido.Harness.Journal do
     measurements =
       stats
       |> Map.take([:decoded_records, :read_bytes, :segments_opened])
-      |> Map.merge(%{duration: System.monotonic_time() - started, returned_records: length(events)})
+      |> Map.merge(%{duration: System.monotonic_time() - started, returned_records: length(records)})
 
     :telemetry.execute([:jido, :harness, :journal, :replay], measurements, %{
       journal_dir: state.dir,
@@ -175,7 +175,7 @@ defmodule Jido.Harness.Journal do
       read_failed?: state.read_failed?
     })
 
-    {events, state}
+    {records, state}
   end
 
   defp read_segment(segment, cursor, acc) do
@@ -263,7 +263,7 @@ defmodule Jido.Harness.Journal do
   defp maybe_rotate(%__MODULE__{} = state, incoming)
        when state.current_bytes + incoming <= state.segment_bytes and
               state.current_bytes + incoming <= state.disk_limit_bytes do
-    if Map.fetch!(state.segments, state.segment).count < state.max_events,
+    if Map.fetch!(state.segments, state.segment).count < state.max_signals,
       do: {:ok, state},
       else: create_segment(%{state | segment: state.segment + 1})
   end
@@ -311,7 +311,7 @@ defmodule Jido.Harness.Journal do
                 path: path,
                 current_bytes: segment.bytes,
                 total_bytes: state.total_bytes + segment.bytes,
-                retained_events: state.retained_events + segment.count,
+                retained_signals: state.retained_signals + segment.count,
                 latest_sequence: max(state.latest_sequence, segment.last),
                 segments: Map.put(state.segments, number, segment)
             }
@@ -333,7 +333,7 @@ defmodule Jido.Harness.Journal do
   end
 
   defp prune(state)
-       when state.total_bytes <= state.disk_limit_bytes and state.retained_events <= state.max_events,
+       when state.total_bytes <= state.disk_limit_bytes and state.retained_signals <= state.max_signals,
        do: state
 
   defp prune(%__MODULE__{} = state) do
@@ -351,7 +351,7 @@ defmodule Jido.Harness.Journal do
             prune(%{
               state
               | total_bytes: max(0, state.total_bytes - oldest.bytes),
-                retained_events: max(0, state.retained_events - oldest.count),
+                retained_signals: max(0, state.retained_signals - oldest.count),
                 available_from: available_from,
                 segments: Map.delete(state.segments, number)
             })

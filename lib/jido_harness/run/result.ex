@@ -4,12 +4,12 @@ defmodule Jido.Harness.RunResult do
 
   `status` is `:completed`, `:failed`, or `:cancelled`. `text` is a bounded
   output tail; when `text_truncated?` is true, cursor replay is the source for
-  the complete retained event sequence. A successful structured run also sets
+  the complete retained Signal sequence. A successful structured run also sets
   `structured_output` to a map containing its `schema_id` and validated
   `value`. Optional usage depends on provider capability.
   """
 
-  alias Jido.Harness.{Error, Event}
+  alias Jido.Harness.Error
 
   @schema Zoi.struct(
             __MODULE__,
@@ -22,7 +22,7 @@ defmodule Jido.Harness.RunResult do
               text_truncated?: Zoi.boolean() |> Zoi.default(false),
               structured_output: Zoi.map() |> Zoi.nullish(),
               usage: Zoi.map() |> Zoi.default(%{}),
-              events: Zoi.array(Event.schema()) |> Zoi.default([]),
+              signals: Zoi.array(Zoi.struct(Jido.Signal)) |> Zoi.default([]),
               metadata: Zoi.map() |> Zoi.default(%{}),
               error: Zoi.any() |> Zoi.nullish()
             },

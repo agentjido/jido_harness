@@ -43,8 +43,8 @@ defmodule Jido.Harness.Session do
   @spec stream(String.t(), keyword()) :: Jido.Harness.result(term())
   def stream(session_id, options \\ []), do: SessionManager.stream(session_id, options)
 
-  @doc "Replays a bounded page of session events after a cursor."
-  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.Event.t()])
+  @doc "Replays a bounded page of session Signals after a cursor."
+  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Signal.t()])
   def replay(session_id, options \\ []), do: SessionManager.replay(session_id, options)
 
   @doc "Returns a replay page with records, gap ranges, and the next cursor."

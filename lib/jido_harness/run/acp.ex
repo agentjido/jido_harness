@@ -1,7 +1,8 @@
 defmodule Jido.Harness.Run.ACP do
   @moduledoc false
 
-  alias Jido.Harness.{ApprovalResponse, Error, Event, ID, RunRequest, SessionRequest, TurnRequest}
+  alias Jido.Harness.{ApprovalResponse, Error, ID, RunRequest, SessionRequest, TurnRequest}
+  alias Jido.Harness.Adapter.Message
   alias Jido.Harness.SessionAdapters.ACP
 
   @session_fields [
@@ -140,53 +141,52 @@ defmodule Jido.Harness.Run.ACP do
 
   defp next_event(state) do
     receive do
-      {:session_adapter_event, %Event{type: :approval_requested} = event} ->
+      {:session_adapter_message, %Message{type: :approval_requested} = message} ->
         response = approval_response(state.approval_mode)
 
-        case ACP.respond_approval(state.handle, event.request_id, response) do
+        case ACP.respond_approval(state.handle, message.request_id, response) do
           :ok ->
             resolved =
-              Event.new!(
+              Message.new!(
                 type: :approval_resolved,
-                provider: event.provider,
-                provider_session_id: event.provider_session_id,
-                turn_id: event.turn_id,
-                request_id: event.request_id,
+                provider_session_id: message.provider_session_id,
+                turn_id: message.turn_id,
+                request_id: message.request_id,
                 payload: %{
                   "decision" => Atom.to_string(response.decision),
                   "scope" => Atom.to_string(response.scope)
                 }
               )
 
-            {[event, resolved], state}
+            {[message, resolved], state}
 
           {:error, reason} ->
-            {[run_failed(event, "could not resolve ACP approval", reason)], %{state | done?: true}}
+            {[run_failed(message, "could not resolve ACP approval", reason)], %{state | done?: true}}
         end
 
-      {:session_adapter_event, %Event{} = event} ->
-        case run_event(event) do
-          %Event{type: type} = run_event when type in [:run_completed, :run_failed, :run_cancelled] ->
-            {[run_event], %{state | done?: true}}
+      {:session_adapter_message, %Message{} = message} ->
+        case run_message(message) do
+          %Message{type: type} = run_message when type in [:run_completed, :run_failed, :run_cancelled] ->
+            {[run_message], %{state | done?: true}}
 
-          run_event ->
-            {[run_event], state}
+          run_message ->
+            {[run_message], state}
         end
 
       {:DOWN, monitor, :process, handle, reason} when monitor == state.monitor and handle == state.handle ->
-        event = Event.new!(type: :run_failed, provider: :acp, payload: %{"error" => inspect(reason)})
-        {[event], %{state | done?: true}}
+        message = Message.new!(type: :run_failed, payload: %{"error" => inspect(reason)})
+        {[message], %{state | done?: true}}
     end
   end
 
-  defp run_event(%Event{type: :turn_completed} = event), do: %{event | type: :run_completed}
-  defp run_event(%Event{type: :turn_interrupted} = event), do: %{event | type: :run_cancelled}
-  defp run_event(%Event{type: :turn_failed} = event), do: %{event | type: :run_failed}
-  defp run_event(event), do: event
+  defp run_message(%Message{type: :turn_completed} = message), do: %{message | type: :run_completed}
+  defp run_message(%Message{type: :turn_interrupted} = message), do: %{message | type: :run_cancelled}
+  defp run_message(%Message{type: :turn_failed} = message), do: %{message | type: :run_failed}
+  defp run_message(message), do: message
 
-  defp run_failed(event, message, reason) do
+  defp run_failed(adapter_message, message, reason) do
     %{
-      event
+      adapter_message
       | type: :run_failed,
         request_id: nil,
         payload: %{"error" => message, "reason" => inspect(reason)}

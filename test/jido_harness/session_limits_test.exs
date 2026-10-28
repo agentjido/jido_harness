@@ -1,6 +1,7 @@
 defmodule Jido.Harness.SessionLimitsTest do
   use ExUnit.Case, async: true
-  alias Jido.Harness.{Buffer, Event, MemoryHarness, SessionRequest, SessionWorker, TurnRequest}
+  alias Jido.Harness.{Buffer, MemoryHarness, SessionRequest, SessionWorker, SignalFactory, TurnRequest}
+  alias Jido.Harness.Adapter.Message
   alias Jido.Harness.Session.{ActiveTurn, Lifecycle}
 
   test "all memory limits reject invalid values and accept string keys" do
@@ -60,27 +61,27 @@ defmodule Jido.Harness.SessionLimitsTest do
 
     active = ActiveTurn.new("current", TurnRequest.new!("fixture"), 1_024)
     state = %{state | active: active, status: :running}
-    event = Event.new!(type: :output_text_delta, provider: :test, turn_id: "old", payload: %{"text" => "stale"})
-    assert {:noreply, updated} = SessionWorker.handle_info({:session_adapter_event, event}, state)
+    message = Message.new!(type: :output_text_delta, turn_id: "old", payload: %{"text" => "stale"})
+    assert {:noreply, updated} = SessionWorker.handle_info({:session_adapter_message, message}, state)
     assert updated.active == active
 
     approval =
-      Event.new!(type: :approval_requested, provider: :test, turn_id: "old", request_id: "old-approval", payload: %{})
+      Message.new!(type: :approval_requested, turn_id: "old", request_id: "old-approval", payload: %{})
 
     updated = Lifecycle.handle_approval_request(updated, approval)
     assert updated.pending_approvals == %{}
-    assert List.last(Buffer.events(updated.buffer)).payload["kind"] == "stale_approval_denied"
+    assert SignalFactory.payload(List.last(Buffer.signals(updated.buffer)))["kind"] == "stale_approval_denied"
   end
 
   test "approval admission is bounded and duplicate requests do not consume capacity" do
     state = MemoryHarness.state(%{max_pending_approvals: 1})
-    first = Event.new!(type: :approval_requested, provider: :test, request_id: "first", payload: %{})
+    first = Message.new!(type: :approval_requested, request_id: "first", payload: %{})
     state = Lifecycle.handle_approval_request(state, first)
     assert map_size(Lifecycle.handle_approval_request(state, first).pending_approvals) == 1
     next = %{first | request_id: "second"}
     state = Lifecycle.handle_approval_request(state, next)
     assert Map.keys(state.pending_approvals) == ["first"]
-    assert List.last(Buffer.events(state.buffer)).payload["kind"] == "approval_limit_reached"
+    assert SignalFactory.payload(List.last(Buffer.signals(state.buffer)))["kind"] == "approval_limit_reached"
   end
 
   test "closing a queued session releases its byte accounting" do

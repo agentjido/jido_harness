@@ -1,6 +1,8 @@
 defmodule Jido.Harness.ACPProviderTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.{Signal, SignalFactory}
+
   setup do
     acp_fixture = Jido.Harness.TestHelpers.fixture_path("fake_acp_cli.py")
     original = Application.get_env(:jido_harness, :provider_config, %{})
@@ -75,7 +77,7 @@ defmodule Jido.Harness.ACPProviderTest do
 
     assert failed.status == :failed
     assert %Jido.Harness.Error{category: :configuration, details: %{option: :ephemeral}} = failed.error
-    refute Enum.any?(failed.events, &(&1.type == :output_text_delta))
+    refute Enum.any?(failed.signals, &(Signal.kind(&1) == :output_text_delta))
   end
 
   test "Codex validates isolation values and rejects ephemeral resume before startup" do
@@ -119,7 +121,7 @@ defmodule Jido.Harness.ACPProviderTest do
 
       assert result.status == :failed
       assert %Jido.Harness.Error{category: :configuration, details: %{capability: :isolation}} = result.error
-      refute Enum.any?(result.events, &(&1.type == :output_text_delta))
+      refute Enum.any?(result.signals, &(Signal.kind(&1) == :output_text_delta))
       refute File.exists?(Path.join(cwd, "isolated-result.txt"))
     end
   end
@@ -166,25 +168,16 @@ defmodule Jido.Harness.ACPProviderTest do
              Jido.Harness.Session.configure(session, %{model: "invalid"})
   end
 
-  test "results retain original ACP messages while journal replay and streams omit raw data" do
+  test "results, journal replay, and streams share normalized native Signals" do
     assert {:ok, result} = Jido.Harness.run(:grok, "fixture", await_timeout: 5_000)
-    event = Enum.find(result.events, &(&1.type == :output_text_delta))
-    assert event.payload == %{"text" => "fixture-ok"}
-    assert event.raw["jsonrpc"] == "2.0"
-    assert event.raw["method"] == "session/update"
-    assert event.raw["providerEnvelope"]["trace"] == "fixture-envelope"
-    assert event.raw["params"]["sessionId"] == result.provider_session_id
-    assert event.raw["params"]["providerParameter"] == "fixture-parameter"
-    assert event.raw["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
-    assert event.raw["params"]["update"]["providerExtension"] == %{"trace" => "fixture-trace"}
+    signal = Enum.find(result.signals, &(Signal.kind(&1) == :output_text_delta))
+    assert SignalFactory.payload(signal) == %{"text" => "fixture-ok"}
     assert {:ok, replay} = Jido.Harness.Run.replay(result.run_id, limit: 100)
-    replayed = Enum.find(replay, &(&1.sequence == event.sequence))
-    assert replayed.payload == event.payload
-    assert replayed.raw == nil
+    replayed = Enum.find(replay, &(Signal.sequence(&1) == Signal.sequence(signal)))
+    assert replayed == signal
     assert {:ok, stream} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 1)
-    streamed = Enum.find(stream, &(&1.sequence == event.sequence))
-    assert streamed.payload == event.payload
-    assert streamed.raw == nil
+    streamed = Enum.find(stream, &(Signal.sequence(&1) == Signal.sequence(signal)))
+    assert streamed == signal
   end
 
   test "all finite provider runs use the same ACP interface" do
@@ -195,7 +188,11 @@ defmodule Jido.Harness.ACPProviderTest do
       assert result.text == "fixture-ok"
       assert result.provider_session_id == "acp-fixture-session"
       assert result.usage == %{"size" => 10, "used" => 3}
-      assert Enum.any?(result.events, &match?(%{type: :provider_event, payload: %{"kind" => "acp_session_ready"}}, &1))
+
+      assert Enum.any?(result.signals, fn signal ->
+               Signal.kind(signal) == :provider_message and
+                 SignalFactory.payload(signal)["kind"] == "acp_session_ready"
+             end)
     end)
   end
 
@@ -231,11 +228,11 @@ defmodule Jido.Harness.ACPProviderTest do
     assert result.text == "fixture-ok"
     assert result.error == nil
 
-    assert {:ok, events} = Jido.Harness.Run.replay(run_id, limit: 100)
+    assert {:ok, signals} = Jido.Harness.Run.replay(run_id, limit: 100)
 
-    refute Enum.any?(events, &(&1.type == :run_failed))
-    assert Enum.count(events, &Jido.Harness.Event.run_terminal?/1) == 1
-    assert List.last(events).type == :run_completed
+    refute Enum.any?(signals, &(Signal.kind(&1) == :run_failed))
+    assert Enum.count(signals, &Signal.run_terminal?/1) == 1
+    assert Signal.kind(List.last(signals)) == :run_completed
   end
 
   defp await_ready(session, attempts \\ 100)

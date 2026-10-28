@@ -6,7 +6,7 @@ defmodule Jido.Harness.PortProcessDriverTest do
 
   import Jido.Harness.TestHelpers
 
-  alias Jido.Harness.ProcessDriver
+  alias Jido.Harness.{ProcessDriver, Signal, SignalFactory}
   alias Jido.Harness.ProcessDriver.Port, as: PortDriver
 
   setup do
@@ -174,8 +174,11 @@ defmodule Jido.Harness.PortProcessDriverTest do
   defp windows?, do: match?({:win32, _name}, :os.type())
 
   defp output(id) do
-    {:ok, events} = Jido.Harness.Process.replay(id)
-    events |> Enum.filter(&(&1.type == :stdout)) |> Enum.map_join(& &1.data)
+    {:ok, signals} = Jido.Harness.Process.replay(id)
+
+    signals
+    |> Enum.filter(&(Signal.kind(&1) == :process_stdout))
+    |> Enum.map_join(&SignalFactory.process_data/1)
   end
 
   defp await_output(id, text, attempts \\ 200)

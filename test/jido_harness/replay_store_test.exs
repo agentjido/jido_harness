@@ -71,7 +71,7 @@ defmodule Jido.Harness.ETSReplayStoreTest do
 
     {pid, ref} =
       spawn_monitor(fn ->
-        {:ok, handle} = Jido.Harness.ReplayStore.ETS.open(%{kind: :run, id: "owner", format_version: 1}, %{})
+        {:ok, handle} = Jido.Harness.ReplayStore.ETS.open(%{kind: :run, id: "owner", format_version: 2}, %{})
         send(parent, {:table, handle.data})
 
         receive do

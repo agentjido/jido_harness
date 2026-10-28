@@ -2,6 +2,7 @@ defmodule Jido.Harness.RunManagerTest do
   use ExUnit.Case, async: false
 
   import Jido.Harness.TestHelpers
+  alias Jido.Harness.{Signal, SignalFactory}
 
   setup context do
     journal_dir = Path.join(System.tmp_dir!(), "jido-harness-run-test-#{System.unique_integer([:positive])}")
@@ -21,16 +22,16 @@ defmodule Jido.Harness.RunManagerTest do
     assert result.status == :completed
     assert result.text == "fixture-ok"
     assert result.usage == %{"size" => 10, "used" => 3}
-    assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+    assert Enum.count(result.signals, &Signal.terminal?/1) == 1
 
     assert {:ok, replayed} = Jido.Harness.Run.replay(run_id, limit: 100)
-    assert Enum.map(replayed, & &1.sequence) == Enum.to_list(1..length(replayed))
-    assert Enum.count(replayed, &Jido.Harness.Event.terminal?/1) == 1
-    assert List.first(replayed).type == :run_started
-    assert List.last(replayed).type == :run_completed
+    assert Enum.map(replayed, &Signal.sequence/1) == Enum.to_list(1..length(replayed))
+    assert Enum.count(replayed, &Signal.terminal?/1) == 1
+    assert Signal.kind(List.first(replayed)) == :run_started
+    assert Signal.kind(List.last(replayed)) == :run_completed
 
     assert {:ok, stream} = Jido.Harness.Run.stream(run_id, poll_interval_ms: 1)
-    assert Enum.map(Enum.to_list(stream), & &1.sequence) == Enum.map(replayed, & &1.sequence)
+    assert Enum.map(Enum.to_list(stream), &Signal.sequence/1) == Enum.map(replayed, &Signal.sequence/1)
 
     assert {:error, %Jido.Harness.Error{category: :validation}} =
              Jido.Harness.Run.replay(run_id, cursor: -1, limit: 100)
@@ -51,7 +52,7 @@ defmodule Jido.Harness.RunManagerTest do
            } = result.error
 
     assert run_id == result.run_id
-    assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+    assert Enum.count(result.signals, &Signal.terminal?/1) == 1
   end
 
   test "failed ACP startup retains redacted stderr and lifecycle diagnostics" do
@@ -76,7 +77,7 @@ defmodule Jido.Harness.RunManagerTest do
 
     assert_process_failure(result, "fixture command failed")
     assert {:ok, replay} = Jido.Harness.Run.replay(result.run_id, limit: 100)
-    assert List.last(replay).payload["process"] == result.error.details.process
+    assert SignalFactory.payload(List.last(replay))["process"] == result.error.details.process
   end
 
   test "a timed out process does not affect the next fake ACP run" do
@@ -101,25 +102,28 @@ defmodule Jido.Harness.RunManagerTest do
                await_timeout: 5_000
              )
 
-    assert Enum.count(result.events, &(&1.type == :run_started)) == 1
-    assert Enum.count(result.events, &Jido.Harness.Event.run_terminal?/1) == 1
+    assert Enum.count(result.signals, &(Signal.kind(&1) == :run_started)) == 1
+    assert Enum.count(result.signals, &Signal.run_terminal?/1) == 1
     assert {:ok, replayed} = Jido.Harness.Run.replay(result.run_id, limit: 100)
     assert {:ok, stream} = Jido.Harness.Run.stream(result.run_id, poll_interval_ms: 1)
 
-    for events <- [result.events, replayed, Enum.to_list(stream)] do
-      opened = Enum.find(events, &(&1.payload["kind"] == "acp_session_configuration"))
-      assert opened.payload["source"] == "session_open"
-      assert hd(opened.payload["configuration"]["configOptions"])["currentValue"] == "fixture-effective-model"
-      update = Enum.find(events, &(&1.payload["kind"] == "acp_update"))
-      assert hd(update.payload["update"]["configOptions"])["currentValue"] == "fixture-effective-model"
-      refute inspect(Enum.map(events, & &1.payload)) =~ "requested-model"
+    for signals <- [result.signals, replayed, Enum.to_list(stream)] do
+      opened = Enum.find(signals, &(SignalFactory.payload(&1)["kind"] == "acp_session_configuration"))
+      assert SignalFactory.payload(opened)["source"] == "session_open"
+
+      assert hd(SignalFactory.payload(opened)["configuration"]["configOptions"])["currentValue"] ==
+               "fixture-effective-model"
+
+      update = Enum.find(signals, &(SignalFactory.payload(&1)["kind"] == "acp_update"))
+      assert hd(SignalFactory.payload(update)["update"]["configOptions"])["currentValue"] == "fixture-effective-model"
+      refute inspect(Enum.map(signals, &SignalFactory.payload/1)) =~ "requested-model"
     end
   end
 
   test "does not report a requested model as provider configuration without evidence" do
     assert {:ok, result} = Jido.Harness.run(:test, "ok", model: "requested-model", await_timeout: 5_000)
-    refute Enum.any?(result.events, &(&1.payload["kind"] == "acp_session_configuration"))
-    refute inspect(Enum.map(result.events, & &1.payload)) =~ "requested-model"
+    refute Enum.any?(result.signals, &(SignalFactory.payload(&1)["kind"] == "acp_session_configuration"))
+    refute inspect(Enum.map(result.signals, &SignalFactory.payload/1)) =~ "requested-model"
   end
 
   test "finite ACP runs resolve approvals without adding run approval state" do
@@ -128,7 +132,10 @@ defmodule Jido.Harness.RunManagerTest do
 
     assert approved.status == :completed
     assert approved.text == "approved"
-    assert Enum.any?(approved.events, &(&1.type == :approval_resolved and &1.payload["decision"] == "approve"))
+
+    assert Enum.any?(approved.signals, fn signal ->
+             Signal.kind(signal) == :approval_resolved and SignalFactory.payload(signal)["decision"] == "approve"
+           end)
 
     assert {:ok, denied} = Jido.Harness.run(:test, "approval", await_timeout: 5_000)
     assert denied.status == :completed
@@ -151,7 +158,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert String.ends_with?(String.duplicate("0123456789", 1_000), result.text)
 
     assert {:ok, events} = Jido.Harness.Run.replay(result.run_id, limit: 100)
-    assert Enum.any?(events, &(&1.type == :output_text_delta))
+    assert Enum.any?(events, &(Signal.kind(&1) == :output_text_delta))
   end
 
   test "status exposes smoke readiness and lifecycle capabilities" do
@@ -265,8 +272,8 @@ defmodule Jido.Harness.RunManagerTest do
     assert :ok = Jido.Harness.Run.cancel(run_id)
     assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
     assert result.status == :cancelled
-    assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
-    assert List.last(result.events).type == :run_cancelled
+    assert Enum.count(result.signals, &Signal.terminal?/1) == 1
+    assert Signal.kind(List.last(result.signals)) == :run_cancelled
   end
 
   test "run-level runtime and idle timeouts cover ACP streams" do
@@ -276,7 +283,7 @@ defmodule Jido.Harness.RunManagerTest do
     assert {:ok, runtime_result} = Jido.Harness.Run.await(runtime_id, 5_000)
     assert runtime_result.status == :failed
     assert %Jido.Harness.Error{category: :timeout} = runtime_result.error
-    assert List.last(runtime_result.events).type == :run_failed
+    assert Signal.kind(List.last(runtime_result.signals)) == :run_failed
 
     assert {:ok, idle_id} =
              Jido.Harness.Run.start(:test, %{prompt: "wait", idle_timeout_ms: 30})
@@ -292,7 +299,7 @@ defmodule Jido.Harness.RunManagerTest do
       assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
       assert result.status == :failed
       assert %Jido.Harness.Error{category: :execution, run_id: ^run_id} = result.error
-      assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+      assert Enum.count(result.signals, &Signal.terminal?/1) == 1
     end
   end
 
@@ -383,6 +390,6 @@ defmodule Jido.Harness.RunManagerTest do
     assert process["stderr"] =~ "[REDACTED]"
     refute inspect(result) =~ "fixture-private-token"
     assert Enum.map(process["lifecycle"], & &1["type"]) == ["started", "failed"]
-    assert Enum.count(result.events, &Jido.Harness.Event.run_terminal?/1) == 1
+    assert Enum.count(result.signals, &Signal.run_terminal?/1) == 1
   end
 end

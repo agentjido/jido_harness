@@ -9,21 +9,21 @@ not wrap telemetry in Jido Actions or Signals.
 | --- | --- | --- |
 | `[:jido, :harness, :process, event_type]` | `count` | `process_id` |
 | `[:jido, :harness, :run, :start]` | `system_time` | `run_id`, `provider` |
-| `[:jido, :harness, :run, :event]` | `count` | `run_id`, `provider`, `type` |
+| `[:jido, :harness, :run, :signal]` | `count` | `run_id`, `provider`, `type` |
 | `[:jido, :harness, :run, :stop]` | `count` | `run_id`, `provider`, `status` |
 | `[:jido, :harness, :session, :start]` | `system_time` | `session_id`, `provider`, `protocol` |
-| `[:jido, :harness, :session, :event]` | `count` | `session_id`, `provider`, `type` |
+| `[:jido, :harness, :session, :signal]` | `count` | `session_id`, `provider`, `type` |
 | `[:jido, :harness, :session, :stop]` | `count` | `session_id`, `provider`, `protocol`, `status` |
 | `[:jido, :harness, :adapter, :start]` | `system_time` | `run_id`, `provider`, `adapter` |
 | `[:jido, :harness, :adapter, :stop]` | native `duration` | `run_id`, `provider`, `adapter`, `status` |
-| `[:jido, :harness, :replay_store, :append]` | native `duration`, `retained_bytes`, `retained_events` | `adapter`, resource `kind`, storage `status` |
+| `[:jido, :harness, :replay_store, :append]` | native `duration`, `retained_bytes`, `retained_signals` | `adapter`, resource `kind`, storage `status` |
 | `[:jido, :harness, :replay_store, :read]` | native `duration`, `returned_records`, `gaps`, `bytes` | `adapter`, resource `kind`, storage `status` |
 | `[:jido, :harness, :replay_store, :error]` | `count` | `adapter`, `operation` |
 | `[:jido, :harness, :journal, :error]` | `count` | failure `reason` and sometimes `owner_id` |
 | `[:jido, :harness, :journal, :overflow]` | removed `bytes` | journal directory and next cursor |
 | `[:jido, :harness, :journal, :replay]` | native `duration`, `decoded_records`, `read_bytes`, `segments_opened`, `returned_records` | `journal_dir`, `cursor`, `limit`, `read_failed?` |
 
-Process event names end in `:started`, `:stdout`, `:stderr`, `:exited`,
+Process telemetry names end in `:started`, `:stdout`, `:stderr`, `:exited`,
 `:failed`, `:cancelled`, or `:timed_out`.
 
 Journal replay measurements describe one disk replay attempt. `read_bytes`
@@ -72,12 +72,12 @@ end
 Keep telemetry handlers fast. Export or aggregate asynchronously when the
 backend can block.
 
-## Event telemetry versus normalized events
+## Telemetry versus native Signals
 
 Telemetry describes runtime operation and is intentionally compact.
-`Jido.Harness.Event` contains the ordered provider activity intended for
-streaming and replay. Do not attempt to reconstruct a run response from
-telemetry; consume the resource event journal instead.
+Native `Jido.Signal` values contain the ordered activity intended for streaming
+and replay. Do not reconstruct a run response from telemetry. Consume the
+resource Signal stream instead.
 
 ## Sensitive data boundary
 

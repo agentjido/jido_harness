@@ -5,7 +5,7 @@ defmodule Jido.Harness.AntigravityTest do
 
   alias Jido.Harness.Adapters.Antigravity
   alias Jido.Harness.Adapters.Antigravity.Authentication
-  alias Jido.Harness.{Error, ProviderStatus, Session, SessionRequest}
+  alias Jido.Harness.{Error, ProviderStatus, Session, SessionRequest, Signal}
   import Jido.Harness.TestHelpers
 
   setup do
@@ -110,8 +110,8 @@ defmodule Jido.Harness.AntigravityTest do
     assert result.status == :failed
     assert result.text == "partial-output"
     assert %Error{message: "Antigravity ACP server crashed during the turn"} = result.error
-    assert Enum.count(result.events, &(&1.type == :run_failed)) == 1
-    refute Enum.any?(result.events, &(&1.type == :run_completed))
+    assert Enum.count(result.signals, &(Signal.kind(&1) == :run_failed)) == 1
+    refute Enum.any?(result.signals, &(Signal.kind(&1) == :run_completed))
   end
 
   test "a panic does not turn later valid session responses into errors" do
@@ -133,7 +133,7 @@ defmodule Jido.Harness.AntigravityTest do
     assert {:ok, result} = Jido.Harness.run(:antigravity, "normal", await_timeout: @await_timeout)
     assert result.status == :failed
     assert result.error.details.process["stderr"] =~ "Unsupported Antigravity ACP supervisor contract"
-    refute Enum.any?(result.events, &(&1.type == :output_text_delta))
+    refute Enum.any?(result.signals, &(Signal.kind(&1) == :output_text_delta))
   end
 
   test "child Node packages can inherit the preload without being patched", %{directory: directory} do

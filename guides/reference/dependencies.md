@@ -56,7 +56,7 @@ patch installer.
 The older Codex observation in
 [issue #71](https://github.com/agentjido/jido_harness/issues/71) had no captured
 stderr. Its cause remains unproven. Harness retains bounded process stderr
-and lifecycle events for any recurrence.
+and lifecycle Signals for any recurrence.
 
 ## Dependency audit
 

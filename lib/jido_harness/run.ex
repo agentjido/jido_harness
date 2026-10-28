@@ -5,7 +5,7 @@ defmodule Jido.Harness.Run do
   A run survives the process that starts, streams, or awaits it. Keep the
   returned run ID to inspect, reattach to, replay, cancel, or prune the run.
 
-  Events are ordered within the run and exposed through pull-based cursor
+  Signals are ordered within the run and exposed through pull-based cursor
   streams or explicit replay pages. An await timeout stops only the waiter; it
   never cancels the run.
 
@@ -51,8 +51,8 @@ defmodule Jido.Harness.Run do
   @spec stream(String.t(), keyword()) :: Jido.Harness.result(term())
   def stream(run_id, options \\ []), do: RunManager.stream(run_id, options)
 
-  @doc "Replays a bounded page of run events after a cursor."
-  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Harness.Event.t()])
+  @doc "Replays a bounded page of run Signals after a cursor."
+  @spec replay(String.t(), keyword()) :: Jido.Harness.result([Jido.Signal.t()])
   def replay(run_id, options \\ []), do: RunManager.replay(run_id, options)
 
   @doc "Returns a replay page with records, gap ranges, and the next cursor."
