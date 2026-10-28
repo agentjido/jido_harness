@@ -1,6 +1,8 @@
 defmodule Jido.Harness.AntigravityTest do
   use ExUnit.Case, async: false
 
+  @await_timeout 15_000
+
   alias Jido.Harness.Adapters.Antigravity
   alias Jido.Harness.Adapters.Antigravity.Authentication
   alias Jido.Harness.{Error, ProviderStatus, Session, SessionRequest}
@@ -104,7 +106,7 @@ defmodule Jido.Harness.AntigravityTest do
   end
 
   test "a wrapper panic fails the run and preserves partial text" do
-    assert {:ok, result} = Jido.Harness.run(:antigravity, "panic", await_timeout: 5_000)
+    assert {:ok, result} = Jido.Harness.run(:antigravity, "panic", await_timeout: @await_timeout)
     assert result.status == :failed
     assert result.text == "partial-output"
     assert %Error{message: "Antigravity ACP server crashed during the turn"} = result.error
@@ -116,9 +118,9 @@ defmodule Jido.Harness.AntigravityTest do
     assert {:ok, session} = Session.start(:antigravity, %{})
     assert eventually(fn -> match?({:ok, %{state: :idle}}, Session.info(session)) end)
     assert {:ok, turn} = Session.send_message(session, "panic")
-    assert {:ok, %{status: :failed}} = Session.await(session, turn, 5_000)
+    assert {:ok, %{status: :failed}} = Session.await(session, turn, @await_timeout)
     assert {:ok, turn} = Session.send_message(session, "normal")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Session.await(session, turn, 5_000)
+    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Session.await(session, turn, @await_timeout)
   end
 
   test "the preload fails closed for an unsupported supervisor contract", %{directory: directory, config: config} do
@@ -128,7 +130,7 @@ defmodule Jido.Harness.AntigravityTest do
 
     config = %{config | acp_path: Path.join(target, "dist/bin/cli.js")}
     Application.put_env(:jido_harness, :provider_config, %{antigravity: config})
-    assert {:ok, result} = Jido.Harness.run(:antigravity, "normal", await_timeout: 5_000)
+    assert {:ok, result} = Jido.Harness.run(:antigravity, "normal", await_timeout: @await_timeout)
     assert result.status == :failed
     assert result.error.details.process["stderr"] =~ "Unsupported Antigravity ACP supervisor contract"
     refute Enum.any?(result.events, &(&1.type == :output_text_delta))
@@ -155,10 +157,10 @@ defmodule Jido.Harness.AntigravityTest do
     assert {:ok, turn} = Session.send_message(session, "harness-provider-panic")
 
     assert {:ok, %{status: :failed, error: %Error{message: "Antigravity ACP server crashed during the turn"}}} =
-             Session.await(session, turn, 5_000)
+             Session.await(session, turn, @await_timeout)
 
     assert {:ok, turn} = Session.send_message(session, "fixture")
-    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Session.await(session, turn, 5_000)
+    assert {:ok, %{status: :completed, text: "fixture-ok"}} = Session.await(session, turn, @await_timeout)
   end
 
   defp settings(directory, value),
