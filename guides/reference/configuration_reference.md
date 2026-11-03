@@ -3,6 +3,11 @@
 Jido.Harness reads application configuration under the `:jido_harness` key.
 Request values override configured defaults.
 
+Remote Amp Orb control reads `AMP_API_KEY`, `AMP_CLI_PATH`, `AMP_URL`, and
+`JIDO_HARNESS_AMP_*` values directly from the process environment. See
+[Control Amp Orbs](../amp_orbs.md#configure-a-stateless-host). These values do
+not configure the separate Amp ACP provider.
+
 Set these values in the host application's configuration. The Harness
 repository's `config/config.exs` only configures local logging and repository
 tools. Mix does not load a dependency's configuration files into the host

@@ -16,6 +16,8 @@
 - Use `Jido.Harness.Session` for harness-owned multi-turn conversations.
 - Use `Jido.Harness.Process` for direct structured executable-plus-argv
   processes.
+- Use `Jido.Harness.Amp` to start and manage remote Amp Orb threads. Keep the
+  `AMP_API_KEY` in the host environment.
 - In a Mix escript, call `Jido.Harness.Escript.bootstrap_native/1` before
   starting `:jido_harness`.
 - Keep `run_id`, `session_id`, `turn_id`, and `process_id` distinct from a

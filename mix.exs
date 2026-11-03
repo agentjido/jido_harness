@@ -19,6 +19,7 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/runs.md",
        "guides/interactive_sessions.md",
+       "guides/amp_orbs.md",
        "guides/managed_processes.md",
        "guides/recipes/policy_jobs.md"
      ]},
@@ -85,6 +86,7 @@ defmodule Jido.Harness.MixProject do
         groups_for_modules: [
           "Core API": [
             Jido.Harness,
+            Jido.Harness.Amp,
             Jido.Harness.Run,
             Jido.Harness.Session,
             Jido.Harness.Process,
@@ -102,6 +104,11 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.ApprovalResponse,
             Jido.Harness.ProcessSpec,
             Jido.Harness.ProcessInfo
+          ],
+          "Amp Orb control": [
+            Jido.Harness.Amp.Orb,
+            Jido.Harness.Amp.OrbRequest,
+            Jido.Harness.Amp.Status
           ],
           "Signals and errors": [
             Jido.Harness.Signal,
@@ -144,8 +151,10 @@ defmodule Jido.Harness.MixProject do
         description: @description,
         files: [
           ".formatter.exs",
+          ".env.example",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
+          "examples",
           "LICENSE",
           "README.md",
           "usage-rules.md",

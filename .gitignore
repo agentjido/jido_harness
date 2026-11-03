@@ -21,6 +21,7 @@
 /doc/
 /*.tar
 erl_crash.dump
+/.env
 
 # OS
 .DS_Store

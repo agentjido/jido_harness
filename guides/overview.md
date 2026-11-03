@@ -16,6 +16,7 @@ memory and disk retention.
 | Start work and return its ID | `Jido.Harness.Run` | [Runs](runs.md#start-a-detached-run) |
 | Keep provider context across turns | `Jido.Harness.Session` | [Interactive sessions](interactive_sessions.md) |
 | Manage an arbitrary local executable | `Jido.Harness.Process` | [Managed processes](managed_processes.md) |
+| Start and manage a remote Amp Orb | `Jido.Harness.Amp` | [Amp Orbs](amp_orbs.md) |
 
 The blocking and detached APIs use the same finite-run lifecycle. Use the
 detached API when a web request, job process, or progress consumer can end
@@ -23,6 +24,9 @@ before the provider finishes.
 
 A session keeps one ACP process open for multiple turns. A managed process
 executes a local program without requiring a provider or ACP.
+
+Amp Orb control runs short local CLI commands. Amp owns the durable remote
+thread and Orb state. The Amp thread ID is not a Harness resource ID.
 
 ## Resource identities
 

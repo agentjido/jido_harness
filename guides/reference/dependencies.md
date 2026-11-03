@@ -26,6 +26,9 @@ Harness does not require provider SDKs, `jido`, `jido_shell`, Sprites, or
 Splode. Provider routing, workspace provisioning, retries, and durable job
 storage belong to the host application.
 
+Amp Orb control uses the installed Amp CLI. It does not add the Amp TypeScript
+or Python SDK. Amp keeps the durable Orb and thread state.
+
 ## Bundled native process engine
 
 Harness includes a private copy of erlexec 2.5.0 in `vendor/erlexec/`. It owns

@@ -11,6 +11,10 @@ GUI applications, releases, containers, and service managers often receive a
 different `PATH` from an interactive shell. A CLI that works in a terminal may
 therefore be unavailable to the release.
 
+Amp Orb control also resolves the Amp CLI from this environment. It uses
+`AMP_API_KEY` and optional `JIDO_HARNESS_AMP_*` defaults. See
+[Control Amp Orbs](amp_orbs.md#configure-a-stateless-host).
+
 Check from the same runtime context that will run the application:
 
 ```elixir

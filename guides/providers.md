@@ -3,6 +3,9 @@
 Harness includes eleven provider profiles. Every run and session uses ACP through
 Arbor ACP. ACP can be part of the base CLI or a separate adapter program.
 
+Remote Amp Orb control is a separate interface. It uses the Amp CLI without
+ACP and returns after Amp accepts the remote work. See [Control Amp Orbs](amp_orbs.md).
+
 Use `Jido.Harness.providers/0` to inspect the bundled declarations. These
 describe the selected Harness profile, not every feature of the base CLI.
 

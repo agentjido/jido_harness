@@ -22,6 +22,7 @@ defmodule Jido.Harness do
   * `Jido.Harness.Run` manages detached finite runs.
   * `Jido.Harness.Session` owns multi-turn conversations.
   * `Jido.Harness.Process` manages structured executable-and-argv processes.
+  * `Jido.Harness.Amp` controls Amp threads that run in remote Orbs.
 
   These resources belong to the application supervision tree rather than the
   caller that starts, streams, or awaits them. Stable harness IDs are distinct

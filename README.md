@@ -23,7 +23,7 @@ Add the dependency to your application's `mix.exs`:
 ```elixir
 def deps do
   [
-    {:jido_harness, github: "agentjido/jido_harness", branch: "main"}
+    {:jido_harness, github: "agentjido/jido_harness", branch: "release/v3"}
   ]
 end
 ```
@@ -78,6 +78,7 @@ cancel the task.
 | Start work and return later | `Jido.Harness.Run` | [Detached runs](guides/runs.md#start-a-detached-run) |
 | Keep a multi-turn conversation | `Jido.Harness.Session` | [Interactive sessions](guides/interactive_sessions.md) |
 | Manage a local executable | `Jido.Harness.Process` | [Managed processes](guides/managed_processes.md) |
+| Start and manage remote Amp Orbs | `Jido.Harness.Amp` | [Amp Orbs](guides/amp_orbs.md) |
 
 Resources have stable Harness IDs. You can inspect their state, stream or
 replay Signals, wait for completion, cancel active work, and prune retained
@@ -113,6 +114,8 @@ Generated API documentation is written to the ignored `doc/` directory.
 - [Overview](guides/overview.md): resource model and runtime guarantees.
 - [Getting started](guides/getting_started.md): one provider and one request.
 - [Operations](guides/operations.md): limits, telemetry, retention, and shutdown.
+- [Amp Orbs](guides/amp_orbs.md): stateless remote Orb control through the Amp CLI.
+- [Amp Orb scripts](examples/amp_orbs/README.md): run a `req_llm` pull request workflow.
 - [Configuration reference](guides/reference/configuration_reference.md): application settings.
 - [Escript packaging](guides/escripts.md): package the native process helper.
 - [Testing](guides/testing.md): local fixtures and optional live contracts.
