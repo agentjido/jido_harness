@@ -6,20 +6,8 @@ transports.
 
 ## Required versions
 
-The `3.0.0-rc.1` branch uses the current Jido V3 source packages for `jido`,
-`jido_action`, and `jido_signal`. During local development, use sibling path
-dependencies from the same `proj_jido_core` checkout. Published applications
-must use compatible Jido V3 releases from one source revision.
-
-The development baseline for this cutover is:
-
-| Package | Branch | Version | Revision |
-| --- | --- | --- | --- |
-| `jido_harness` | `feat/v3-native-primitives` | `3.0.0-rc.1` | based on `77465640a6e1` |
-| `jido` | `release/v3` | `3.0.0-beta.2` | `233c37d1eee8` |
-| `jido_action` | `release/v3` | `3.0.0-beta.22` | `177e7a4ce434` |
-| `jido_signal` | `release/v3` | `3.0.0-beta.5` | `7b825f1d050a` |
-| `runic` | `feat/workflow-scoped-fact-storage` | `0.1.0-alpha.12` | `2a8cffa9fa38` |
+Version 3 uses `jido_signal ~> 3.0.0-beta.5` for its public Signal types. It
+does not require the `jido` Agent runtime, `jido_action`, or `runic`.
 
 ## Native primitives
 
@@ -37,19 +25,6 @@ The development baseline for this cutover is:
 | replay-store `retained_events` | `retained_signals` |
 
 There are no aliases for the removed modules or fields.
-
-## Jido Agents
-
-Remove application-owned Harness wrappers when they only convert commands and
-facts to custom Actions or Signals. Use:
-
-- `Jido.Harness.Action.*` for typed command routes;
-- `Jido.Harness.Directive.*` for post-commit effects;
-- `Jido.Harness.Plugin` for workspace policy, ownership, idempotency, cursor
-  recovery, and Signal delivery.
-
-Keep the provider-specific Agent in the application. Do not put a Claude Code
-Agent in the Harness package. See [Jido Agent integration](../jido_agents.md).
 
 ## ACP-only execution
 
@@ -78,5 +53,3 @@ After migration:
    `result.events`.
 2. Delete old format-1 replay data or move it outside the V3 journal root.
 3. Test one finite run and one two-turn Session with a real provider.
-4. If you use a Jido Agent, test commit-before-I/O, duplicate command IDs,
-   workspace escape denial, connection ownership, quiesce, and resume.

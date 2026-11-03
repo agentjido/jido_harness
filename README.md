@@ -77,7 +77,6 @@ cancel the task.
 | Wait for one task | `Jido.Harness.run/3` | [One-shot requests](guides/runs.md#wait-for-one-run) |
 | Start work and return later | `Jido.Harness.Run` | [Detached runs](guides/runs.md#start-a-detached-run) |
 | Keep a multi-turn conversation | `Jido.Harness.Session` | [Interactive sessions](guides/interactive_sessions.md) |
-| Control CLI work from a Jido Agent | `Jido.Harness.Plugin` | [Jido Agent integration](guides/jido_agents.md) |
 | Manage a local executable | `Jido.Harness.Process` | [Managed processes](guides/managed_processes.md) |
 
 Resources have stable Harness IDs. You can inspect their state, stream or
@@ -101,9 +100,9 @@ Arbor ACP owns the ACP protocol. Jido Connect owns service API integrations.
 Application code owns provider selection, workspace setup, approval policy,
 and decisions about the result.
 
-Harness uses Jido Action, Directive, and Signal primitives. Its Run, Session,
-and Process APIs do not require a running Jido Agent. It does not depend on
-`jido_connect`. See the [architecture](guides/reference/architecture.md) and
+Harness uses `jido_signal` for its public Signal types. It does not depend on
+the `jido` Agent runtime or `jido_connect`. See the
+[architecture](guides/reference/architecture.md) and
 [dependency reference](guides/reference/dependencies.md).
 
 ## Documentation
@@ -113,7 +112,6 @@ Generated API documentation is written to the ignored `doc/` directory.
 
 - [Overview](guides/overview.md): resource model and runtime guarantees.
 - [Getting started](guides/getting_started.md): one provider and one request.
-- [Jido Agent integration](guides/jido_agents.md): typed commands, Directives, workspaces, and sessions.
 - [Operations](guides/operations.md): limits, telemetry, retention, and shutdown.
 - [Configuration reference](guides/reference/configuration_reference.md): application settings.
 - [Escript packaging](guides/escripts.md): package the native process helper.

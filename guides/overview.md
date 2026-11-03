@@ -15,7 +15,6 @@ memory and disk retention.
 | Send one request and wait | `Jido.Harness.run/3` | [Runs](runs.md#wait-for-one-run) |
 | Start work and return its ID | `Jido.Harness.Run` | [Runs](runs.md#start-a-detached-run) |
 | Keep provider context across turns | `Jido.Harness.Session` | [Interactive sessions](interactive_sessions.md) |
-| Control CLI work from an Agent | `Jido.Harness.Plugin` | [Jido Agent integration](jido_agents.md) |
 | Manage an arbitrary local executable | `Jido.Harness.Process` | [Managed processes](managed_processes.md) |
 
 The blocking and detached APIs use the same finite-run lifecycle. Use the
@@ -70,8 +69,8 @@ owns ACP messages and protocol correlation. Jido Connect owns service API
 integrations. The host application owns provider selection, workspace setup,
 approval policy, retries, and durable job records.
 
-The direct resource APIs can run without a Jido Agent. Harness does not depend
-on `jido_connect`. See the
+Harness uses `jido_signal` for its public Signal types. It does not depend on
+the `jido` Agent runtime or `jido_connect`. See the
 [architecture reference](reference/architecture.md) for the process and
 protocol boundary, and [dependencies](reference/dependencies.md) for release
 audit guidance.

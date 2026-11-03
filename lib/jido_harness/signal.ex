@@ -45,42 +45,20 @@ defmodule Jido.Harness.Signal do
     process_timed_out: Jido.Harness.Signal.Process.TimedOut
   }
 
-  @command_definitions [
-    Jido.Harness.Signal.Command.Run.Start,
-    Jido.Harness.Signal.Command.Run.Cancel,
-    Jido.Harness.Signal.Command.Run.Prune,
-    Jido.Harness.Signal.Command.Session.Start,
-    Jido.Harness.Signal.Command.Session.SendMessage,
-    Jido.Harness.Signal.Command.Session.FollowUp,
-    Jido.Harness.Signal.Command.Session.Steer,
-    Jido.Harness.Signal.Command.Session.Interrupt,
-    Jido.Harness.Signal.Command.Session.RespondApproval,
-    Jido.Harness.Signal.Command.Session.Configure,
-    Jido.Harness.Signal.Command.Session.Close,
-    Jido.Harness.Signal.Command.Session.Kill,
-    Jido.Harness.Signal.Command.Session.Prune,
-    Jido.Harness.Signal.Command.Accepted,
-    Jido.Harness.Signal.Command.Failed
-  ]
-
   @types Map.new(@definitions, fn {kind, module} -> {module.type(), kind} end)
   @run_terminal_types ~w(jido.harness.run.completed jido.harness.run.failed jido.harness.run.cancelled)
   @session_terminal_types ~w(jido.harness.session.closed jido.harness.session.failed jido.harness.session.cancelled)
   @turn_terminal_types ~w(jido.harness.turn.completed jido.harness.turn.failed jido.harness.turn.interrupted)
 
-  @doc "Returns all Harness fact and command Signal definitions."
+  @doc "Returns all Harness Signal definitions."
   @spec definitions() :: [module()]
-  def definitions, do: Map.values(@definitions) ++ @command_definitions
-
-  @doc "Returns all Harness command Signal definitions."
-  @spec command_definitions() :: [module()]
-  def command_definitions, do: @command_definitions
+  def definitions, do: Map.values(@definitions)
 
   @doc "Returns a catalog that contains every Harness Signal definition."
   @spec catalog() :: Jido.Signal.Catalog.t()
   def catalog, do: Jido.Signal.Catalog.new!(definitions())
 
-  @doc "Returns the normalized Harness kind for a fact Signal, or `nil` for a command Signal."
+  @doc "Returns the normalized Harness kind for a Signal."
   @spec kind(Jido.Signal.t()) :: atom() | nil
   def kind(%Jido.Signal{type: type}), do: Map.get(@types, type)
 
