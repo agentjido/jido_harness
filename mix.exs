@@ -19,12 +19,14 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/runs.md",
        "guides/interactive_sessions.md",
+       "guides/amp_orbs.md",
        "guides/managed_processes.md",
        "guides/recipes/policy_jobs.md"
      ]},
     {"Shared concepts",
      [
        "guides/normalization_and_data_model.md",
+       "guides/jido_v3.md",
        "guides/streaming_replay_and_retention.md",
        "guides/replay_stores.md",
        "guides/replay_store_benchmarks.md",
@@ -85,6 +87,7 @@ defmodule Jido.Harness.MixProject do
         groups_for_modules: [
           "Core API": [
             Jido.Harness,
+            Jido.Harness.Amp,
             Jido.Harness.Run,
             Jido.Harness.Session,
             Jido.Harness.Process,
@@ -102,6 +105,11 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.ApprovalResponse,
             Jido.Harness.ProcessSpec,
             Jido.Harness.ProcessInfo
+          ],
+          "Amp Orb control": [
+            Jido.Harness.Amp.Orb,
+            Jido.Harness.Amp.OrbRequest,
+            Jido.Harness.Amp.Status
           ],
           "Events and errors": [
             Jido.Harness.Event,
@@ -145,12 +153,18 @@ defmodule Jido.Harness.MixProject do
         description: @description,
         files: [
           ".formatter.exs",
+          ".env.example",
+          "examples",
           "CHANGELOG.md",
           "CONTRIBUTING.md",
           "LICENSE",
           "README.md",
           "usage-rules.md",
           "guides",
+          "integration/jido_v3/mix.exs",
+          "integration/jido_v3/mix.lock",
+          "integration/jido_v3/README.md",
+          "integration/jido_v3/test",
           "lib",
           "priv/acp",
           "vendor/erlexec",

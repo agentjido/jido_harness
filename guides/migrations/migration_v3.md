@@ -103,3 +103,10 @@ The tag keeps the historical
 [structured-output contract](https://github.com/agentjido/jido_harness/blob/v2.1.0-rc.2/docs/structured_output_execution.md),
 and [schema-isolation decision](https://github.com/agentjido/jido_harness/blob/v2.1.0-rc.2/docs/decisions/structured-output-schema-isolation.md).
 Those documents describe version 2 behavior, not the current release.
+
+## Consolidated core and branch APIs
+
+See [Jido v3 hosts](../jido_v3.md) for the checked core integration and the
+branch reconciliation. The supported candidate keeps `Event` and `ProcessEvent`.
+The former `release/v3` Signal API and stored Signal journals need an explicit
+host migration. This candidate does not convert existing journals.

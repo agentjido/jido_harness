@@ -128,3 +128,9 @@ Provider cells use live CLIs. The managed-process example runs locally.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the file map, checks, and
 release preparation.
+
+## Jido v3 hosts
+
+See [consolidated Jido integration](guides/jido_v3.md) for the checked Event,
+Signal, and Action boundary. [Amp Orb control](guides/amp_orbs.md) is a separate
+stateless API; it keeps the supervised ACP provider contract.
