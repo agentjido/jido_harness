@@ -94,3 +94,19 @@ Workspace, then update and check Jidoka dependency pins. Character and Harness
 can release independently after their shared dependencies are available.
 Migrate Hancho before claiming it supports the new Harness candidate. No
 registry publication, release, merge, or PR was part of this work.
+
+## Static config audit
+
+The final CI Credo command ran from the primary source directory, outside
+`/private/tmp` ancestry: `mix credo --min-priority higher --config-file deps/credo/.credo.exs`.
+Harness has no repository config, so this uses the packaged Credo default
+explicitly. The command passes but selects **zero** checks at that priority.
+This is the existing CI threshold, not evidence of a full source lint pass.
+
+A supplementary `mix credo --strict --config-file deps/credo/.credo.exs` ran
+69 checks. It failed with 1 warning, 38 refactoring items, 29 readability items,
+and 544 design suggestions. The warning is the pre-existing 33-field session
+state; the restored Amp code also has normal/low-priority style items. No
+threshold or repository config was reduced. Full strict-default lint is not a
+passing gate for this candidate. The package's declared CI and quality
+commands pass. The shared `/private/tmp/.credo.exs` was not changed.
