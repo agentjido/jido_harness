@@ -18,16 +18,16 @@ defmodule Jido.Harness.SessionWorker do
 
   import EventStore, only: [append: 2, append_queue_changed: 1]
 
-  def start_link({id, provider, request, adapter, acp_agent, config}) do
+  def start_link({id, provider, request, adapter, acp_agent, config, owner}) do
     GenServer.start_link(
       __MODULE__,
-      {id, provider, request, adapter, acp_agent, config},
+      {id, provider, request, adapter, acp_agent, config, owner},
       name: {:via, Registry, {Jido.Harness.SessionRegistry, id}}
     )
   end
 
   @impl true
-  def init({id, provider, request, adapter, acp_agent, config}) do
+  def init({id, provider, request, adapter, acp_agent, config, owner}) do
     Process.flag(:trap_exit, true)
     retention = Map.merge(Map.get(config, :retention, %{}) |> Map.new(), request.retention)
     memory_bytes = Map.get(retention, :memory_bytes, 1_048_576)
@@ -45,6 +45,7 @@ defmodule Jido.Harness.SessionWorker do
 
     state = %State{
       id: id,
+      owner_monitor: if(owner, do: Process.monitor(owner)),
       provider: provider,
       request: request,
       secrets: Jido.Harness.Redaction.prepare(Jido.Harness.Redaction.secrets_from_env(request.env)),
@@ -57,11 +58,19 @@ defmodule Jido.Harness.SessionWorker do
       event_log: EventLog.open(:session, id, retention)
     }
 
-    {:ok, state, {:continue, :open}}
+    {:ok, state, {:continue, {:open, owner}}}
   end
 
   @impl true
-  def handle_continue(:open, state) do
+  def handle_continue({:open, owner}, state) do
+    if is_nil(owner) or Process.alive?(owner) do
+      open_session(state)
+    else
+      {:noreply, close_owned_session(state)}
+    end
+  end
+
+  defp open_session(state) do
     state =
       append(
         state,
@@ -361,6 +370,7 @@ defmodule Jido.Harness.SessionWorker do
         response = %ApprovalResponse{
           decision: :deny,
           scope: :once,
+          strict_scope: true,
           reason: "approval timeout",
           provider_options: %{}
         }
@@ -380,6 +390,10 @@ defmodule Jido.Harness.SessionWorker do
     end
   end
 
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{owner_monitor: ref} = state) do
+    {:noreply, close_owned_session(state)}
+  end
+
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{handle_monitor: ref} = state) do
     if state.status in [:closed, :failed, :cancelled] do
       {:noreply, state}
@@ -393,6 +407,10 @@ defmodule Jido.Harness.SessionWorker do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp close_owned_session(state) do
+    Lifecycle.terminate_session(%{state | owner_monitor: nil}, :session_closed, %{"reason" => "owner_down"})
+  end
 
   defp after_approval(state) do
     cond do

@@ -173,7 +173,8 @@ defmodule Jido.Harness.Session.Lifecycle do
     })
 
     Timers.cancel_all(state)
-    %{state | status: status, finished_at: timestamp(), terminal_event: event, handle: nil}
+    if state.owner_monitor, do: Process.demonitor(state.owner_monitor, [:flush])
+    %{state | status: status, finished_at: timestamp(), terminal_event: event, handle: nil, owner_monitor: nil}
   end
 
   @doc false
@@ -264,6 +265,7 @@ defmodule Jido.Harness.Session.Lifecycle do
         response = %ApprovalResponse{
           decision: :deny,
           scope: :once,
+          strict_scope: true,
           reason: reason,
           provider_options: %{}
         }
@@ -287,6 +289,7 @@ defmodule Jido.Harness.Session.Lifecycle do
     response = %ApprovalResponse{
       decision: :deny,
       scope: :once,
+      strict_scope: true,
       reason: reason,
       provider_options: %{}
     }

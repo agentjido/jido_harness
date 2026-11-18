@@ -24,6 +24,7 @@ jobs:
     with:
       credo_command: mix credo --min-priority higher
       validate_hex_package: true
+      hex_package_command: 'MIX_ENV=package HEX_API_KEY=${HEX_API_KEY:-dry-run} mix hex.publish --dry-run --yes'
       docs_command: mix docs -f html --warnings-as-errors
       test_matrix: '[{"otp":"28","elixir":"1.19"},{"otp":"29","elixir":"1.20"}]'
       test_command: mix test
@@ -100,6 +101,6 @@ jobs:
           test/jido_harness/harness_load_test.exs
           test/jido_harness/replay_store_load_test.exs
       - name: Build the source package
-        run: mix hex.build
+        run: MIX_ENV=package mix hex.build
       - name: Test a clean package consumer, escript, and erlexec coexistence
         run: python3 test/support/fixtures/escript/verify_package.py jido_harness-*.tar

@@ -49,7 +49,7 @@ belong outside Harness.
 mix test
 mix quality
 mix docs --warnings-as-errors
-mix hex.build
+MIX_ENV=package mix hex.build
 ```
 
 `mix quality` checks formatting, compiler warnings, Credo, Dialyzer, and Doctor.
@@ -105,7 +105,7 @@ Run the four checks above and the affected live provider profiles. Review the
 
 The Hex package contains runtime source, vendored native source, provider assets, and documentation. Repository
 configuration, tests, and test fixtures stay in the source repository.
-Inspect `mix hex.build` output before publication.
+Inspect `MIX_ENV=package mix hex.build` output before publication.
 
 Do not edit `CHANGELOG.md` by hand. Release automation creates release notes
 from Git history. Use Conventional Commits, for example:

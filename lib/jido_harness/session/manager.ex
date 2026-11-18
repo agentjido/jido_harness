@@ -6,7 +6,7 @@ defmodule Jido.Harness.SessionManager do
   @max_replay_limit 10_000
 
   @doc "Validates a session request and starts its worker under the session supervisor."
-  def start(provider, request) do
+  def start(provider, request, owner) do
     with {:ok, adapter} <- Registry.lookup(provider),
          {:ok, spec} <- Registry.spec(provider),
          {:ok, acp_agent} <- require_acp_agent(spec),
@@ -18,7 +18,7 @@ defmodule Jido.Harness.SessionManager do
 
       case DynamicSupervisor.start_child(
              Jido.Harness.SessionSupervisor,
-             {SessionWorker, {id, provider, request, adapter, acp_agent, config}}
+             {SessionWorker, {id, provider, request, adapter, acp_agent, config, owner}}
            ) do
         {:ok, _pid} ->
           {:ok, id}

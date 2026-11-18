@@ -18,13 +18,21 @@ defmodule Jido.Harness.Session do
   @type request :: map() | keyword() | SessionRequest.t()
   @type turn_input :: String.t() | map() | keyword() | TurnRequest.t()
 
-  @doc "Starts a caller-independent interactive provider session."
+  @doc """
+  Starts an interactive provider session.
+
+  By default the session is caller-independent. Pass `:owner` as a local
+  process PID to close the session when that process exits.
+  """
   @spec start(Jido.Harness.provider(), request(), keyword()) :: Jido.Harness.result(String.t())
   def start(provider, request \\ %{}, options \\ [])
 
   def start(provider, request, options) when is_atom(provider) do
-    with {:ok, request} <- prepare_request(provider, request, options) do
-      SessionManager.start(provider, request)
+    with {:ok, options} <- Validation.keyword_options(options),
+         {owner, options} <- Keyword.pop(options, :owner),
+         :ok <- validate_owner(owner),
+         {:ok, request} <- prepare_request(provider, request, options) do
+      SessionManager.start(provider, request, owner)
     end
   end
 
@@ -103,6 +111,10 @@ defmodule Jido.Harness.Session do
   @doc "Removes a terminal session and its retained journal."
   @spec prune(String.t()) :: :ok | {:error, term()}
   def prune(session_id), do: SessionManager.prune(session_id)
+
+  defp validate_owner(nil), do: :ok
+  defp validate_owner(owner) when is_pid(owner) and node(owner) == node(), do: :ok
+  defp validate_owner(_owner), do: {:error, Error.validation("session owner must be a local PID")}
 
   defp prepare_request(provider, %SessionRequest{} = request, options) do
     with {:ok, options} <- Validation.options_map(options) do

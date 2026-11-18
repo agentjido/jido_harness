@@ -25,6 +25,7 @@ defmodule Jido.Harness.Session.State do
     :event_log,
     :handle,
     :handle_monitor,
+    :owner_monitor,
     :finished_at,
     :provider_session_id,
     :terminal_event,

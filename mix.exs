@@ -19,6 +19,7 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/runs.md",
        "guides/interactive_sessions.md",
+       "guides/agent_plugin.md",
        "guides/managed_processes.md",
        "guides/recipes/policy_jobs.md"
      ]},
@@ -78,6 +79,7 @@ defmodule Jido.Harness.MixProject do
       homepage_url: @source_url,
       docs: [
         main: "overview",
+        skip_code_autolink_to: &String.starts_with?(&1, "c:Jido.Agent.Extension."),
         source_ref: "v#{@version}",
         extras: @project_docs ++ Enum.flat_map(@guide_groups, &elem(&1, 1)),
         groups_for_extras: @guide_groups ++ [{"Project", @project_docs}],
@@ -138,7 +140,7 @@ defmodule Jido.Harness.MixProject do
         formatters: ["html"]
       ],
       test_coverage: [tool: ExCoveralls, export: "cov"],
-      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
+      dialyzer: [plt_add_apps: [:mix, :ex_unit, :jido, :spark]],
       # Hex packaging
       package: [
         name: :jido_harness,
@@ -206,11 +208,21 @@ defmodule Jido.Harness.MixProject do
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.31", only: [:dev, :package], runtime: false},
       {:doctor, "~> 0.21", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: [:dev, :test]},
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}
+    ] ++ jido_dependency(Mix.env())
+  end
+
+  # A compatible Core release must be available on Hex before the plugin can
+  # be distributed there. The package profile keeps standalone builds usable.
+  defp jido_dependency(:package), do: []
+
+  defp jido_dependency(_env) do
+    [
+      {:jido, github: "agentjido/jido", ref: "ec96da6015b4b1e5a1642d50651235d9d52808ec", optional: true, runtime: false}
     ]
   end
 

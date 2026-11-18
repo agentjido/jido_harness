@@ -10,7 +10,7 @@ API or subscription usage.
 mix test
 mix quality
 mix docs --warnings-as-errors
-mix hex.build
+MIX_ENV=package mix hex.build
 ```
 
 The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
@@ -80,6 +80,19 @@ end
 
 Generated tests are tagged `:integration` and have a two-hour watchdog.
 Loading Harness does not start ExUnit or execute these tests.
+
+## Verify the Jido Agent wrappers
+
+The opt-in wrapper test sends two prompts to each of Codex, Claude Code, and
+Amp. It checks text progress, follow-up context, and process cleanup when the
+Agent stops. It requires installed providers and ACP adapters, configured
+credentials, and permission to use the provider accounts. Set
+`HARNESS_AGENT_CODEX_MODEL` to override the Codex account's default model.
+
+```console
+mix jido_harness.check --providers codex,claude,amp --strict
+mix test --no-cover --include integration test/integration/agent_wrapper_live_test.exs
+```
 
 ## Select live coverage
 

@@ -616,6 +616,11 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     end
   end
 
+  defp select_permission_option(options, %{decision: decision, scope: :once, strict_scope: true}) do
+    kind = if decision == :approve, do: "allow_once", else: "reject_once"
+    Enum.find(options, &(&1["kind"] == kind))
+  end
+
   defp select_permission_option(options, %{decision: :approve, scope: :session}) do
     find_option(options, ["allow_always", "allow_session", "always", "allow_once"])
   end
