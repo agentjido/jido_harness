@@ -222,7 +222,7 @@ defmodule Jido.Harness.MixProject do
 
   defp jido_dependency(_env) do
     [
-      {:jido, github: "agentjido/jido", ref: "ec96da6015b4b1e5a1642d50651235d9d52808ec", optional: true, runtime: false}
+      {:jido, github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445", optional: true, runtime: false}
     ]
   end
 

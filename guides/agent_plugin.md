@@ -13,7 +13,7 @@ Hex build uses the `package` Mix environment until a compatible Jido V3
 release is available on Hex.
 
 ```elixir
-{:jido, github: "agentjido/jido", ref: "ec96da6015b4b1e5a1642d50651235d9d52808ec"}
+{:jido, github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445"}
 ```
 
 Harness can also run as a standalone dependency. Its optional Jido
