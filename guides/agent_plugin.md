@@ -87,4 +87,9 @@ best-effort basis. If the Agent or its plugin runtime stops, Harness closes
 its provider session. A new activation starts a new conversation. Provider
 context can also expire when the configured session idle timeout elapses.
 
-The [testing guide](testing.md) gives the opt-in command for the live wrappers.
+## Run the live wrapper tests
+
+The sample Agents share command and result routes. Each Agent sets one
+provider in its `harness` block. Read the wrapper source in
+`guides/recipes/agent_wrappers.exs` and follow the live test steps for Codex,
+Claude Code, and Amp. [Verify the Jido Agent wrappers](testing.md#verify-the-jido-agent-wrappers)
