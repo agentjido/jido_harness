@@ -1,11 +1,17 @@
 defmodule Jido.Harness.ApprovalResponse do
-  @moduledoc "Validated response to an interactive provider approval request."
+  @moduledoc """
+  Validated response to an interactive provider approval request.
+
+  Use `:strict_scope` with `scope: :once` to cancel the permission request
+  if the provider has no matching one-time option.
+  """
 
   @schema Zoi.struct(
             __MODULE__,
             %{
               decision: Zoi.enum([:approve, :deny]),
               scope: Zoi.enum([:once, :session]) |> Zoi.default(:once),
+              strict_scope: Zoi.boolean() |> Zoi.default(false),
               reason: Zoi.string() |> Zoi.nullish(),
               provider_options: Zoi.map(Zoi.union([Zoi.string(), Zoi.atom()]), Zoi.any()) |> Zoi.default(%{})
             },

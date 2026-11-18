@@ -10,7 +10,6 @@ API or subscription usage.
 mix test
 mix quality
 mix docs --warnings-as-errors
-mix hex.build
 ```
 
 The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
@@ -25,7 +24,7 @@ coverage limits, and required checks.
 
 The coverage percentage excludes imported Erlang engine source. The 70% floor
 continues to apply to Harness code. Native behavior has separate forced-error,
-process lifecycle, and package checks.
+process lifecycle, and escript checks.
 
 The default Antigravity tests use a small protocol fixture. CI also installs
 the pinned Node wrapper in a temporary directory and runs it against the fake
@@ -80,6 +79,42 @@ end
 
 Generated tests are tagged `:integration` and have a two-hour watchdog.
 Loading Harness does not start ExUnit or execute these tests.
+
+## Verify the Jido Agent wrappers
+
+Run these commands from the root of a Harness source checkout with the Jido
+Agent plugin. Install and authenticate the Codex, Claude Code, and Amp CLIs
+and their ACP adapters first. The readiness check sends no prompts. The live
+test sends two prompts per provider and uses your provider accounts.
+
+```console
+mix deps.get
+mix jido_harness.check --providers codex,claude,amp --strict
+mix test --no-cover --include integration test/integration/agent_wrapper_live_test.exs
+```
+
+If the Codex account default fails, set `HARNESS_AGENT_CODEX_MODEL` to a model
+that the installed Codex ACP adapter advertises for your account. A successful
+readiness check verifies that the CLI and ACP entry point are available. The
+live test also verifies that the account can complete a prompt.
+
+Start with `test/integration/agent_wrapper_live_test.exs`. It loads the three
+Agent definitions from `guides/recipes/agent_wrappers.exs`. Each Agent sends
+commands through `Jido.Harness.Plugin.Execute` and records result Signals in
+its state. The sample action denies permission requests. The prompts ask for
+text only.
+
+The expected result is three passing tests. Each test checks that the Agent:
+
+- Streams a text delta and receives exactly one successful terminal Signal
+  for each turn.
+- Returns a random value from the first prompt in the follow-up and opens only
+  one ACP session.
+- Closes its Harness session and ends the managed ACP process when the Agent
+  stops.
+
+For a local check that uses a fixture in place of a live provider, run
+`mix test --no-cover test/jido_harness/plugin_test.exs`.
 
 ## Select live coverage
 

@@ -86,6 +86,29 @@ defmodule Jido.Harness.ACPSessionTest do
     assert {:ok, _info} = Jido.Harness.Session.info(fast)
   end
 
+  test "owner loss closes the provider during startup and active work" do
+    for phase <- [:startup, :active] do
+      owner = spawn(fn -> receive do: (:stop -> :ok) end)
+      env = if phase == :startup, do: %{"HARNESS_FIXTURE_INITIALIZE_DELAY" => "1.0"}, else: %{}
+      assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{env: env}, owner: owner)
+
+      if phase == :active do
+        assert {:ok, _info} = await_ready(session_id)
+        assert {:ok, _turn_id} = Jido.Harness.Session.send_message(session_id, "wait")
+      end
+
+      assert eventually(fn ->
+               Enum.any?(Jido.Harness.Process.list(), &(&1.metadata[:session_id] == session_id))
+             end)
+
+      process = Enum.find(Jido.Harness.Process.list(), &(&1.metadata[:session_id] == session_id))
+      Process.exit(owner, :kill)
+      assert {:ok, %{state: :closed}} = await_state(session_id, :closed)
+      assert {:ok, %{state: state}} = Jido.Harness.Process.await(process.process_id, 2_000)
+      assert state in [:cancelled, :exited]
+    end
+  end
+
   test "ACP loads an existing provider session through Arbor ACP" do
     assert {:ok, session_id} =
              Jido.Harness.Session.start(:kimi, %{provider_session_id: "saved-provider-session"})
@@ -398,6 +421,23 @@ defmodule Jido.Harness.ACPSessionTest do
 
     assert {:ok, events} = Jido.Harness.Session.replay(session_id, limit: 1_000)
     assert Enum.any?(events, &(&1.type == :approval_resolved and &1.payload["reason"] == "timeout"))
+  end
+
+  test "strict one-time approval cannot select a persistent provider option" do
+    assert {:ok, session_id} = Jido.Harness.Session.start(:kimi, %{})
+    assert {:ok, _info} = await_ready(session_id)
+    assert {:ok, turn_id} = Jido.Harness.Session.send_message(session_id, "approval only persistent")
+    assert {:ok, %{pending_approvals: 1}} = await_approval(session_id)
+    assert {:ok, events} = Jido.Harness.Session.replay(session_id)
+    approval = Enum.find(events, &(&1.type == :approval_requested))
+
+    assert :ok =
+             Jido.Harness.Session.respond_approval(session_id, approval.request_id, %{
+               decision: :approve,
+               strict_scope: true
+             })
+
+    assert {:ok, %{status: :completed, text: "denied"}} = Jido.Harness.Session.await(session_id, turn_id, 2_000)
   end
 
   test "ACP cancellation keeps turn and approval lifecycle in Harness" do

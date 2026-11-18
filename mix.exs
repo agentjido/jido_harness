@@ -19,6 +19,7 @@ defmodule Jido.Harness.MixProject do
      [
        "guides/runs.md",
        "guides/interactive_sessions.md",
+       "guides/agent_plugin.md",
        "guides/managed_processes.md",
        "guides/recipes/policy_jobs.md"
      ]},
@@ -78,6 +79,7 @@ defmodule Jido.Harness.MixProject do
       homepage_url: @source_url,
       docs: [
         main: "overview",
+        skip_code_autolink_to: &String.starts_with?(&1, "c:Jido.Agent.Extension."),
         source_ref: "v#{@version}",
         extras: @project_docs ++ Enum.flat_map(@guide_groups, &elem(&1, 1)),
         groups_for_extras: @guide_groups ++ [{"Project", @project_docs}],
@@ -138,7 +140,7 @@ defmodule Jido.Harness.MixProject do
         formatters: ["html"]
       ],
       test_coverage: [tool: ExCoveralls, export: "cov"],
-      dialyzer: [plt_add_apps: [:mix, :ex_unit]],
+      dialyzer: [plt_add_apps: [:mix, :ex_unit, :jido, :spark]],
       # Hex packaging
       package: [
         name: :jido_harness,
@@ -202,6 +204,10 @@ defmodule Jido.Harness.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:arbor_acp, "~> 1.0.0-rc.1"},
+
+      # Optional Jido V3 Agent integration
+      {:jido,
+       github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445", optional: true, runtime: false},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

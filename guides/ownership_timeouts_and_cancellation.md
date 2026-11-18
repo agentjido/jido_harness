@@ -17,7 +17,11 @@ This supports workflows such as:
 - reconnect after that consumer exits;
 - await or cancel from a later process.
 
-Application shutdown is the ownership boundary. Resources are not rebuilt on a
+To close a session when a local owner exits, pass `owner: pid` as a runtime
+option to `Jido.Harness.Session.start/3`. The Agent plugin uses this option
+to tie each session to its plugin activation.
+
+Application shutdown is the default ownership boundary. Resources are not rebuilt on a
 new BEAM instance.
 
 ## Provider-owned processes

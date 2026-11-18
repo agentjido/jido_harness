@@ -72,7 +72,7 @@ def complete_prompt(request_id, text="fixture-ok", stop_reason="end_turn"):
     send({"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": stop_reason}})
 
 
-def request_permission():
+def request_permission(only_persistent=False):
     send(
         {
             "jsonrpc": "2.0",
@@ -84,6 +84,8 @@ def request_permission():
                 "providerParameter": "permission-parameter",
                 "toolCall": {"toolCallId": "tool-1", "title": "Fixture tool"},
                 "options": [
+                    {"optionId": "allow-always", "name": "Always", "kind": "allow_always"},
+                ] if only_persistent else [
                     {"optionId": "allow-once", "name": "Allow once", "kind": "allow_once"},
                     {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
                 ],
@@ -207,7 +209,7 @@ for line in sys.stdin:
             complete_prompt(request_id, text="0123456789" * 1000)
         elif "approval" in text:
             pending_prompt = request_id
-            request_permission()
+            request_permission(only_persistent="only persistent" in text)
             if "duplicate" in text:
                 request_permission()
         elif "wait" in text:
@@ -290,5 +292,6 @@ for line in sys.stdin:
     elif request_id == 99 and pending_prompt is not None:
         outcome = message.get("result", {}).get("outcome", {})
         selected = outcome.get("optionId", "")
-        complete_prompt(pending_prompt, text="approved" if selected == "allow-once" else "denied")
+        result_text = {"allow-once": "approved", "allow-always": "approved-always"}.get(selected, "denied")
+        complete_prompt(pending_prompt, text=result_text)
         pending_prompt = None

@@ -100,8 +100,8 @@ Arbor ACP owns the ACP protocol. Jido Connect owns service API integrations.
 Application code owns provider selection, workspace setup, approval policy,
 and decisions about the result.
 
-Harness does not require `jido` or `jido_connect`. It can run in an Elixir
-application on its own. See the [architecture](guides/reference/architecture.md)
+Harness can run on its own in an Elixir application. Add Jido V3 to use the
+[Agent plugin](guides/agent_plugin.md) and give an Agent one coding-agent conversation. See the [architecture](guides/reference/architecture.md)
 and [dependency reference](guides/reference/dependencies.md).
 
 ## Documentation
