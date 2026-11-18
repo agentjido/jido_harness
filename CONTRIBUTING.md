@@ -49,7 +49,6 @@ belong outside Harness.
 mix test
 mix quality
 mix docs --warnings-as-errors
-MIX_ENV=package mix hex.build
 ```
 
 `mix quality` checks formatting, compiler warnings, Credo, Dialyzer, and Doctor.
@@ -99,13 +98,13 @@ components and runs the same ExUnit contracts.
 
 ## Prepare a release
 
-Run the four checks above and the affected live provider profiles. Review the
+Run the checks above and the affected live provider profiles. Review the
 [dependency audit](guides/reference/dependencies.md#dependency-audit) and
-[current provider limits](guides/providers.md). Verify the bundled native engine from a clean source package.
+[current provider limits](guides/providers.md).
 
-The Hex package contains runtime source, vendored native source, provider assets, and documentation. Repository
-configuration, tests, and test fixtures stay in the source repository.
-Inspect `MIX_ENV=package mix hex.build` output before publication.
+Hex publication requires a compatible Jido release on Hex. After switching
+to that dependency, inspect `mix hex.build` output and verify the bundled
+native engine from a clean source package before publication.
 
 Do not edit `CHANGELOG.md` by hand. Release automation creates release notes
 from Git history. Use Conventional Commits, for example:

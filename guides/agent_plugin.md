@@ -7,10 +7,9 @@ instances when two conversations need separate context.
 
 ## Add Jido to the host app
 
-The plugin ships in `jido_harness`. The host adds Jido V3 directly. For the
-Git release candidate, use the same Jido revision as Harness. The standalone
-Hex build uses the `package` Mix environment until a compatible Jido V3
-release is available on Hex.
+The plugin ships in `jido_harness`. Use the Harness Git checkout and add the
+same Jido V3 revision to the host app. Hex publication requires a compatible
+Jido V3 release on Hex.
 
 ```elixir
 {:jido, github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445"}

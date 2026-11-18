@@ -10,7 +10,6 @@ API or subscription usage.
 mix test
 mix quality
 mix docs --warnings-as-errors
-MIX_ENV=package mix hex.build
 ```
 
 The default suite uses fixtures under `test/support/fixtures/`. It checks ACP
@@ -25,7 +24,7 @@ coverage limits, and required checks.
 
 The coverage percentage excludes imported Erlang engine source. The 70% floor
 continues to apply to Harness code. Native behavior has separate forced-error,
-process lifecycle, and package checks.
+process lifecycle, and escript checks.
 
 The default Antigravity tests use a small protocol fixture. CI also installs
 the pinned Node wrapper in a temporary directory and runs it against the fake

@@ -205,24 +205,18 @@ defmodule Jido.Harness.MixProject do
       {:telemetry, "~> 1.3"},
       {:arbor_acp, "~> 1.0.0-rc.1"},
 
+      # Optional Jido V3 Agent integration
+      {:jido,
+       github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445", optional: true, runtime: false},
+
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.31", only: [:dev, :package], runtime: false},
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:doctor, "~> 0.21", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: [:dev, :test]},
       {:git_hooks, "~> 0.8", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: :dev, runtime: false}
-    ] ++ jido_dependency(Mix.env())
-  end
-
-  # A compatible Core release must be available on Hex before the plugin can
-  # be distributed there. The package profile keeps standalone builds usable.
-  defp jido_dependency(:package), do: []
-
-  defp jido_dependency(_env) do
-    [
-      {:jido, github: "agentjido/jido", ref: "e31627541976e79b9bb134906a4fc32c89758445", optional: true, runtime: false}
     ]
   end
 
