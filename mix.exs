@@ -131,6 +131,7 @@ defmodule Jido.Harness.MixProject do
             Jido.Harness.Adapters.Gemini,
             Jido.Harness.Adapters.Grok,
             Jido.Harness.Adapters.Kimi,
+            Jido.Harness.Adapters.Omp,
             Jido.Harness.Adapters.OpenCode,
             Jido.Harness.Adapters.Pi,
             Jido.Harness.Adapters.Zai
