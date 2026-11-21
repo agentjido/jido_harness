@@ -232,6 +232,10 @@ for line in sys.stdin:
             if message["params"].get("configId") not in ["model", "mode", "reasoning_effort"]:
                 send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown Codex config option"}})
                 continue
+        if os.environ.get("HARNESS_FIXTURE_OMP_CONFIGURATION") == "1" and method == "session/set_config_option":
+            if message["params"].get("configId") not in ["model", "mode", "thinking"]:
+                send({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown omp config option"}})
+                continue
         record_path = os.environ.get("HARNESS_FIXTURE_CONFIGURATION_LOG")
         if record_path:
             with open(record_path, "a") as record:

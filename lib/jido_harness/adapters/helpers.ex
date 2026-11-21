@@ -98,7 +98,10 @@ defmodule Jido.Harness.Adapters.Helpers do
     recipe = %{
       source: url,
       steps: [
-        %{executable: "curl", argv: ["-fsS", url, "-o", "<temporary-file>"]},
+        %{
+          executable: "curl",
+          argv: ["--fail", "--silent", "--show-error", "--location", url, "--output", "<temporary-file>"]
+        },
         %{executable: "bash", argv: ["<temporary-file>"]}
       ]
     }
@@ -120,7 +123,14 @@ defmodule Jido.Harness.Adapters.Helpers do
     with :ok <- File.mkdir(directory) do
       try do
         with {:ok, download_output} <-
-               run_install_process(provider, %{executable: "curl", argv: ["-fsS", url, "-o", script]}, timeout),
+               run_install_process(
+                 provider,
+                 %{
+                   executable: "curl",
+                   argv: ["--fail", "--silent", "--show-error", "--location", url, "--output", script]
+                 },
+                 timeout
+               ),
              {:ok, install_output} <-
                run_install_process(provider, %{executable: "bash", argv: [script]}, timeout) do
           {:ok, %{provider: provider, status: :installed, output: download_output <> install_output}}

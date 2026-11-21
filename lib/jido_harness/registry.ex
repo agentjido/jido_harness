@@ -11,6 +11,7 @@ defmodule Jido.Harness.Registry do
     cursor: Jido.Harness.Adapters.Cursor,
     gemini: Jido.Harness.Adapters.Gemini,
     kimi: Jido.Harness.Adapters.Kimi,
+    omp: Jido.Harness.Adapters.Omp,
     opencode: Jido.Harness.Adapters.OpenCode,
     grok: Jido.Harness.Adapters.Grok,
     pi: Jido.Harness.Adapters.Pi,
