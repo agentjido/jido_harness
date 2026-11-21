@@ -57,7 +57,7 @@ defmodule Jido.Harness.APITest do
              Jido.Harness.install(:omp, dry_run: true)
 
     assert source == "https://omp.sh/install"
-    assert download.argv == ["-fsS", "--location", source, "-o", "<temporary-file>"]
+    assert download.argv == ["--fail", "--silent", "--show-error", "--location", source, "--output", "<temporary-file>"]
     assert execute.executable == "bash"
     assert List.last(execute.argv) == "<temporary-file>"
   end
@@ -72,7 +72,15 @@ defmodule Jido.Harness.APITest do
                 steps: [
                   %{
                     executable: "curl",
-                    argv: ["-fsS", "--location", "https://cursor.com/install", "-o", "<temporary-file>"]
+                    argv: [
+                      "--fail",
+                      "--silent",
+                      "--show-error",
+                      "--location",
+                      "https://cursor.com/install",
+                      "--output",
+                      "<temporary-file>"
+                    ]
                   },
                   %{executable: "bash", argv: ["<temporary-file>"]}
                 ]
