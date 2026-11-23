@@ -90,7 +90,7 @@ guard when changing the package pin.
 | Amp | `amp-acp@0.9.0` |
 | Antigravity CLI | `@simonepri/refined-antigravity-acp@1.6.3` |
 | Claude Code | `@agentclientprotocol/claude-agent-acp@0.70.0` |
-| Codex | `@agentclientprotocol/codex-acp@1.6.2` |
+| Codex | `@agentclientprotocol/codex-acp@2.10.0` |
 | Pi | `pi-acp@0.0.33` |
 | Z.AI | `@agentclientprotocol/claude-agent-acp@0.70.0` |
 
@@ -178,7 +178,7 @@ The optional `provider_options` booleans `ephemeral` and
 configuration. An ephemeral request cannot load a saved session. Workspace
 instructions remain active.
 
-The pinned Codex ACP 1.6.2 package does not support these controls. Requesting
+The pinned Codex ACP 2.10.0 package does not support these controls. Requesting
 them returns a configuration error before session creation. Harness requires
 the initialize response to report applied controls in
 `agentCapabilities._meta.codex.isolation`.
@@ -187,9 +187,9 @@ A custom ACP executable can be selected with `acp_path`. Verify its isolation
 behavior before use. The presence of these request fields does not establish
 isolation support in the pinned package.
 
-Codex ACP 2.0.1 was also checked and does not expose these controls. For a
-finite task, use the [native Codex process example](managed_processes.md#isolated-native-codex-task).
-This uses the Codex CLI controls and the Harness process API.
+For a finite task that requires isolation, use the
+[native Codex process example](managed_processes.md#isolated-native-codex-task).
+It passes both isolation flags to the Codex CLI through the Harness process API.
 
 Codex sandbox values select the ACP mode. Harness `approval_mode` controls
 its permission responses. Environment replacement, sandbox mode, and saved

@@ -7,7 +7,7 @@ defmodule Jido.Harness.AdapterTest do
     amp: {"amp-acp", :adapter, "amp-acp@0.9.0", []},
     antigravity: {"refined-antigravity-acp", :adapter, "@simonepri/refined-antigravity-acp@1.6.3", []},
     claude: {"claude-agent-acp", :adapter, "@agentclientprotocol/claude-agent-acp@0.70.0", []},
-    codex: {"codex-acp", :adapter, "@agentclientprotocol/codex-acp@1.6.2", []},
+    codex: {"codex-acp", :adapter, "@agentclientprotocol/codex-acp@2.10.0", []},
     cursor: {"cursor-agent", :native, nil, ["acp"]},
     gemini: {"gemini", :native, nil, ["--acp"]},
     grok: {"grok", :native, nil, ["agent", "stdio"]},

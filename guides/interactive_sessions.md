@@ -163,7 +163,7 @@ end
 
 It works for an ACP agent that advertises steering in its `initialize`
 response (`_meta.steering.supported`), such as claude-agent-acp 0.70 and
-codex-acp 1.6.2. The harness sends the extension request `_session/steering`
+codex-acp 2.10.0. The harness sends the extension request `_session/steering`
 and returns the id of the turn the input joined. That turn still ends once,
 after the agent has read the input.
 

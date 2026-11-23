@@ -47,7 +47,7 @@ defmodule Jido.Harness.APITest do
               status: :dry_run,
               components: %{
                 cli: %{recipe: %{package: "@openai/codex"}},
-                acp: %{recipe: %{package: "@agentclientprotocol/codex-acp@1.6.2"}}
+                acp: %{recipe: %{package: "@agentclientprotocol/codex-acp@2.10.0"}}
               }
             }} = Jido.Harness.install(:codex, dry_run: true)
   end

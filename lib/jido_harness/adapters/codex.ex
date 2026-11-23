@@ -23,7 +23,7 @@ defmodule Jido.Harness.Adapters.Codex do
         native_cancel?: true
       },
       acp_agent:
-        Jido.Harness.ACPAgentSpec.adapter("codex-acp", "@agentclientprotocol/codex-acp@1.6.2", %{
+        Jido.Harness.ACPAgentSpec.adapter("codex-acp", "@agentclientprotocol/codex-acp@2.10.0", %{
           capabilities: %{
             load_session: true,
             multimodal: true,
