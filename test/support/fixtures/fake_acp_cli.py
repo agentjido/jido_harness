@@ -183,6 +183,10 @@ for line in sys.stdin:
             for block in message.get("params", {}).get("prompt", [])
             if isinstance(block, dict)
         )
+        if text.strip() == "echo-attachment-links":
+            links = [block for block in message["params"]["prompt"] if block["type"] == "resource_link"]
+            complete_prompt(request_id, text=json.dumps(links))
+            continue
         if text == "write-isolated-fixture":
             if os.environ.get("CODEX_EPHEMERAL") != "1" or os.environ.get("CODEX_IGNORE_USER_CONFIG") != "1" or configured_mode != "agent":
                 sys.exit(1)

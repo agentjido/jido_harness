@@ -64,7 +64,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   def handle_call({:send, %TurnRequest{} = turn, turn_id}, _from, state) do
     client = state.client
     provider_session_id = state.provider_session_id
-    prompt = prompt_blocks(turn, state.request.cwd)
+    prompt = prompt_blocks(turn, state)
 
     task =
       Task.Supervisor.async_nolink(Jido.Harness.SessionTaskSupervisor, fn ->
@@ -81,7 +81,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
       when not is_nil(turn_id) do
     params = %{
       "sessionId" => state.provider_session_id,
-      "prompt" => prompt_blocks(turn, state.request.cwd),
+      "prompt" => prompt_blocks(turn, state),
       # Never a turn of its own: one that the harness did not start would
       # run unseen. Without a running turn the caller queues the input.
       "_meta" => %{"steering" => %{"idleBehavior" => "promptRequired"}}
@@ -704,7 +704,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp mcp_servers(value) when is_map(value), do: Map.values(value)
   defp mcp_servers(_value), do: []
 
-  defp prompt_blocks(%TurnRequest{} = request, cwd) do
+  defp prompt_blocks(%TurnRequest{} = request, state) do
     blocks =
       if request.content == [] do
         [%{"type" => "text", "text" => TurnRequest.text(request)}]
@@ -714,8 +714,10 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
     blocks ++
       Enum.map(request.attachments, fn path ->
-        path = Path.expand(path, cwd)
-        %{"type" => "resource_link", "uri" => file_uri(path), "name" => Path.basename(path)}
+        path = Path.expand(path, state.request.cwd)
+        uri = file_uri(path)
+        name = if state.context.acp_agent.attachment_link_name == :uri, do: uri, else: Path.basename(path)
+        %{"type" => "resource_link", "uri" => uri, "name" => name}
       end)
   end
 

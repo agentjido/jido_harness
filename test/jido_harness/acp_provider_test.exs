@@ -35,6 +35,27 @@ defmodule Jido.Harness.ACPProviderTest do
     assert loaded.provider_session_id == "saved-opencode-session"
   end
 
+  @tag :tmp_dir
+  test "OMP preserves attachment URIs as link names while other agents keep basenames", %{tmp_dir: cwd} do
+    paths = ["a/notes.txt", "b/notes.txt"]
+
+    for path <- paths do
+      file = Path.join(cwd, path)
+      File.mkdir_p!(Path.dirname(file))
+      File.touch!(file)
+    end
+
+    for provider <- [:omp, :opencode] do
+      assert {:ok, result} = Jido.Harness.run(provider, "echo-attachment-links", cwd: cwd, attachments: paths)
+
+      assert Jason.decode!(result.text) ==
+               Enum.map(paths, fn path ->
+                 uri = "file://" <> URI.encode(Path.join(cwd, path))
+                 %{"type" => "resource_link", "uri" => uri, "name" => if(provider == :omp, do: uri, else: "notes.txt")}
+               end)
+    end
+  end
+
   test "omp maps initial and runtime thinking controls and resumes sessions" do
     log = Path.join(System.tmp_dir!(), "harness-omp-#{System.unique_integer([:positive])}.jsonl")
     on_exit(fn -> File.rm(log) end)
