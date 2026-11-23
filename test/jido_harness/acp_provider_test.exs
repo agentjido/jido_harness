@@ -6,7 +6,7 @@ defmodule Jido.Harness.ACPProviderTest do
     original = Application.get_env(:jido_harness, :provider_config, %{})
 
     provider_config =
-      [:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :zai, :opencode]
+      [:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :zai, :omp, :opencode]
       |> Map.new(&{&1, %{acp_path: acp_fixture}})
 
     Application.put_env(:jido_harness, :provider_config, Map.merge(original, provider_config))
@@ -33,6 +33,37 @@ defmodule Jido.Harness.ACPProviderTest do
              Jido.Harness.run(:opencode, "loaded", provider_session_id: "saved-opencode-session", await_timeout: 5_000)
 
     assert loaded.provider_session_id == "saved-opencode-session"
+  end
+
+  test "omp maps initial and runtime thinking controls and resumes sessions" do
+    log = Path.join(System.tmp_dir!(), "harness-omp-#{System.unique_integer([:positive])}.jsonl")
+    on_exit(fn -> File.rm(log) end)
+    env = %{"HARNESS_FIXTURE_CONFIGURATION_LOG" => log, "HARNESS_FIXTURE_OMP_CONFIGURATION" => "1"}
+
+    assert {:ok, result} =
+             Jido.Harness.run(:omp, "fixture",
+               model: "initial",
+               reasoning_effort: :off,
+               env: env,
+               await_timeout: 5_000
+             )
+
+    assert result.status == :completed
+
+    assert {:ok, resumed} =
+             Jido.Harness.run(:omp, "fixture", provider_session_id: result.provider_session_id, await_timeout: 5_000)
+
+    assert resumed.provider_session_id == result.provider_session_id
+    assert {:ok, session} = Jido.Harness.Session.start(:omp, %{env: env})
+    assert {:ok, _info} = await_ready(session)
+    assert :ok = Jido.Harness.Session.configure(session, %{reasoning_effort: :max})
+    assert :ok = Jido.Harness.Session.configure(session, %{reasoning_effort: :auto})
+    assert {:ok, turn} = Jido.Harness.Session.send_message(session, "fixture")
+    assert {:ok, %{status: :completed}} = Jido.Harness.Session.await(session, turn, 5_000)
+
+    calls = log |> File.read!() |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
+    assert Enum.map(calls, & &1["params"]["configId"]) == ["model", "thinking", "thinking", "thinking"]
+    assert Enum.map(calls, & &1["params"]["value"]) == ["initial", "off", "max", "auto"]
   end
 
   test "Codex isolation controls preserve writable finite runs" do
@@ -188,7 +219,7 @@ defmodule Jido.Harness.ACPProviderTest do
   end
 
   test "all finite provider runs use the same ACP interface" do
-    Enum.each([:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :zai], fn provider ->
+    Enum.each([:amp, :antigravity, :claude, :codex, :cursor, :gemini, :grok, :omp, :zai], fn provider ->
       assert {:ok, run_id} = Jido.Harness.Run.start(provider, %{prompt: "fixture"})
       assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
       assert result.status == :completed

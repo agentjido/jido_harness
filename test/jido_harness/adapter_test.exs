@@ -12,6 +12,7 @@ defmodule Jido.Harness.AdapterTest do
     gemini: {"gemini", :native, nil, ["--acp"]},
     grok: {"grok", :native, nil, ["agent", "stdio"]},
     kimi: {"kimi", :native, nil, ["acp"]},
+    omp: {"omp", :native, nil, ["acp"]},
     opencode: {"opencode", :native, nil, ["acp"]},
     pi: {"pi-acp", :adapter, "pi-acp@0.0.33", []},
     zai: {"claude-agent-acp", :adapter, "@agentclientprotocol/claude-agent-acp@0.70.0", []}
@@ -59,6 +60,23 @@ defmodule Jido.Harness.AdapterTest do
 
     assert {:error, %Error{provider: :pi, details: %{field: :attachments}}} =
              RequestResolver.resolve(:pi, %{prompt: "review", attachments: ["image.png"]})
+  end
+
+  test "omp exposes native ACP controls and rejects unsupported direct CLI options" do
+    assert {:ok, spec} = Registry.spec(:omp)
+    assert spec.acp_agent.capabilities.load_session
+    assert spec.acp_agent.capabilities.multimodal
+    assert spec.acp_agent.capabilities.dynamic_configuration
+    assert spec.acp_agent.capabilities.mcp
+
+    assert {:ok, _request} =
+             RequestResolver.resolve(:omp, %{prompt: "review", model: "provider/model", reasoning_effort: :xhigh})
+
+    assert {:error, %Error{provider: :omp, details: %{field: :system_prompt}}} =
+             RequestResolver.resolve(:omp, %{prompt: "review", system_prompt: "unsupported"})
+
+    assert Jido.Harness.Adapters.Omp.acp_configuration(%{model: "provider/model", reasoning_effort: :high}) ==
+             %{model: "provider/model", thinking: :high}
   end
 
   test "only ACP-specific Z.AI provider options remain" do

@@ -52,6 +52,16 @@ defmodule Jido.Harness.APITest do
             }} = Jido.Harness.install(:codex, dry_run: true)
   end
 
+  test "omp installation previews the published shell installer" do
+    assert {:ok, %{status: :dry_run, recipe: %{source: source, steps: [download, execute]}}} =
+             Jido.Harness.install(:omp, dry_run: true)
+
+    assert source == "https://omp.sh/install"
+    assert download.argv == ["--fail", "--silent", "--show-error", "--location", source, "--output", "<temporary-file>"]
+    assert execute.executable == "bash"
+    assert List.last(execute.argv) == "<temporary-file>"
+  end
+
   test "Cursor installation previews the official script without running it" do
     assert {:ok,
             %{
@@ -60,7 +70,18 @@ defmodule Jido.Harness.APITest do
               recipe: %{
                 source: "https://cursor.com/install",
                 steps: [
-                  %{executable: "curl", argv: ["-fsS", "https://cursor.com/install", "-o", "<temporary-file>"]},
+                  %{
+                    executable: "curl",
+                    argv: [
+                      "--fail",
+                      "--silent",
+                      "--show-error",
+                      "--location",
+                      "https://cursor.com/install",
+                      "--output",
+                      "<temporary-file>"
+                    ]
+                  },
                   %{executable: "bash", argv: ["<temporary-file>"]}
                 ]
               }

@@ -86,7 +86,7 @@ results. See [Choose an API](guides/overview.md#choose-an-api).
 ## Providers
 
 Built-in adapters cover Amp, Claude Code, Codex, Cursor CLI, Gemini CLI, Grok,
-Kimi Code, OpenCode, Pi, and Z.AI. Options and capabilities differ between
+Kimi Code, Oh My Pi (`omp`), OpenCode, Pi, and Z.AI. Options and capabilities differ between
 providers. Unsupported options return an error.
 
 The [provider guide](guides/providers.md) lists entry points, installation

@@ -1,6 +1,6 @@
 # Providers and capabilities
 
-Harness includes eleven provider profiles. Every run and session uses ACP through
+Harness includes twelve provider profiles. Every run and session uses ACP through
 Arbor ACP. ACP can be part of the base CLI or a separate adapter program.
 
 Use `Jido.Harness.providers/0` to inspect the bundled declarations. These
@@ -18,6 +18,7 @@ describe the selected Harness profile, not every feature of the base CLI.
 | Gemini CLI | `:gemini` | `gemini` | `gemini --acp` | native | experimental |
 | Grok | `:grok` | `grok` | `grok agent stdio` | native | stable |
 | Kimi Code | `:kimi` | `kimi` | `kimi acp` | native | stable |
+| Oh My Pi | `:omp` | `omp` | `omp acp` | native | experimental |
 | OpenCode | `:opencode` | `opencode` | `opencode acp` | native | stable |
 | Pi | `:pi` | `pi` | `pi-acp` | adapter | experimental |
 | Z.AI | `:zai` | `claude` | `claude-agent-acp` | adapter | experimental |
@@ -25,6 +26,21 @@ describe the selected Harness profile, not every feature of the base CLI.
 Maturity is profile metadata. It does not establish that live tests ran for
 every installed CLI version. Use [Testing](testing.md) to verify the providers
 required by a release.
+
+### Oh My Pi setup
+
+`Jido.Harness.install(:omp)` downloads [omp's installer](https://omp.sh/install)
+and runs it with Bash on macOS/Linux. Preview the commands with
+`Jido.Harness.install(:omp, dry_run: true)`. If `omp` is already on `PATH`,
+skip installation. Authenticate with `/login` in its interactive CLI. Harness
+launches [`omp acp`](https://omp.sh/docs/acp) directly; no separate ACP
+adapter is required. Configure MCP servers in the Harness session rather
+than omp's local MCP settings: omp does not discover those settings in ACP mode.
+
+For runs and session configuration, `reasoning_effort` accepts `:off`, `:auto`,
+`:low`, `:medium`, `:high`, `:xhigh`, and `:max`. omp determines which levels
+the selected model supports. `nil` leaves thinking unchanged; `:auto` explicitly
+switches back to automatic thinking.
 
 ### Antigravity setup
 
