@@ -130,6 +130,7 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
        %{
          process_manager: process_manager,
          process_id: process_id,
+         process_owner: process_owner,
          listener: listener,
          stream: stream,
          reader: nil,
@@ -254,8 +255,14 @@ defmodule Jido.Harness.SessionAdapters.ACP.ArborACPTransport.Bridge do
   def handle_info({:acp_transport_process_event, %ProcessEvent{type: type, data: data} = event}, state)
       when type in [:failed, :timed_out, :exited, :cancelled] do
     state = record_lifecycle(state, event)
-    details = diagnostics(state, type, data)
-    {:noreply, stop_for_process_event(state, type, details)}
+    # Stopping a run shuts down its adapter task, which owns the ACP process.
+    if type == :cancelled and not Process.alive?(state.process_owner) do
+      send(state.listener, {:acp_process_owner_stopped, state.process_owner})
+      {:noreply, close_state(state, :closed, true)}
+    else
+      details = diagnostics(state, type, data)
+      {:noreply, stop_for_process_event(state, type, details)}
+    end
   end
 
   def handle_info({ref, _result}, %{reader: %{ref: ref}} = state) do

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import signal
 import sys
 import time
 
@@ -212,6 +213,11 @@ for line in sys.stdin:
             request_permission(only_persistent="only persistent" in text)
             if "duplicate" in text:
                 request_permission()
+        elif text == "wait with progress":
+            for stop_signal in (signal.SIGINT, signal.SIGTERM):
+                signal.signal(stop_signal, lambda _signal, _frame: sys.exit(0))
+            pending_prompt = request_id
+            print("fixture waiting for cancellation", file=sys.stderr, flush=True)
         elif "wait" in text:
             pending_prompt = request_id
         elif "invalid" in text:
