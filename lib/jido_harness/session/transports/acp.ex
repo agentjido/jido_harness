@@ -729,7 +729,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   defp file_uri(path) do
     path = Path.expand(path)
-    "file://" <> URI.encode(path)
+    "file://" <> URI.encode(path, &(&1 == ?/ or URI.char_unreserved?(&1)))
   end
 
   defp protocol_timeout(:infinity), do: @maximum_protocol_timeout

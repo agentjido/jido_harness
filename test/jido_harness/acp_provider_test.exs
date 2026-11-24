@@ -37,7 +37,7 @@ defmodule Jido.Harness.ACPProviderTest do
 
   @tag :tmp_dir
   test "OMP preserves attachment URIs as link names while other agents keep basenames", %{tmp_dir: cwd} do
-    paths = ["a/notes.txt", "b/notes.txt"]
+    paths = ["a/notes#1?.txt", "b/notes#1?.txt"]
 
     for path <- paths do
       file = Path.join(cwd, path)
@@ -49,9 +49,14 @@ defmodule Jido.Harness.ACPProviderTest do
       assert {:ok, result} = Jido.Harness.run(provider, "echo-attachment-links", cwd: cwd, attachments: paths)
 
       assert Jason.decode!(result.text) ==
-               Enum.map(paths, fn path ->
-                 uri = "file://" <> URI.encode(Path.join(cwd, path))
-                 %{"type" => "resource_link", "uri" => uri, "name" => if(provider == :omp, do: uri, else: "notes.txt")}
+               Enum.map(["a", "b"], fn dir ->
+                 uri = "file://" <> URI.encode(cwd) <> "/#{dir}/notes%231%3F.txt"
+
+                 %{
+                   "type" => "resource_link",
+                   "uri" => uri,
+                   "name" => if(provider == :omp, do: uri, else: "notes#1?.txt")
+                 }
                end)
     end
   end
