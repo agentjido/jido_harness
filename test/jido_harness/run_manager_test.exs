@@ -1,6 +1,7 @@
 defmodule Jido.Harness.RunManagerTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
   import Jido.Harness.TestHelpers
 
   setup context do
@@ -269,6 +270,44 @@ defmodule Jido.Harness.RunManagerTest do
     assert List.last(result.events).type == :run_cancelled
   end
 
+  test "fallback cancellation closes an active ACP run without transport errors" do
+    {run_id, process_id} = start_waiting_run()
+
+    transport =
+      Jido.Harness.SessionTransportSupervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.find_value(fn {_, pid, _, _} ->
+        if Map.get(:sys.get_state(pid).context, :run_id) == run_id, do: pid
+      end)
+
+    assert is_pid(transport)
+    monitor = Process.monitor(transport)
+
+    {reason, log} =
+      with_log(fn ->
+        assert :ok = Jido.Harness.Run.cancel(run_id)
+        assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
+        assert result.status == :cancelled
+        assert Enum.count(result.events, &Jido.Harness.Event.terminal?/1) == 1
+        assert List.last(result.events).type == :run_cancelled
+        assert {:ok, %{state: :cancelled, exit_status: 0}} = Jido.Harness.Process.await(process_id, 5_000)
+        assert_receive {:DOWN, ^monitor, :process, ^transport, reason}, 5_000
+        reason
+      end)
+
+    refute log =~ "ACP transport error"
+    assert reason == :normal
+  end
+
+  test "an ACP process cancelled while the run is active fails the run" do
+    {run_id, process_id} = start_waiting_run()
+    assert :ok = Jido.Harness.Process.cancel(process_id)
+    assert {:ok, result} = Jido.Harness.Run.await(run_id, 5_000)
+    assert result.status == :failed
+    assert result.error.details.process["state"] == "cancelled"
+    assert List.last(result.events).type == :run_failed
+  end
+
   test "run-level runtime and idle timeouts cover ACP streams" do
     assert {:ok, runtime_id} =
              Jido.Harness.Run.start(:test, %{prompt: "wait", runtime_timeout_ms: 30})
@@ -344,6 +383,17 @@ defmodule Jido.Harness.RunManagerTest do
 
     assert {:error, %Jido.Harness.Error{message: "options must be a keyword list"}} =
              Jido.Harness.Run.replay("missing", %{cursor: 0})
+  end
+
+  defp start_waiting_run do
+    assert {:ok, run_id} = Jido.Harness.Run.start(:test, %{prompt: "wait with progress"})
+
+    assert eventually(fn ->
+             {:ok, events} = Jido.Harness.Run.replay(run_id)
+             Enum.any?(events, &(&1.payload["data"] == "fixture waiting for cancellation\n"))
+           end)
+
+    {run_id, await_owned_process(run_id)}
   end
 
   defp await_owned_process(run_id, attempts \\ 100)

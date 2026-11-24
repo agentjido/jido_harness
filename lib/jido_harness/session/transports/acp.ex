@@ -247,6 +247,9 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
     {:noreply, state}
   end
 
+  def handle_info({:acp_process_owner_stopped, owner}, %{owner: owner} = state),
+    do: {:stop, :normal, state}
+
   def handle_info({:acp_process_stopped, type, data}, %{initialize_from: from} = state) when not is_nil(from),
     do: {:noreply, fail_startup(state, {:process_stopped, type, data})}
 
