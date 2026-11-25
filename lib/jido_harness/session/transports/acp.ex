@@ -16,6 +16,13 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
 
   def start_link({request, context}), do: GenServer.start_link(__MODULE__, {request, context})
 
+  @doc false
+  def file_uri(<<drive, ":/", path::binary>>) when drive in ?A..?Z or drive in ?a..?z do
+    "file:///" <> <<drive>> <> ":/" <> encode_file_path(path)
+  end
+
+  def file_uri(path), do: "file://" <> encode_file_path(path)
+
   @impl true
   def init({request, context}) do
     Process.flag(:trap_exit, true)
@@ -727,10 +734,7 @@ defmodule Jido.Harness.SessionAdapters.ACPTransport do
   defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
   defp stringify_keys(value), do: value
 
-  defp file_uri(path) do
-    path = Path.expand(path)
-    "file://" <> URI.encode(path, &(&1 == ?/ or URI.char_unreserved?(&1)))
-  end
+  defp encode_file_path(path), do: URI.encode(path, &(&1 == ?/ or URI.char_unreserved?(&1)))
 
   defp protocol_timeout(:infinity), do: @maximum_protocol_timeout
 
