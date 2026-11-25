@@ -101,6 +101,7 @@ defmodule Jido.Harness.Adapters.Omp do
       acp_agent:
         Jido.Harness.ACPAgentSpec.native("omp", ["acp"], %{
           maturity: :experimental,
+          attachment_link_name: :uri,
           capabilities: %{
             load_session: true,
             multimodal: true,

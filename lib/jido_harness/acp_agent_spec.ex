@@ -13,6 +13,7 @@ defmodule Jido.Harness.ACPAgentSpec do
               source: Zoi.enum([:native, :adapter]),
               package: Zoi.string() |> Zoi.nullish(),
               auth_method: Zoi.string() |> Zoi.nullish(),
+              attachment_link_name: Zoi.enum([:basename, :uri]) |> Zoi.default(:basename),
               maturity: Zoi.enum([:stable, :experimental]) |> Zoi.default(:stable),
               env: Zoi.map(Zoi.string(), Zoi.any()) |> Zoi.default(%{}),
               capabilities: SessionCapabilities.schema() |> Zoi.default(%SessionCapabilities{}),

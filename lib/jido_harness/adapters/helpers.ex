@@ -100,7 +100,17 @@ defmodule Jido.Harness.Adapters.Helpers do
       steps: [
         %{
           executable: "curl",
-          argv: ["--fail", "--silent", "--show-error", "--location", url, "--output", "<temporary-file>"]
+          argv: [
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--proto-redir",
+            "=https",
+            url,
+            "--output",
+            "<temporary-file>"
+          ]
         },
         %{executable: "bash", argv: ["<temporary-file>"]}
       ]
@@ -127,7 +137,17 @@ defmodule Jido.Harness.Adapters.Helpers do
                  provider,
                  %{
                    executable: "curl",
-                   argv: ["--fail", "--silent", "--show-error", "--location", url, "--output", script]
+                   argv: [
+                     "--fail",
+                     "--silent",
+                     "--show-error",
+                     "--location",
+                     "--proto-redir",
+                     "=https",
+                     url,
+                     "--output",
+                     script
+                   ]
                  },
                  timeout
                ),

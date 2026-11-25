@@ -1,6 +1,8 @@
 defmodule Jido.Harness.ACPProviderTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Harness.SessionAdapters.ACPTransport
+
   setup do
     acp_fixture = Jido.Harness.TestHelpers.fixture_path("fake_acp_cli.py")
     original = Application.get_env(:jido_harness, :provider_config, %{})
@@ -33,6 +35,37 @@ defmodule Jido.Harness.ACPProviderTest do
              Jido.Harness.run(:opencode, "loaded", provider_session_id: "saved-opencode-session", await_timeout: 5_000)
 
     assert loaded.provider_session_id == "saved-opencode-session"
+  end
+
+  test "attachment file URIs preserve the Windows drive colon and encode the file name" do
+    assert ACPTransport.file_uri("c:/work/notes#1.txt") == "file:///c:/work/notes%231.txt"
+  end
+
+  @tag :tmp_dir
+  test "OMP preserves attachment URIs as link names while other agents keep basenames", %{tmp_dir: cwd} do
+    paths = ["a/notes#1.txt", "b/notes#1.txt"]
+    cwd_uri = cwd |> Path.expand() |> ACPTransport.file_uri()
+
+    for path <- paths do
+      file = Path.join(cwd, path)
+      File.mkdir_p!(Path.dirname(file))
+      File.touch!(file)
+    end
+
+    for provider <- [:omp, :opencode] do
+      assert {:ok, result} = Jido.Harness.run(provider, "echo-attachment-links", cwd: cwd, attachments: paths)
+
+      assert Jason.decode!(result.text) ==
+               Enum.map(["a", "b"], fn dir ->
+                 uri = cwd_uri <> "/#{dir}/notes%231.txt"
+
+                 %{
+                   "type" => "resource_link",
+                   "uri" => uri,
+                   "name" => if(provider == :omp, do: uri, else: "notes#1.txt")
+                 }
+               end)
+    end
   end
 
   test "omp maps initial and runtime thinking controls and resumes sessions" do
